@@ -1,0 +1,1184 @@
+#################################################################################
+##                                                                             ##
+##   THIS SCRIPT WILL BE RUN AUTOMATICALLY ON FIRST BOOT AFTER INSTALLATION    ##
+##   TO RUN THIS SCRIPT MANUALLY, LAUNCH "\Install\Re-Run Setup Windows.cmd"   ##
+##   OR CHOOSE "Re-Run Setup Windows Script" FROM SCRIPTS MENU IN QA HELPER    ##
+##                                                                             ##
+#################################################################################
+
+#
+# By Pico Mitchell for Free Geek
+# Originally written and tested in September 2020 for Windows 10, version 2004
+# Tested in December 2021 for Windows 10, version 21H2
+# AND Tested in December 2021 for Windows 11, version 21H2
+#
+# MIT License
+#
+# Copyright (c) 2021 Free Geek
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
+# to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
+# and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+# WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#
+
+# Version: 2021.12.31-1
+
+param(
+	[Parameter(Position = 0)]
+	[String]$LastWindowsUpdatesCount # Use a String since passing a bool via "powershell.exe -File" seems impossible. And don't use int because it defaults to 0 when omitted.
+)
+
+$Host.UI.RawUI.WindowTitle = 'Setup Windows'
+
+if (-not (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\State') -or (-not (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\State').ImageState.Contains('RESEAL_TO_AUDIT'))) {
+	Write-Host "`n  ERROR: `"Setup Windows`" Can Only Run In Windows Audit Mode`n`n  EXITING IN 5 SECONDS..." -ForegroundColor Red
+	Start-Sleep 5
+	exit 1
+}
+
+
+$testMode = (Test-Path '\Install\TESTING')
+$desktopPath = [Environment]::GetFolderPath('Desktop')
+$isWindows11 = (Get-CimInstance Win32_OperatingSystem -Property Caption).Caption.Contains('Windows 11')
+
+
+function CloseStartMenuOnFirstBootOfWindows11 {
+	if ($isWindows11 -and (-not (Test-Path "$desktopPath\QA Helper.lnk"))) { # Checking that QA Helper shortcut is not on the Desktop indicates first boot.
+		# In Windows 11 (as of beta 22000.100), the Start Menu is opened automatically on first boot, so send Escape key to close it.
+		# This function will be called periodically throughout the script (mostly in each FocusScriptWindow call) since we can't know exactly when the Desktop will be loaded since the script rund before login.
+
+		(New-Object -ComObject Wscript.Shell).SendKeys('{ESC}')
+	}
+}
+
+$focusWindowFunctionTypes = Add-Type -PassThru -Name FocusWindow -MemberDefinition @'
+	[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+	[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+	[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+'@
+
+function FocusScriptWindow {
+	try {
+		Get-Process 'LogonUI' -ErrorAction Stop | Out-Null
+		# Don't bother trying to focus window if not logged in yet.
+	} catch {
+		CloseStartMenuOnFirstBootOfWindows11
+
+		# Based On: https://stackoverflow.com/questions/42566799/how-to-bring-focus-to-window-by-process-name/58548853#58548853
+		
+		$scriptWindowHandle = (Get-Process -Id $PID).MainWindowHandle
+		
+		if ($scriptWindowHandle) {
+			$focusWindowFunctionTypes::SetForegroundWindow($scriptWindowHandle) | Out-Null
+			if ($focusWindowFunctionTypes::IsIconic($scriptWindowHandle)) {
+				$focusWindowFunctionTypes::ShowWindow($scriptWindowHandle, 9) | Out-Null
+			}
+		}
+	}
+}
+
+
+FocusScriptWindow
+
+if ($LastWindowsUpdatesCount -eq '') {
+	# Only run the following tasks if no LastWindowsUpdatesCount arg (don't bother re-running these if we're just relaunching this script).
+
+	
+	if (-not $isWindows11) { # In Windows 11 (as of beta 22000.100), this appears to no longer be necessary.
+		# Disable Network Location Wizard FIRST because some fast computers can get to the Desktop very quickly after this script is launched during the Preparing Windows phase.
+		try {
+			# Setting "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Network\NwCategoryWizard\Show" to "0" will turn off the Network Location Wizard
+			# which stops Windows from prompting to set Network Profiles so we can avoid a big blue prompt on the right side of the screen on first boot.
+			# https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2008-R2-and-2008/gg252535(v=ws.10)#to-turn-off-the-network-location-wizard-for-the-current-user
+			
+			# This is effective at stopping the Network Profiles prompt on first boot because this script is launched by "\Windows\System32\Sysprep\Unattend.xml"
+			# which means this code runs while LogonUI is still showing the "Preparing Windows" screen and the desktop has not been shown yet to display the prompt.
+		
+			$networkLocationWizardRegistryPath = 'HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Network\NwCategoryWizard'
+			
+			if (-not (Test-Path $networkLocationWizardRegistryPath)) {
+				New-Item $networkLocationWizardRegistryPath -Force -ErrorAction Stop | Out-Null
+			}
+			
+			if ((Get-ItemProperty $networkLocationWizardRegistryPath).Show -ne 0) {
+				Write-Output "`n  Disabling Network Location Wizard..."
+				
+				New-ItemProperty $networkLocationWizardRegistryPath -Name 'Show' -Value 0 -PropertyType 'DWord' -Force -ErrorAction Stop | Out-Null
+				
+				Write-Host "`n  Successfully Disabled Network Location Wizard`n" -ForegroundColor Green
+				
+				Add-Content '\Install\Windows Setup Log.txt' "Disabled Network Location Wizard - $(Get-Date)" -ErrorAction SilentlyContinue
+			}
+		} catch {
+			Write-Host "`n  ERROR DISABLING NETWORK LOCATION WIZARD: $_`n" -ForegroundColor Red
+		}
+	}
+	
+
+	Write-Output "`n  Quitting System Preparation Tool..."
+
+	for ($stopSysprepAttempt = 0; $stopSysprepAttempt -lt 5; $stopSysprepAttempt ++) {
+		try {
+			Stop-Process -Name 'sysprep' -ErrorAction Stop
+			
+			Write-Host "`n  Successfully Quit System Preparation Tool" -ForegroundColor Green
+
+			break
+		} catch {
+			if ($stopSysprepAttempt -lt 4) {
+				Start-Sleep 1
+			} else {
+				Write-Host "`n  System Preparation Tool Was Not Running" -ForegroundColor Yellow
+			}
+		}
+	}
+
+
+	$didSetPowerPlan = $false
+	
+	try {
+		if (-not (Get-CimInstance Win32_PowerPlan -Namespace ROOT\CIMV2\power -Filter "IsActive = True" -ErrorAction Stop).InstanceID.Contains('8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c')) {
+			Write-Output "`n`n  Setting High Performance Power Plan and Disabling Screen Sleep..."
+			
+			Remove-Item "$Env:TEMP\fgSetup-*.txt" -Force -ErrorAction SilentlyContinue
+			
+			$powercfgSetactiveExitCode = (Start-Process 'powercfg.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgSetup-powercfg-setactive-Output.txt" -RedirectStandardError "$Env:TEMP\fgSetup-powercfg-setactive-Error.txt" -ArgumentList '/setactive', '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c' -ErrorAction Stop).ExitCode
+			$powercfgSetactiveError = Get-Content -Raw "$Env:TEMP\fgSetup-powercfg-setactive-Error.txt"
+			
+			if (($powercfgSetactiveExitCode -eq 0) -and ($null -eq $powercfgSetactiveError)) {
+				$powercfgChangeAcExitCode = (Start-Process 'powercfg.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgSetup-powercfg-change-ac-Output.txt" -RedirectStandardError "$Env:TEMP\fgSetup-powercfg-change-ac-Error.txt" -ArgumentList '/change', 'monitor-timeout-ac', '0' -ErrorAction Stop).ExitCode
+				$powercfgChangeAcError = Get-Content -Raw "$Env:TEMP\fgSetup-powercfg-change-ac-Error.txt"
+				
+				if (($powercfgChangeAcExitCode -eq 0) -and ($null -eq $powercfgChangeAcError)) {
+					$powercfgChangeDcExitCode = (Start-Process 'powercfg.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgSetup-powercfg-change-dc-Output.txt" -RedirectStandardError "$Env:TEMP\fgSetup-powercfg-change-dc-Error.txt" -ArgumentList '/change', 'monitor-timeout-dc', '0' -ErrorAction Stop).ExitCode
+					$powercfgChangeDcError = Get-Content -Raw "$Env:TEMP\fgSetup-powercfg-change-dc-Error.txt"
+					
+					if (($powercfgChangeDcExitCode -eq 0) -and ($null -eq $powercfgChangeDcError)) {
+						Write-Host "`n  Successfully Set High Performance Power Plan and Disabled Screen Sleep" -ForegroundColor Green
+						
+						Add-Content '\Install\Windows Setup Log.txt' "Set High Performance Power Plan and Disabled Screen Sleep - $(Get-Date)" -ErrorAction SilentlyContinue
+
+						$didSetPowerPlan = $true
+					} else {
+						if ($null -eq $powercfgChangeDcError) {
+							$powercfgChangeDcError = Get-Content -Raw "$Env:TEMP\fgSetup-powercfg-change-dc-Output.txt"
+						}
+						
+						Write-Host "`n  ERROR CHANGING DC POWERCFG: $powercfgChangeDcError" -ForegroundColor Red
+						Write-Host "`n  ERROR: Failed to disable screen sleep on DC power (powercfg Exit Code = $powercfgChangeDcExitCode)." -ForegroundColor Red
+					}
+				} else {
+					if ($null -eq $powercfgChangeAcError) {
+						$powercfgChangeAcError = Get-Content -Raw "$Env:TEMP\fgSetup-powercfg-change-ac-Output.txt"
+					}
+
+					Write-Host "`n  ERROR CHANGING AC POWERCFG: $powercfgChangeAcError" -ForegroundColor Red
+					Write-Host "`n  ERROR: Failed to disable screen sleep on AC power (powercfg Exit Code = $powercfgChangeAcExitCode)." -ForegroundColor Red
+				}
+			} else {
+				if ($null -eq $powercfgSetactiveError) {
+					$powercfgSetactiveError = Get-Content -Raw "$Env:TEMP\fgSetup-powercfg-setactive-Output.txt"
+				}
+
+				Write-Host "`n  ERROR SETTING POWERCFG: $powercfgSetactiveError" -ForegroundColor Red
+				Write-Host "`n  ERROR: Failed to set High Performance power plan (powercfg Exit Code = $powercfgSetactiveExitCode)." -ForegroundColor Red
+			}
+	
+			Remove-Item "$Env:TEMP\fgSetup-*.txt" -Force -ErrorAction SilentlyContinue
+		} else {
+			$didSetPowerPlan = $true
+		}
+	} catch {
+		Write-Host "`n  ERROR CHECKING POWER PLAN OR STARTING POWERCFG: $_" -ForegroundColor Red
+	}
+	
+	if (-not $didSetPowerPlan) {
+		Write-Host "`n  Computer or Screen May Sleep During Testing - CONTINUING ANYWAY - WILL TRY AGAIN ON NEXT REBOOT" -ForegroundColor Yellow
+		Start-Sleep 3
+	}
+
+
+	if (Test-Path '\Install\Scripts\Wi-Fi Profiles\') {
+		# Wi-Fi Profiles must be exported with: netsh wlan export profile name="Name" key=clear folder="C:\Path\"
+		# The "key=clear" argument is very important because it seems that while the profile with an encrypted password (key) can be successfully imported on another computer,
+		# the encrypted password will not actually work and the computer will not connect to the Wi-Fi network.
+		# Since Wi-Fi Profiles only need to be added once, and we don't want to leave plain text passwords around,
+		# the "Wi-Fi Profiles" directory will be deleted after any profile has successfully been added or Windows Update has run at least once (so Wi-Fi drivers has a chance to get installed).
+
+		$wiFiProfileFiles = Get-ChildItem '\Install\Scripts\Wi-Fi Profiles\*' -Include '*.xml' -ErrorAction SilentlyContinue
+
+		$didAddAnyProfile = $false
+
+		if (($null -ne $wiFiProfileFiles) -and ($wiFiProfileFiles.Count -gt 0)) {
+			Write-Output "`n`n  Adding Wi-Fi Network Profiles...`n"
+
+			try {
+				Start-Service 'wlansvc' -ErrorAction Stop # Make sure Wireless AutoConfig Service (wlansvc) is running before trying to add profiles since they will fail if it's not started yet.
+			} catch {
+				Write-Host "    Error Starting Wireless AutoConfig Service (wlansvc): $_`n" -ForegroundColor Yellow
+			}
+
+			foreach ($thisWiFiProfileFile in $wiFiProfileFiles) {
+				$thisWiFiProfileName = $thisWiFiProfileFile.BaseName
+				if ($thisWiFiProfileName.StartsWith('Wi-Fi-')) {
+					$thisWiFiProfileName = $thisWiFiProfileName.Substring(6)
+				}
+
+				Write-Host "    Adding Wi-Fi Network Profile: $thisWiFiProfileName..." -NoNewline
+					
+				Remove-Item "$Env:TEMP\fgSetup-*.txt" -Force -ErrorAction SilentlyContinue
+				
+				try {
+					$netshWlanAddProfileExitCode = (Start-Process 'netsh.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgSetup-netsh-wlan-add-profile-$thisWiFiProfileName-Output.txt" -RedirectStandardError "$Env:TEMP\fgSetup-netsh-wlan-add-profile-$thisWiFiProfileName-Error.txt" -ArgumentList 'wlan', 'add', 'profile', "filename=`"$($thisWiFiProfileFile.FullName)`"" -ErrorAction Stop).ExitCode
+					$netshWlanAddProfileError = Get-Content -Raw "$Env:TEMP\fgSetup-netsh-wlan-add-profile-$thisWiFiProfileName-Error.txt"
+					
+					if (($netshWlanAddProfileExitCode -eq 0) -and ($null -eq $netshWlanAddProfileError)) {
+						Write-Host ' ADDED' -ForegroundColor Green
+						
+						$didAddAnyProfile = $true
+
+						Add-Content '\Install\Windows Setup Log.txt' "Added Wi-Fi Network Profile: $thisWiFiProfileName - $(Get-Date)" -ErrorAction SilentlyContinue
+					} else {
+						Write-Host ' FAILED' -NoNewline -ForegroundColor Red
+						Write-Host ' (CONTINUING ANYWAY)' -ForegroundColor Yellow
+
+						if ($null -eq $netshWlanAddProfileError) {
+							$netshWlanAddProfileError = Get-Content -Raw "$Env:TEMP\fgSetup-netsh-wlan-add-profile-$thisWiFiProfileName-Output.txt"
+						}
+
+						Write-Host "      ERROR ADDING PROFILE (Code $netshWlanAddProfileExitCode): $netshWlanAddProfileError" -ForegroundColor Red
+						
+						Add-Content '\Install\Windows Setup Log.txt' "Error Code $netshWlanAddProfileExitCode Adding Wi-Fi Network Profile: $thisWiFiProfileName - $(Get-Date)" -ErrorAction SilentlyContinue
+					}
+				} catch {
+					Write-Host ' FAILED' -NoNewline -ForegroundColor Red
+					Write-Host ' (CONTINUING ANYWAY)' -ForegroundColor Yellow
+					Write-Host "      ERROR STARTING NETSH: $_" -ForegroundColor Red
+
+					Add-Content '\Install\Windows Setup Log.txt' "netsh Error for Wi-Fi Network Profile: $thisWiFiProfileName - $(Get-Date)" -ErrorAction SilentlyContinue
+				}
+			}
+
+			Write-Host "`n  Finished Adding Wi-Fi Network Profiles" -ForegroundColor Green
+
+			Remove-Item "$Env:TEMP\fgSetup-*.txt" -Force -ErrorAction SilentlyContinue
+		}
+		
+		if ($didAddAnyProfile -or (Test-Path '\Install\Windows Update Log.txt')) {
+			Remove-Item '\Install\Scripts\Wi-Fi Profiles' -Recurse -Force -ErrorAction SilentlyContinue
+		}
+	}
+
+
+	$didSyncSystemTime = $false
+
+	try {
+		Write-Output "`n`n  Syncing System Time..."
+
+		Start-Service 'W32Time' -ErrorAction Stop
+
+		Remove-Item "$Env:TEMP\fgSetup-*.txt" -Force -ErrorAction SilentlyContinue
+
+		$w32tmResyncExitCode = (Start-Process 'W32tm' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgSetup-W32tm-resync-Output.txt" -RedirectStandardError "$Env:TEMP\fgSetup-W32tm-resync-Error.txt" -ArgumentList '/resync', '/force' -ErrorAction Stop).ExitCode
+		$w32tmResyncError = Get-Content -Raw "$Env:TEMP\fgSetup-W32tm-resync-Error.txt"
+		
+		if (($w32tmResyncExitCode -eq 0) -and ($null -eq $w32tmResyncError)) {
+			Write-Host "`n  Successfully Synced System Time" -ForegroundColor Green
+
+			$didSyncSystemTime = $true
+		} else {
+			if ($null -eq $w32tmResyncError) {
+				$w32tmResyncError = Get-Content -Raw "$Env:TEMP\fgSetup-W32tm-resync-Output.txt"
+			}
+
+			Write-Host "`n  ERROR SYNCING SYSTEM TIME: $w32tmResyncError" -ForegroundColor Red
+			Write-Host "`n  ERROR: Failed to sync system time (W32tm Exit Code = $w32tmResyncExitCode)." -ForegroundColor Red
+		}
+	} catch {
+		Write-Host "`n  ERROR STARTING TIME SERVICE OR W32TM: $_" -ForegroundColor Red
+		Write-Host "`n  ERROR: Failed to start system time service." -ForegroundColor Red
+	}
+
+	Remove-Item "$Env:TEMP\fgSetup-*.txt" -Force -ErrorAction SilentlyContinue
+
+	if (-not $didSyncSystemTime) {
+		Write-Host "`n  System Time May Be Incorrect - CONTINUING ANYWAY - WILL TRY AGAIN ON NEXT REBOOT" -ForegroundColor Yellow
+	}
+
+
+	try {
+		if (Get-NetConnectionProfile -ErrorAction Stop | Where-Object NetworkCategory -ne 'Public') {
+			Write-Output "`n`n  Setting Network Profiles..."
+			
+			try {
+				# Even though we've stopped Windows from prompting to set Network Profiles during testing (by disabling Network Location Wizard),
+				# make sure they're all set to the more secure "Public" profile anyway since the settings are not reset by Sysprep.
+				
+				Get-NetAdapter -Physical | Set-NetConnectionProfile -NetworkCategory 'Public'
+	
+				Write-Host "`n  Successfully Set Network Profiles" -ForegroundColor Green
+				
+				Add-Content '\Install\Windows Setup Log.txt' "Set Network Profiles - $(Get-Date)" -ErrorAction SilentlyContinue
+			} catch {
+				Write-Host "`n  ERROR SETTING NETWORK PROFILES: $_" -ForegroundColor Red
+			}
+		}
+	} catch {
+		Write-Host "`n  ERROR CHECKING NETWORK PROFILES: $_" -ForegroundColor Red
+	}
+
+	try {
+		Write-Output "`n`n  Emptying Recycle Bin..."
+		
+		Clear-RecycleBin -Force -ErrorAction Stop
+
+		Write-Host "`n  Successfully Emptied Recycle Bin" -ForegroundColor Green
+	} catch {
+		Write-Host "`n  ERROR EMPTYING REYCYLE BIN: $_`n" -ForegroundColor Red
+		Write-Host "`n  Failed to empty Recycle Bin - CONTINUING ANYWAY" -ForegroundColor Yellow
+	}
+} else {
+	Write-Output "`n  Preparing to Finish Setting Up Windows..."
+
+	try {
+		Stop-Process -Name 'sysprep' -ErrorAction Stop
+	} catch {
+		# Only try once to quit Sysprep in case it's running, but don't show any error if it's wasn't.
+	}
+
+	if ($LastWindowsUpdatesCount -eq '0') {
+		Write-Host "`n  No Windows Updates Available - Windows Is Up-to-Date" -ForegroundColor Green
+	} elseif ($LastWindowsUpdatesCount -eq 'MaxUpdateCycles') {
+		Write-Host "`n  Maximum Windows Update Cycles Run - Windows May Not Be Up-to-Date - CONTINUING ANYWAY" -ForegroundColor Yellow
+		Start-Sleep 3 # Sleep for a few seconds to be able to see the issue
+	} else {
+		Write-Host "`n  Installed $LastWindowsUpdatesCount Windows Updates During Last Update Cycle" -ForegroundColor Green
+	}
+}
+
+
+if (-not (Get-LocalUser 'Administrator' -ErrorAction SilentlyContinue).Enabled) {
+	Write-Output '' # Line break so we get 2 line breaks for the first attempt but only one after clearing host for any re-attempts after failure.
+
+	for ( ; ; ) {
+		# The Administrator account should only be disabled on first boot (booting into Audit enables it to log in and then disables it again right after login):
+		# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/audit-mode-overview
+		
+		Write-Output "`n  Enabling Administrator Account..."
+
+		try {
+			# If Administrator is not enabled/active then you won't be able to log back in if the screen gets locked (but you could reboot to get logged back in).
+			Enable-LocalUser 'Administrator' -ErrorAction Stop
+
+			Write-Host "`n  Successfully Enabled Administrator Account" -ForegroundColor Green
+			
+			Add-Content '\Install\Windows Setup Log.txt' "Enabled Administrator Account - $(Get-Date)" -ErrorAction SilentlyContinue
+		} catch {
+			Write-Host "`n  ERROR ENABLING ADMINISTRATOR ACCOUNT: $_" -ForegroundColor Red
+			Write-Host "`n  ERROR: Failed to enable Administrator account." -ForegroundColor Red
+		}
+
+		if (-not (Get-LocalUser 'Administrator' -ErrorAction SilentlyContinue).Enabled) {
+			Write-Host "`n`n  >>> THE ADMINISTATOR ACCOUNT MUST BE ENABLED TO CONTINUE SETTING UP THIS COMPUTER <<<" -ForegroundColor Yellow
+			Write-Host "`n  !!! THIS COMPUTER CANNOT BE SOLD UNTIL SETUP IS COMPLETED SUCCESSFULLY !!!" -ForegroundColor Red
+			Write-Host "`n`n  If this issue continues, please inform Free Geek I.T.`n" -ForegroundColor Red
+			
+			# Wait until logged in so we can actually focus the script window.
+			for ( ; ; ) {
+				try {
+					Get-Process 'LogonUI' -ErrorAction Stop | Out-Null
+					Start-Sleep 1
+				} catch {
+					break
+				}
+			}
+			
+			FocusScriptWindow
+			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+			Read-Host '  Manually Reboot This Computer or Press ENTER to Try Again'
+			Clear-Host
+		} else {
+			break
+		}
+	}
+}
+
+
+function Install-QAHelper {
+	Write-Output '' # Line break so we get 2 line breaks for the first attempt but only one after clearing host for any re-attempts after failure.
+
+	for ( ; ; ) {
+		Write-Output "`n  Preparing to Install QA Helper..."
+
+		$qaHelperInstallMode = 'update' # Use update mode to make sure the Shortcuts are recreated since the drive letter will be wrong from being installed in WinPE.
+		
+		if ($testMode) {
+			$qaHelperInstallMode = 'test'
+		}
+
+		[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12, [Net.SecurityProtocolType]::Ssl3
+		
+		for ($downloadAttempt = 0; $downloadAttempt -lt 5; $downloadAttempt ++) {
+			try {
+				$actuallyInstallScriptContent = Invoke-RestMethod -Uri 'https://apps.freegeek.org/qa-helper/download/actually-install-qa-helper.ps1' -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+				if ($actuallyInstallScriptContent.Contains('qa-helper')) {
+					$actuallyInstallScriptBlock = [ScriptBlock]::Create($actuallyInstallScriptContent)
+					Invoke-Command $actuallyInstallScriptBlock -ArgumentList $qaHelperInstallMode -ErrorAction Stop
+					
+					Add-Content '\Install\Windows Setup Log.txt' "Loaded QA Helper Installer - $(Get-Date)" -ErrorAction SilentlyContinue
+
+					break
+				} else {
+					throw 'Invalid Installer Script Contents'
+				}
+			} catch {
+				Write-Host "`n  ERROR LOADING QA HELPER INSTALLER: $_" -ForegroundColor Red
+				Write-Host '  IMPORTANT: Internet Is Required During Installation Process' -ForegroundColor Red
+				
+				if ($downloadAttempt -lt 4) {
+					Write-Host "  Load Installer Attempt $($downloadAttempt + 1) of 5 - TRYING AGAIN..." -ForegroundColor Yellow
+					Start-Sleep ($downloadAttempt + 1) # Sleep a little longer after each attempt.
+				} else {
+					Write-Host '  Failed to Load QA Helper Installer After 5 Attempts' -ForegroundColor Yellow
+				}
+			}
+		}
+
+		if ((-not (Test-Path '\Install\QA Helper\java-jre\bin\javaw.exe')) -or (-not (Test-Path '\Install\QA Helper\QA_Helper.jar')) -or (-not (Test-Path "$desktopPath\QA Helper.lnk"))) {
+			Write-Host "`n`n  >>> QA HELPER MUST BE INSTALLED TO CONTINUE SETTING UP THIS COMPUTER <<<" -ForegroundColor Yellow
+			Write-Host "`n  !!! THIS COMPUTER CANNOT BE SOLD UNTIL SETUP IS COMPLETED SUCCESSFULLY !!!" -ForegroundColor Red
+			Write-Host "`n`n  If this issue continues, please inform Free Geek I.T.`n" -ForegroundColor Red
+			
+			# Wait until logged in so we can actually focus the script window.
+			for ( ; ; ) {
+				try {
+					Get-Process 'LogonUI' -ErrorAction Stop | Out-Null
+					Start-Sleep 1
+				} catch {
+					break
+				}
+			}
+			
+			FocusScriptWindow
+			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+			Read-Host '  Manually Reboot This Computer or Press ENTER to Try Again'
+			Clear-Host
+		} else {
+			break
+		}
+	}
+}
+
+
+function AdjustScreenScaling {
+	try {
+		# If screen is scaled above 100% (higher than 96 DPI), silently set the screen scaling down 2 steps.
+		# Only do this on first run because if the technician needs to adjust it later we don't want to keep changing it back.
+
+		# IMPORTANT NOTES: This must be run after fully logged in because the shortcut simulation to restart the graphics driver doesn't work when on LogonUI.
+		# ALSO, this must be run after drivers are installed because the screen ID within PerMonitorSettings is different with and without the drivers installed.
+
+		# Based On: https://www.sysopnotes.com/archives/set-dpi-scale-from-powershell/ (https://github.com/cattanach-mfld/SysOpNotes/blob/master/Modules/ChangeDPI.psm1)
+		
+		# Previously checked screen resolution and screen size to determine if scaling should be changed like the original code does, but decided to always scale down 2 steps
+		# no matter the resolution or screen size after seeing Windows set scaling to 125% on 1024x768 resolution (but also, that only on a desktop and before the driver was installed).
+		# Also, checking screen size does not detect external screens for desktops.
+		# If I decide to bring back resolution and screen size checking, here is the code:
+		#	$currentHorizontalResolution = (Get-CimInstance Win32_VideoController -Property 'CurrentHorizontalResolution' -ErrorAction Stop).CurrentHorizontalResolution
+		#	$monitorBasicDisplayParameters = (Get-CimInstance WmiMonitorBasicDisplayParams -Namespace ROOT\WMI -Property 'MaxHorizontalImageSize', 'MaxVerticalImageSize' -ErrorAction Stop)
+		#	$screenSize = [System.Math]::Round(([System.Math]::Sqrt([System.Math]::Pow($monitorBasicDisplayParameters.MaxHorizontalImageSize, 2) + [System.Math]::Pow($monitorBasicDisplayParameters.MaxVerticalImageSize, 2)) / 2.54), 2)
+		
+		$appliedDPI = (Get-ItemProperty 'HKCU:\Control Panel\Desktop\WindowMetrics' -Name AppliedDPI -ErrorAction Stop).AppliedDPI
+		
+		if ($appliedDPI -gt 96) {
+			Write-Host "`n`n  Adjusting Screen Scaling..." # NOTE: Can't use Write-Output in function with return value.
+			
+			$customScreenScalingRegistryPath = 'HKCU:\Control Panel\Desktop\PerMonitorSettings'
+
+			if (-not (Test-Path $customScreenScalingRegistryPath)) {
+				New-Item $customScreenScalingRegistryPath -Force -ErrorAction Stop | Out-Null
+			}
+
+			if (-not (Get-ChildItem $customScreenScalingRegistryPath -ErrorAction Stop)) {
+				(Get-ChildItem 'HKLM:\System\CurrentControlSet\Control\GraphicsDrivers\Configuration\' -ErrorAction Stop).PSChildName | ForEach-Object {
+					New-Item "$customScreenScalingRegistryPath\$_" -Force -ErrorAction Stop | Out-Null
+				}
+			}
+			
+			# Set DpiValue: 4294967294 (0xfffffffe) refers to -2 and 4294967295 (0xffffffff) refers to -1.  These numbers are needed because you can't set a negative number in the Registry, so -1 is max value and so on. 
+			# -1 and -2 refer to the steps down (25% per step) from the "Recommended" DPI value set by Windows and this can change from screen to screen.
+			# If the recommended DPI is 150%, then setting the value to 4294967294 will turn it down 2 steps to 100%.
+
+			# We will always just turn it down 2 steps, if the recommended DPI is 200% this will set it to 150% which is probably good since the screen is probably very high resolution in that case.
+			# Also worth noting that turning it down too many steps is not an issue, Windows will just use 100% if it's set too low.
+			# If we wanted to always guarantee 100% scaling, we could just go down a large number steps or we could do the math to figure out how many steps down from $appliedDPI are needed.
+
+			(Get-ChildItem $customScreenScalingRegistryPath).PSPath | ForEach-Object {
+				New-ItemProperty $_ -Name 'DpiValue' -Value 4294967294 -PropertyType 'DWord' -Force -ErrorAction Stop | Out-Null
+			}
+
+			# INFO ABOUT REBOOTING AFTER SETTING SCREEN SCALING: While the following code is a quick way to make the new screen scaling take effect (and is the same thing that is done when setting screen scaling from Settings app),
+			# it is not perfect and there is still weirdness from changing the screen scaling. For example, shortcut badges on desktop icons will not be the right size and also text in QA Helper will not be the right size.
+			# And while explorer.exe could be restarted to fix the shorcut badge sizing, that makes the desktop icon positioning incorrect and spaced out too much. In regards to QA Helper, it seem that some of this may just be
+			# Java's fault for being bad at honoring the new screen scaling on the fly, but it's also clear with the other examples mentioned that the new screen scaling does not fully take effect in Windows until signing out and back in, or rebooting.
+			# We could force a sign out, but then the technician would need to interact to sign back in and QA Helper would not open automatically. So, the simplest option for the best experience is to always reboot after setting screen scaling. 
+			# And even though we will reboot after setting screen scaling, it doesn't hurt to still do the following code to restart the graphics driver for the quick and imperfect way of making the new screen scaling take effect.
+			
+			# Restart the Graphics Driver after setting DpiValue. The following code simulates the keyboard shortcut "Windows + Control + Shift + B" (https://support.microsoft.com/en-us/help/4496075/windows-10-troubleshooting-black-or-blank-screens)
+			# Based On: https://stackoverflow.com/questions/57570136/how-to-restart-graphics-drivers-with-powershell-or-c-sharp-without-admin-privile (https://github.com/stefanstranger/PowerShell/blob/master/WinKeys.ps1)
+
+			# NOTE: While we could use the Disable/Enable-PnpDevice method which requires admin privileges since we're in Audit mode,
+			# this shortcut is actually quicker and looks cleaner to the user and doesn't make any sounds happen like the Disable/Enable-PnpDevice method does.
+			# Also, SendKeys cannot be used for this shortcut since SendKeys can't send the Windows key.
+
+			# Even though we should always be logged in by this point, wait until logged in just in case so the shortcut simulation will work (since is doesn't work when on LogonUI).
+			for ( ; ; ) {
+				try {
+					Get-Process 'LogonUI' -ErrorAction Stop | Out-Null
+					Start-Sleep 1
+				} catch {
+					break
+				}
+			}
+
+			$keyboardEventFunctionType = Add-Type -PassThru -Name KeybdEvent -MemberDefinition @'
+				[DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);
+'@
+			# Key Codes: https://docs.microsoft.com/en-us/dotnet/api/system.windows.forms.keys?view=netcore-3.1
+			# 91 = LWin
+			# 162 = LControlKey
+			# 160 = LShiftKey
+			# 66 = B
+
+			$shortcutKeys = 91, 162, 160, 66
+			
+			# Shortcut Keys Down
+			foreach ($thisShortcutKey in $shortcutKeys) {
+				$keyboardEventFunctionType::keybd_event($thisShortcutKey, 0, 1, 0)
+			}
+			
+			# Shortcut Keys Up
+			foreach ($thisShortcutKey in $shortcutKeys) {
+				$keyboardEventFunctionType::keybd_event($thisShortcutKey, 0, (1 -bOr 2), 0)
+			}
+
+			Write-Host "`n  Successfully Adjusted Screen Scaling" -ForegroundColor Green
+			
+			Add-Content '\Install\Windows Setup Log.txt' "Adjusted Screen Scaling - $(Get-Date)" -ErrorAction SilentlyContinue
+
+			return $true
+		}
+	} catch {
+		Write-Host "`n  ERROR ADJUSTING SCREEN SCALING: $_" -ForegroundColor Red
+	}
+
+	return $false
+}
+
+
+function Install-WindowsUpdates {
+	$maximumWindowsUpdateCycleCount = 5
+	# Windows Update cycles are tracked (including between reboots) to be able to stop after the specified maximumWindowsUpdateCycleCount (in case some failed driver keep tring to re-install over and over, which happens sometimes).
+	
+	if ((Get-Content '\Install\Windows Update Log.txt' -ErrorAction SilentlyContinue | Measure-Object -Line).Lines -ge $maximumWindowsUpdateCycleCount) {
+		# If maximumWindowsUpdateCycleCount has been reached, stop update cycle and uninstall PSWindowsUpdate no matter what.
+		# Pass "MaxUpdateCycles" as parameter so a relevant result message can be displayed.
+		Start-Process "powershell.exe" -WindowStyle Maximized -ArgumentList '-NoLogo', '-NoProfile', '-WindowStyle Maximized', '-ExecutionPolicy Unrestricted', "-File `"$PSCommandPath`" MaxUpdateCycles" -ErrorAction SilentlyContinue
+
+		exit 0 # MUST exit here so this instance doesn't stay open and continue or show an incorrect error.
+	} else {
+		Write-Output "`n`n  Checking Windows Update for OS Updates and Drivers..."
+		
+		try {
+			if (Test-Path '\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1') {
+				Import-Module '\Install\Scripts\PSWindowsUpdate' -Force -ErrorAction Stop
+			}
+			
+			$rebootRequiredAfterWindowsUpdates = $false
+			
+			$windowsUpdates = $null
+			
+			$windowsUpdates = Get-WindowsUpdate -ErrorAction Stop
+			
+			if ($windowsUpdates.Count -gt 0) {
+				Write-Host "`n  $($windowsUpdates.Count) Windows Updates Are Available" -ForegroundColor Green
+				Start-Sleep 2
+				
+				Clear-Host
+				Write-Output "`n  Installing $($windowsUpdates.Count) Windows Updates for OS Updates and Drivers...`n`n`n`n`n" # Add empty lines for PowerShell progress UI
+
+				foreach ($thisWindowsUpdate in $windowsUpdates) {
+					# PSWindowsUpdate's RebootRequired field only gets marked as true AFTER an update has been installed, so it's useless for checking if a reboot will be required in advance.
+					# Instead, check for any Cumulative updates manually to determine if reboot is required. Also, type 2 is Drivers which we should always reboot for so they all get enabled after installation.
+					if ($thisWindowsUpdate.Title.Contains('Cumulative') -or ($thisWindowsUpdate.Type -eq 2)) {
+						$rebootRequiredAfterWindowsUpdates = $true
+						Write-Host '  This Computer Will Reboot Itself After Windows Updates Are Installed' -ForegroundColor Yellow
+						break
+					}
+				}
+
+				if ($testMode) {
+					$windowsUpdates | Format-Table -HideTableHeaders -Wrap @{ Label = '    Update Type'; Expression = {"    $($_.KB)$($_.DriverClass)"} },Size,Title
+					Write-Host "  ONLY LISTING WINDOWS UPDATES (NOT INSTALLING) IN TEST MODE`n" -ForegroundColor Yellow
+				} else {
+					# For whatever reason, using the "Install-WindowsUpdate" alias does not work when imported from "\Install\Scripts\PSWindowsUpdate" rather than being installed.
+					Get-WindowsUpdate -Install -AcceptAll -IgnoreReboot -ErrorAction Stop | Format-Table -HideTableHeaders -Wrap @{ Label = '    Status'; Expression = {"    $($_.Result):"}},@{ Label = 'Update Type'; Expression = {"$($_.KB)$($_.DriverClass)"} },Size,Title
+					
+					Add-Content '\Install\Windows Update Log.txt' "$($windowsUpdates.Count) Installed - $(Get-Date)" -ErrorAction Stop # Log Windows Update finished time to track update cycles to be able to stop after maximumWindowsUpdateCycleCount.
+				}
+
+				# DO NOT run another pass of Windows Update HERE because if there was a Cumulative Update that just got installed it will show up again until it's been fully installing during a reboot.
+				# Instead, Windows Update will keep running after reboots or new script instances until there are no more updates available.
+				
+				if ((-not $rebootRequiredAfterWindowsUpdates) -and (Get-WURebootStatus -Silent)) {
+					# If $rebootRequiredAfterWindowsUpdates WAS NOT determinted to be true in advance, double check from PSWindowsUpdate now that it will have the RebootRequired field correctly set to true after installing updates that require rebooting.
+					$rebootRequiredAfterWindowsUpdates = $true
+					
+					Write-Host "  This Computer Will Reboot Itself Momentarily`n" -ForegroundColor Yellow
+				}
+				
+				Write-Host "  Finished Installing $($windowsUpdates.Count) Windows Updates" -ForegroundColor Green # No extra line break needed at the beginning because of line breaks in PSWindowsUpdate output.
+				
+				# Set screen scaling here so that we can potentially avoid an extra reboot if we are gonna reboot anyway after updates. And if we weren't gonna reboot, now is a good time to do so.
+				# Also, setting screen scaling after drivers are installed is important because the screen ID within PerMonitorSettings is different with and without the drivers installed.
+				$rebootRequiredAfterAdjustingScreenScaling = AdjustScreenScaling # See comments within function for info about rebooting after setting screen scaling.
+
+				if ($rebootRequiredAfterAdjustingScreenScaling -and (-not $rebootRequiredAfterWindowsUpdates)) {
+					$rebootRequiredAfterWindowsUpdates = $true
+					
+					Write-Host "`n  This Computer Will Reboot Itself After Adjusting Screen Scaling Momentarily" -ForegroundColor Yellow
+				}
+			} else {
+				Write-Host "`n  No Windows Updates Available - Windows Is Up-to-Date" -ForegroundColor Green
+				
+				# PSWindowsUpdate will be uninstalled after no more updates are available in a new PowerShell instance since if we try to uninstall here it will error stating it is currently in use.
+
+				Add-Content '\Install\QA Helper Log.txt' "Task: Updates Verified - $(Get-Date)" -ErrorAction SilentlyContinue # Automatically mark Windows Update as Verified in QA Helper after all updates have been installed.
+			}
+
+			if ($testMode) {
+				# Always stop update cycle and uninstall PSWindowsUpdate after one check in test mode since updates won't be installed.
+
+				# Wait until logged in so we can actually focus the script window.
+				for ( ; ; ) {
+					try {
+						Get-Process 'LogonUI' -ErrorAction Stop | Out-Null
+						Start-Sleep 1
+					} catch {
+						break
+					}
+				}
+
+				FocusScriptWindow
+				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+				Read-Host "`n`n  Press ENTER to Finish Setup Without Windows Updates"
+				
+				Start-Process "powershell.exe" -WindowStyle Maximized -ArgumentList '-NoLogo', '-NoProfile', '-WindowStyle Maximized', '-ExecutionPolicy Unrestricted', "-File `"$PSCommandPath`" 0" -ErrorAction SilentlyContinue
+			} elseif ($rebootRequiredAfterWindowsUpdates) {
+				# Wait until logged in so we don't ever restart before Windows is done doing its own setup during the "Preparing Windows" phase.
+				for ( ; ; ) {
+					try {
+						Get-Process 'LogonUI' -ErrorAction Stop | Out-Null
+						Start-Sleep 1
+					} catch {
+						break
+					}
+				}
+				
+				$rebootTimeout = 15
+				
+				Write-Output "`n`n  This Computer Will Reboot After Windows Updates in $rebootTimeout Seconds..."
+				Write-Host "`n  Or Press Any Key to Reboot Now" -ForegroundColor Cyan
+				
+				FocusScriptWindow
+				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+				for ($secondsWaited = 0; $secondsWaited -lt $rebootTimeout; $secondsWaited ++) {
+					if ($Host.UI.RawUI.KeyAvailable) {
+						break
+					}
+					
+					Start-Sleep 1
+				}
+				
+				Restart-Computer
+			} else {
+				# If Reboot isn't required, just relaunch this script in a new powershell instance to be able to uninstall PSWindowsUpdate
+
+				Start-Sleep 3 # Sleep for a few seconds to be able to see last results before this window closes.
+				
+				# Pass arg for LastWindowsUpdatesCount to determine if Windows is Up-to-Date to stop update cycle and uninstall PSWindowsUpdate.
+				Start-Process "powershell.exe" -WindowStyle Maximized -ArgumentList '-NoLogo', '-NoProfile', '-WindowStyle Maximized', '-ExecutionPolicy Unrestricted', "-File `"$PSCommandPath`" $($windowsUpdates.Count)" -ErrorAction SilentlyContinue
+			}
+
+			exit 0 # Not sure if exit is necessary after Restart-Computer but doesn't hurt & MUST exit here if not restarting so this instance doesn't stay open and continue or show an incorrect error.
+		} catch {
+			Write-Host "`n  ERROR RUNNING WINDOWS UPDATE: $_" -ForegroundColor Red
+			Write-Host "`n  ERROR: Failed to finish running Windows Update." -ForegroundColor Red
+			
+			Write-Host "`n`n  IMPORTANT: Make sure Ethernet cable is plugged securely or Wi-Fi is connected and try again." -ForegroundColor Red
+		}
+	}
+}
+
+
+# Only run App Installations and start Windows Update cycle if QA Helper shortcut is not on the Desktop (such as, after first boot from WinPE).
+
+if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
+	[xml]$smbCredentialsXML = $null
+
+	try {
+		[xml]$smbCredentialsXML = Get-Content '\Install\Scripts\smb-credentials.xml' -ErrorAction Stop
+
+		if ($null -eq $smbCredentialsXML.smbCredentials.resourcesReadOnlyShare.ip) {
+			throw 'NO RESOURCES SHARE IP'
+		} elseif ($null -eq $smbCredentialsXML.smbCredentials.resourcesReadOnlyShare.shareName) {
+			throw 'NO RESOURCES SHARE NAME'
+		} elseif ($null -eq $smbCredentialsXML.smbCredentials.resourcesReadOnlyShare.username) {
+			throw 'NO RESOURCES SHARE USERNAME'
+		} elseif ($null -eq $smbCredentialsXML.smbCredentials.resourcesReadOnlyShare.password) {
+			throw 'NO RESOURCES SHARE PASSWORD'
+		}
+	} catch {
+		Write-Host "`n`n  ERROR RETRIEVING SMB CREDENTIALS: $_" -ForegroundColor Red
+		Write-Host "`n  ERROR: REQUIRED `"smb-credentials.xml`" DOES NOT EXISTS OR HAS INVALID CONTENTS - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+		FocusScriptWindow
+		$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+		Read-Host '  Press ENTER to Exit'
+
+		exit 2
+	}
+
+	$smbServerIP = $smbCredentialsXML.smbCredentials.resourcesReadOnlyShare.ip
+	$smbShare = "\\$smbServerIP\$($smbCredentialsXML.smbCredentials.resourcesReadOnlyShare.shareName)"
+	$smbUsername = "$smbServerIP\$($smbCredentialsXML.smbCredentials.resourcesReadOnlyShare.username)" # Domain must be prefixed in any username.
+	$smbPassword = $smbCredentialsXML.smbCredentials.resourcesReadOnlyShare.password
+	
+	$appInstallersPath = "$smbShare\windows-resources\app-installers"
+	
+	$didInstallApps = $false # Keep track of if apps were successfully installed in a previous loop to not unnecessarily reinstall them.
+	
+	Remove-Item '\Install\Windows Update Log.txt' -Force -ErrorAction SilentlyContinue # Delete Windows Update Log to start update cycle over if Setup is being manually re-run.
+	
+	for ( ; ; ) {
+		if ($testMode) {
+			Write-Output ''
+		} else {
+			Clear-Host
+		}
+
+		FocusScriptWindow
+
+		if ($didInstallApps) {
+			Write-Output "`n  Preparing to Finish Setting Up Windows..."
+		} else {
+			Write-Output "`n  Preparing to Setup Windows..."
+		}
+		
+		$usbAppInstallersPath = $null
+		# Check all removable drives for "windows-resources" folder (a better version of https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-identify-drive-letters)
+		# Do these checks within the loop because it seems that sometimes the USB isn't mounted on boot and needs to be unplugged and replugged and the technician needs to be able to try again.
+		$removableDrives = Get-Volume | Where-Object DriveType -Eq Removable
+		foreach ($thisRemovableDrive in $removableDrives) {
+			$thisPossibleAppInstallersPath = "$($thisRemovableDrive.DriveLetter):\windows-resources\app-installers"
+
+			if (Test-Path $thisPossibleAppInstallersPath) {
+				$usbAppInstallersPath = $thisPossibleAppInstallersPath
+
+				break
+			}
+		}
+
+		$isUSBinstall = $false # Will set to USB install mode if fails to connect to $smbServerIP AND both $usbOSimagesPath and $usbSetupResourcesPath are not null.
+		
+		$lastTaskSucceeded = $true
+		
+		$didConnectToServer = $false
+		
+		try {
+			$didConnectToServer = (Test-Connection $smbServerIP -Count 1 -Quiet -ErrorAction Stop)
+		} catch {
+			Write-Host "`n  ERROR CONNECTING TO LOCAL FREE GEEK SERVER: $_" -ForegroundColor Red
+		}
+
+		if ($didConnectToServer) {
+			Write-Host "`n  Successfully Connected to Local Free Geek Server" -ForegroundColor Green
+		} elseif ($null -ne $usbAppInstallersPath) {
+			Write-Host "`n  Setting Up Windows via USB" -NoNewline -ForegroundColor Green
+			Write-Host " (Local Free Geek Server Unavailable)" -ForegroundColor Yellow
+
+			$appInstallersPath = $usbAppInstallersPath
+
+			$isUSBinstall = $true
+		} else {
+			Write-Host "`n  ERROR: Failed to connect to local Free Geek server `"$smbServerIP`"." -ForegroundColor Red
+			
+			$lastTaskSucceeded = $false
+		}
+
+		if ($lastTaskSucceeded -and (-not $isUSBinstall)) {
+			Write-Host "`n`n  Mounting SMB Share for App Installers - PLEASE WAIT, THIS MAY TAKE A MOMENT..." -NoNewline
+			
+			# Try to connect to SMB Share 5 times before stopping to show error to user because sometimes it takes a few attempts, or it sometimes just fails and takes more manual reattempts before it finally works.
+			for ($smbMountAttempt = 0; $smbMountAttempt -lt 5; $smbMountAttempt ++) {
+				try {
+					# If we don't get the New-SmbMapping return value it seems to be asynchronous, which results in messages being show out of order result and also result in a failure not being detected.
+					$smbMappingStatus = (New-SmbMapping -RemotePath $smbShare -UserName $smbUsername -Password $smbPassword -Persistent $false -ErrorAction Stop).Status
+					
+					if ($smbMappingStatus -eq 0) {
+						Write-Host "`n`n  Successfully Mounted SMB Share for App Installers" -ForegroundColor Green
+					} else {
+						throw "SMB Mapping Status $smbMappingStatus"
+					}
+
+					break
+				} catch {
+					if ($smbMountAttempt -lt 4) {
+						Write-Host '.' -NoNewline
+						Start-Sleep ($smbMountAttempt + 1) # Sleep a little longer after each attempt.
+					} else {
+						Write-Host "`n`n  ERROR MOUNTING SMB SHARE: $_" -ForegroundColor Red
+						Write-Host "`n  ERROR: Failed to connect to local Free Geek SMB share `"$smbShare`"." -ForegroundColor Red
+						
+						$lastTaskSucceeded = $false
+					}
+				}
+			}
+		}
+
+		if ($lastTaskSucceeded -and (-not $didInstallApps)) {
+			Write-Output "`n`n  Locating App Installer Files..."
+			
+			$appInstallersPathForAll = "$appInstallersPath\All"
+			if (-not (Test-Path $appInstallersPathForAll)) {
+				$appInstallersPathForAll = $appInstallersPath
+			}
+
+			$appInstallerFiles = Get-ChildItem "$appInstallersPathForAll\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
+
+			$driversCacheModelNameFilePath = '\Install\Drivers Cache Model Name.txt' # This file is created by QA Helper in WinPE using its detailed model info. Use it here to check manufacturers since it will always be cleaned up and consistent.
+			if (-not (Test-Path $driversCacheModelNameFilePath)) {
+				$driversCacheModelNameFilePath = '\Install\Drivers Cache Model Path.txt' # This is the old filename from when paths were specified instead of a filename.
+			}
+
+			if (Test-Path $driversCacheModelNameFilePath) {
+				$driversCacheModelNameFileContents = Get-Content $driversCacheModelNameFilePath -First 1
+				
+				if ($null -ne $driversCacheModelNameFileContents) {
+					if ($driversCacheModelNameFileContents.Contains('\')) {
+						# Drivers Cache used to store drivers for each model in their own folder with the path specified by "Drivers Cache Model Path.txt".
+						# Now, all drivers are stored in a "Unique Drivers" folder and each specific model is just a text file whose contents are a list of the drivers that were cached for that model.
+						# Therefore, if an old "Drivers Cache Model Path.txt" from an old "QA Helper" was read, we must replace backslashes with spaces to be used as a filename instead of a folder path.
+						$driversCacheModelNameFileContents = $driversCacheModelNameFileContents.Replace('\', ' ')
+					}
+
+					if ($driversCacheModelNameFileContents.Contains(' ')) {
+						# Check for and include manufacturer specific apps.
+						$appInstallersPathForManufacturer = "$appInstallersPath\$($driversCacheModelNameFileContents.Split(' ')[0])"
+					
+						if (Test-Path $appInstallersPathForManufacturer) {
+							$appInstallerFiles += Get-ChildItem "$appInstallersPathForManufacturer\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
+						}
+					}
+				}
+			}
+
+			if ($null -ne $appInstallerFiles) {
+				if ($appInstallerFiles.Count -gt 0) {
+					Write-Host "`n  Successfully Located $($appInstallerFiles.Count) App Installer Files" -ForegroundColor Green
+				} else {
+					$lastTaskSucceeded = $false
+				}
+			} else {
+				$lastTaskSucceeded = $false
+			}
+
+			if ($lastTaskSucceeded -and ($null -ne $appInstallerFiles)) {
+				foreach ($thisAppInstallerFile in $appInstallerFiles) {
+					CloseStartMenuOnFirstBootOfWindows11 # Only close the Start menu (without FocusScriptWindow) before each installation (which opens automatically on first login on Windows 11) so that the installer window is visible since we don't know exactly when the Desktop will be loaded.
+					
+					try {
+						$thisInstallerBaseName = $thisAppInstallerFile.BaseName
+						$thisAppVersion = ''
+						if (Test-Path "$($thisAppInstallerFile.DirectoryName)\$thisInstallerBaseName-Version.txt") {
+							$installerVersion = Get-Content "$($thisAppInstallerFile.DirectoryName)\$thisInstallerBaseName-Version.txt" -First 1
+							$thisAppVersion = " $installerVersion"
+						}
+
+						$thisAppName = $thisInstallerBaseName.Substring(0, $thisInstallerBaseName.IndexOf('_'))
+						
+						Write-Output "`n`n  Installing $thisAppName$thisAppVersion..."
+						
+						Remove-Item "$Env:TEMP\fgSetup-*.txt" -Force -ErrorAction SilentlyContinue
+						
+						$appInstallExitCode = 9999
+						if ($thisAppInstallerFile.Extension -eq '.msi') {
+							$appInstallExitCode = (Start-Process 'msiexec.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgSetup-$thisAppName-installer-Output.txt" -RedirectStandardError "$Env:TEMP\fgSetup-$thisAppName-installer-Error.txt" -ArgumentList '/i', $thisAppInstallerFile.FullName, '/passive' -ErrorAction Stop).ExitCode
+						} elseif ($thisAppInstallerFile.Extension -eq '.exe') {
+							$silentExeInstallationArgument = '/S'
+							if ($thisAppName -eq 'LenovoSystemUpdate') {
+								$silentExeInstallationArgument = '/SILENT'
+							}
+
+							$appInstallExitCode = (Start-Process $thisAppInstallerFile -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgSetup-$thisAppName-installer-Output.txt" -RedirectStandardError "$Env:TEMP\fgSetup-$thisAppName-installer-Error.txt" -ArgumentList $silentExeInstallationArgument -ErrorAction Stop).ExitCode
+						}
+						$appInstallError = Get-Content -Raw "$Env:TEMP\fgSetup-$thisAppName-installer-Error.txt"
+						
+						if (($appInstallExitCode -eq 0) -and ($null -eq $appInstallError)) {
+							Write-Host "`n  Successfully Installed $thisAppName$thisAppVersion" -ForegroundColor Green
+							
+							Add-Content '\Install\Windows Setup Log.txt' "Installed $thisAppName$thisAppVersion - $(Get-Date)" -ErrorAction SilentlyContinue
+						} else {
+							if ($null -eq $appInstallError) {
+								$appInstallError = Get-Content -Raw "$Env:TEMP\fgSetup-$thisAppName-installer-Output.txt"
+							}
+							
+							Write-Host "`n  ERROR INSTALLING APP: $appInstallError" -ForegroundColor Red
+							Write-Host "`n  ERROR: Failed to install $thisAppName$thisAppVersion (Installer Exit Code = $appInstallExitCode)." -ForegroundColor Red
+
+							$lastTaskSucceeded = $false
+
+							break
+						}
+					} catch {
+						Write-Host "`n  ERROR STARTING APP INSTALLER: $_" -ForegroundColor Red
+						Write-Host "`n  ERROR: Failed to install $($thisAppInstallerFile.BaseName)." -ForegroundColor Red
+						
+						$lastTaskSucceeded = $false
+
+						break
+					}
+				}
+
+				FocusScriptWindow # Take focus after installations are complete to make sure script window is front since the installers took focus.
+
+				Remove-Item "$Env:TEMP\fgSetup-*.txt" -Force -ErrorAction SilentlyContinue
+			} else {
+				Write-Host "`n  ERROR: Failed to locate any App installation files within `"$appInstallersPath`"." -ForegroundColor Red
+			}
+
+			if ($lastTaskSucceeded) {
+				$didInstallApps = $true
+			}
+		}
+		
+		if (-not $isUSBinstall) {
+			Remove-SmbMapping -RemotePath $smbShare -Force -UpdateProfile -ErrorAction SilentlyContinue # Done with SMB Share now, so remove it.
+		}
+
+		$waitForPreparingWindowsSeconds = 0
+		$didRestartExplorer = $false
+		
+		# The following loop is to workaround an in issue in 20H2. I am not sure if it's fixed in 21H1 but I've left it in place since it won't do anything even if it's no longer necessary.
+		for ( ; ; ) {
+			try {
+				Get-Process 'LogonUI' -ErrorAction Stop | Out-Null
+				
+				if ((-not $didRestartExplorer) -or (($waitForPreparingWindowsSeconds % 10) -eq 0)) {
+					# This is here to catch an odd issue that seems to happen occasionally in 20H2 (never noticed it in 2004) where Windows stays on the "Preparing Windows" screen for an excessively long time (like for 8 MINUTES LONGER than a normal setup).
+					# I noticed that whenever this happened, by the time Windows finally did get to the Desktop, the taskbar was not fully set up. When clicking the Start menu, a progress display would appear for a moment and then the taskbar would get setup.
+					# After some more experimentation when this happened, I tried restarting explorer.exe instead of clicking the Start menu to see if that would properly set up the taskbar as well, and it did!
+					# Then I had the thought that maybe when this long delay was happening because the "Preparing Windows" phase was simply waiting for the taskbar to get setup and only finally getting to the Desktop after giving up after some long timeout.
+					# So, I experimented with restarting explorer.exe while STILL ON the "Preparing Windows" screen instead of waiting until the Desktop was loaded...
+					# Wonderfully, this seemed to cause the taskbar to get setup properly while still on "Preparing Windows" screen and the Desktop was properly loaded just a FEW SECONDS after manually restarting explorer.exe here.
+					# During one timed test, when NOT manually restarting explorer.exe here, Windows stayed on the "Preparing Windows" screen for another 8 MINUTES from this point before finally getting to the Desktop.
+					# So, this will not only properly setup the taskbar when it fails to setup on its own during the "Preparing Windows" phase, but will also allow Windows to finish the "Preparing Windows" phase MUCH MORE QUICKLY when this issue occurs.
+					
+					# If the taskbar got setup properly on its own during the "Preparing Windows" phase, this will not get run because LogonUI will not still be running by this point.
+					# Under normal circumstances when everything works properly, the "Preparing Windows" phase should finish and get to the Desktop during the app installations in this script (the previous task before this point).
+
+					# Just ONE time, I saw that Windows stayed on the "Preparing Windows" screen for a very long time and the taskbar was not fully set up even AFTER this code ran.
+					# At the time, this code was only set to run once and did not fail if explorer.exe happened to not be running yet (I assumed explorer.exe would always be running by the time this script ran).
+					# Since I couldn't easily reproduce this one occurence, I solved for the possibility that explorer.exe was not running yet by not marking $didRestartExplorer as $true in that case,
+					# as well as allowed this code to restart explorer.exe every 10 seconds if Windows is still on the "Preparing Windows" screen even after already restarting explorer.exe before.
+					# Hopefully, whether the situation was that explorer.exe wasn't running yet, or that explorer.exe got restarted too early in the the "Preparing Windows" phase to properly setup the taskbar,
+					# or that explorer.exe needed to be restarted multiple times for some other reason, these changes should solve it.
+
+					try {
+						Stop-Process -ProcessName 'explorer' -ErrorAction Stop # This will actually restart explorer.exe rather than just stopping it.
+						$didRestartExplorer = $true
+						
+						Add-Content '\Install\Windows Setup Log.txt' "Restarted Explorer While Preparing Windows - $(Get-Date)" -ErrorAction SilentlyContinue
+					} catch {
+						# Stop-Process will error if explorer.exe is not running yet, so $didRestartExplorer will not be set as $true and we can try again.
+						Add-Content '\Install\Windows Setup Log.txt' "Explorer Needs Restart While Preparing Windows but Not Running Yet - $(Get-Date)" -ErrorAction SilentlyContinue
+					}
+				}
+				
+				Start-Sleep 1
+				$waitForPreparingWindowsSeconds ++
+			} catch {
+				break
+			}
+		}
+
+		if ($didRestartExplorer) {
+			Add-Content '\Install\Windows Setup Log.txt' "Finished Preparing Windows After Restarting Explorer - $(Get-Date)" -ErrorAction SilentlyContinue
+			
+			FocusScriptWindow # Make sure script window is focused since we weren't logged on any of the previous focus calls, but now we are.
+
+			Start-Sleep 2 # Sleep for a couple seconds to be able to see last results before continuing.
+		}
+
+		if (-not $lastTaskSucceeded) {
+			Write-Host "`n`n  IMPORTANT: Make sure Ethernet cable is plugged securely and try again." -ForegroundColor Red
+			Write-Host "`n  ALSO IMPORTANT: If you are doing a USB install, unplug and re-plug the USB drive and try again." -ForegroundColor Yellow
+		}
+
+		if ($lastTaskSucceeded -and (-not (Test-Path '\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1')) -and (-not (Get-Module -ListAvailable -Name PSWindowsUpdate))) {
+			Write-Output "`n`n  Installing Automated Windows Update Tool..."
+			
+			try {
+				# Will use the local PSWindowsUpdate copy if it exists, otherwise install it from NuGet.
+				$psWindowsUpdateNuPkgs = Get-ChildItem '\Install\Scripts' -Filter 'pswindowsupdate*.nupkg'
+
+				if ($psWindowsUpdateNuPkgs.Count -gt 0) {
+					# SilentlyContinue for any failures here because we will just install from NuGet if anything fails.
+
+					Remove-Item "$Env:TEMP\fgSetup-*.zip" -Force -ErrorAction SilentlyContinue
+					# .nupkg is just a .zip but we must rename it to be able to use Expand-Archive.
+					Copy-Item ($psWindowsUpdateNuPkgs | Sort-Object -Property 'LastWriteTime' | Select-Object -Last 1).FullName "$Env:TEMP\fgSetup-PSWindowsUpdate.zip" -Force -ErrorAction SilentlyContinue
+					
+					Remove-Item '\Install\Scripts\PSWindowsUpdate' -Recurse -Force -ErrorAction SilentlyContinue
+					Expand-Archive "$Env:TEMP\fgSetup-PSWindowsUpdate.zip" '\Install\Scripts\PSWindowsUpdate' -Force -ErrorAction SilentlyContinue
+					Remove-Item "$Env:TEMP\fgSetup-*.zip" -Force -ErrorAction SilentlyContinue
+				}
+
+				if (-not (Test-Path '\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1')) {
+					Install-PackageProvider -Name NuGet -Force -ErrorAction Stop | Out-Null
+					# There is no "Uninstall-PackageProvider" or other simple way to uninstall a package provider, so NuGet will be left installed.
+
+					Install-Module -Name PSWindowsUpdate -Force -ErrorAction Stop
+					# PSWindowsUpdate will be uninstalled after all available Windows Updates have been installed.
+				}
+				
+				Write-Host "`n  Successfully Installed Automated Windows Update Tool" -ForegroundColor Green
+				
+				Add-Content '\Install\Windows Setup Log.txt' "Installed Automated Windows Update Tool - $(Get-Date)" -ErrorAction SilentlyContinue
+			} catch {
+				Write-Host "`n  ERROR INSTALLING PSWINDOWSUPDATE: $_" -ForegroundColor Red
+				Write-Host "`n  ERROR: Failed to install automated Windows Update tool (PSWindowsUpdate)." -ForegroundColor Red
+				
+				Write-Host "`n`n  IMPORTANT: Make sure Ethernet cable is plugged securely or Wi-Fi is connected and try again." -ForegroundColor Red
+
+				$lastTaskSucceeded = $false
+			}
+		}
+
+		if ($lastTaskSucceeded) {
+			Install-QAHelper
+
+			if ((-not (Test-Path '\Install\QA Helper\java-jre\bin\javaw.exe')) -or (-not (Test-Path '\Install\QA Helper\QA_Helper.jar'))) {
+				$lastTaskSucceeded = $false
+			}
+		}
+		
+		if ($lastTaskSucceeded) {
+			Install-WindowsUpdates # Will exit (and launch a new instance of this script) or reboot if successful.
+		}
+
+		# Wait until logged in so we can actually focus the script window.
+		for ( ; ; ) {
+			try {
+				Get-Process 'LogonUI' -ErrorAction Stop | Out-Null
+				Start-Sleep 1
+			} catch {
+				break
+			}
+		}
+		
+		Write-Host "`n`n  !!! THIS COMPUTER CANNOT BE SOLD UNTIL SETUP IS COMPLETED SUCCESSFULLY !!!" -ForegroundColor Red
+		Write-Host "`n`n  If this issue continues, please inform Free Geek I.T.`n" -ForegroundColor Red
+		
+		FocusScriptWindow
+		$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+		Read-Host '  Manually Reboot This Computer or Press ENTER to Try Again'
+	}
+} else {
+	if ((Test-Path '\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1') -or (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
+		if (($LastWindowsUpdatesCount -eq '0') -or ($LastWindowsUpdatesCount -eq 'MaxUpdateCycles')) {
+			# Screen scaling may have already been set after running updates, in which case this won't do anything.
+			# But if drivers were installed from cache and no updates installed, then we'll need to set screen scaling here as the last thing in the setup cycle. 
+			$needsRebootAfterAdjustingScreenScaling = AdjustScreenScaling # See comments within function for info about rebooting after setting screen scaling.
+			
+			Write-Output "`n`n  Uninstalling Automated Windows Update Tool (Windows Update from Settings App IS NOT Affected)..."
+
+			try {
+				# Only try to uninstall PSWindowsUpdate when this script was launched with LastWindowsUpdatesCount of 0 (or MaxUpdateCycles) so that we know updates are done
+				# and that this is a new PowerShell instance which PSWindowsUpdate hasn't been run in so it won't error stating it is currently in use.
+
+				if (Test-Path '\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1') {
+					# Delete the local PSWindowsUpdate when we're done updating just to stop the auto updating cycle.
+					Remove-Item '\Install\Scripts\PSWindowsUpdate' -Recurse -Force -ErrorAction Stop
+				} else {
+					# Delete the installed PSWindowsUpdate when we're done updating to stop the auto updating cycle AND to not leave junk on computer.
+					Uninstall-Module PSWindowsUpdate -ErrorAction Stop
+				}
+
+				Write-Host "`n  Successfully Uninstalled Automated Windows Update Tool" -ForegroundColor Green
+				
+				Add-Content '\Install\Windows Setup Log.txt' "Uninstalled Automated Windows Update Tool - $(Get-Date)" -ErrorAction SilentlyContinue
+			} catch {
+				Write-Host "`n  ERROR UNINSTALLING PSWINDOWSUPDATE: $_" -ForegroundColor Red
+			}
+
+			if ($needsRebootAfterAdjustingScreenScaling) {
+				# Wait until logged in so we don't ever restart before Windows is done doing its own setup during the "Preparing Windows" phase.
+				for ( ; ; ) {
+					try {
+						Get-Process 'LogonUI' -ErrorAction Stop | Out-Null
+						Start-Sleep 1
+					} catch {
+						break
+					}
+				}
+				
+				if ($testMode) {
+					FocusScriptWindow
+					Write-Host "`n`n  AUTOMATIC REBOOT DISABLED IN TEST MODE`n" -ForegroundColor Yellow
+					
+					$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+					Read-Host '  Press ENTER to Reboot After Adjusting Screen Scaling'
+				} else {
+					$rebootTimeout = 15
+					
+					Write-Output "`n`n  This Computer Will Reboot After Adjusting Screen Scaling in $rebootTimeout Seconds..."
+					Write-Host "`n  Or Press Any Key to Reboot Now" -ForegroundColor Cyan
+					
+					FocusScriptWindow
+					$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+					for ($secondsWaited = 0; $secondsWaited -lt $rebootTimeout; $secondsWaited ++) {
+						if ($Host.UI.RawUI.KeyAvailable) {
+							break
+						}
+						
+						Start-Sleep 1
+					}
+				}
+				
+				Restart-Computer
+
+				exit 0 # Not sure if exit is necessary after Restart-Computer but doesn't hurt.
+			}
+		} else {
+			Install-WindowsUpdates # Will exit (and launch a new instance of this script) or reboot if successful.
+		}
+	}
+
+	if ((-not (Test-Path '\Install\QA Helper\java-jre\bin\javaw.exe')) -or (-not (Test-Path '\Install\QA Helper\QA_Helper.jar'))) {
+		Install-QAHelper
+	}
+
+	if ((Test-Path '\Install\QA Helper\java-jre\bin\javaw.exe') -and (Test-Path '\Install\QA Helper\QA_Helper.jar')) {
+		Write-Output "`n`n  Launching QA Helper..."
+		
+		Start-Process '\Install\QA Helper\java-jre\bin\javaw.exe' -NoNewWindow -ArgumentList '-jar', '"\Install\QA Helper\QA_Helper.jar"' -ErrorAction SilentlyContinue
+	}
+
+	Start-Sleep 3 # Sleep for a few seconds to be able to see last results before window closes.
+}

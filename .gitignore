@@ -1,0 +1,26 @@
+# Ignore from macOS:
+.DS_Store
+
+# Ignore file types in any location:
+*.exe
+*.msi
+*.nupkg
+*.dll
+*.txt
+*.xml
+*.zip
+*.cab
+*.png
+
+# Ignore if name starts with in any location:
+OLD-*
+UNUSED-*
+
+# Ignore specific folders within "Create WinPE Image":
+Install\ Folder\ Resources/
+
+# INCLUDE specific XML file within "Setup Resources":
+!UnattendAudit.xml
+
+# Ignore specific folders within "Other Stuff":
+MAR/
