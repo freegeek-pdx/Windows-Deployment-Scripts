@@ -59,8 +59,10 @@ foreach ($thisDriverPack in $lenovoDriverPackCatalogXMLv1.Products.Product) {
                     $osVersionNumber = 8.1
                 } elseif ($thisDriverPack.os -eq 'win10') {
                     $osVersionNumber = 10
+                } elseif ($thisDriverPack.os -eq 'win11') {
+                    $osVersionNumber = 11
                 }
-            } elseif ($thisDriverPack.os -eq 'win10') {
+            } elseif (($thisDriverPack.os -eq 'win10') -or ($thisDriverPack.os -eq 'win11')) {
                 $osVersionNumber = $thisDriverPack.build
                 $osVersionNumber = $osVersionNumber -Replace 'H1', '03'
                 $osVersionNumber = $osVersionNumber -Replace 'H2', '09'
@@ -240,7 +242,7 @@ foreach ($thisLenovoURL in $uniqueSupportPages) {
                         $osVersion = $osVersion.ToLower()
                     }
 
-                    if ((-not $osVersion.StartsWith('windows 7')) -and (-not $osVersion.StartsWith('windows 8')) -and (-not $osVersion.StartsWith('windows 8.1')) -and (-not $osVersion.StartsWith('windows 10'))) {
+                    if ((-not $osVersion.StartsWith('windows 7')) -and (-not $osVersion.StartsWith('windows 8')) -and (-not $osVersion.StartsWith('windows 8.1')) -and (-not $osVersion.StartsWith('windows 10')) -and (-not $osVersion.StartsWith('windows 11'))) {
                         Write-Output "WARNING: SKIPPING INVALID WINDOWS VERSION `"$osVersion`""
                         $didSkipDrivers = $true
                         continue
@@ -260,7 +262,7 @@ foreach ($thisLenovoURL in $uniqueSupportPages) {
                         $packageTitle = $packageTitle.Trim()
                     }
 
-                    if ($osVersion.StartsWith('windows 10')) {
+                    if ($osVersion.StartsWith('windows 10') -or $osVersion.StartsWith('windows 11')) {
                         $possibleWinTenVersion = $packageTitle.ToLower()
                         if ($possibleWinTenVersion.Contains('version ')) {
                             $possibleWinTenVersion = ($possibleWinTenVersion -Split ('version '))[1] # Must use -Split and parens around arg to split on string instead of char.
@@ -276,11 +278,12 @@ foreach ($thisLenovoURL in $uniqueSupportPages) {
                             $possibleWinTenVersion = ($possibleWinTenVersion -Replace '[^0-9h]').ToUpper()
                             if ($possibleWinTenVersion.length -eq 4) {
                                 $osVersion = $osVersion -Replace 'windows 10', "Windows 10 (Version $possibleWinTenVersion)"
+                                $osVersion = $osVersion -Replace 'windows 11', "Windows 11 (Version $possibleWinTenVersion)"
                             } else {
-                                Write-Output "WARNING: INVALID WIN 10 VERSION IN `"$possibleWinTenVersion`""
+                                Write-Output "WARNING: INVALID WIN 10/11 VERSION IN `"$possibleWinTenVersion`""
                             }
                         } else {
-                            Write-Output "WARNING: NO WIN 10 VERSION IN `"$possibleWinTenVersion`""
+                            Write-Output "WARNING: NO WIN 10/11 VERSION IN `"$possibleWinTenVersion`""
                         }
                     }
 
@@ -383,4 +386,4 @@ if ($IsWindows -or ($null -eq $IsWindows)) {
     $Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 }
 
-Read-Host 'DONE - PRESS ENTER TO EXIT'
+Read-Host 'DONE - PRESS ENTER TO EXIT' | Out-Null

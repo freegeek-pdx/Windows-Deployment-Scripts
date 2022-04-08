@@ -27,33 +27,31 @@
 
 # IMPORTANT: "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat" must be run from within the CMD launcher file first for copype to work.
 
-$windowsMajorVersion = '10'
-$windowsFeatureVersion = '21H2'
+$windows10featureVersion = '21H2'
+$windows11featureVersion = $windows10featureVersion
 
-# If for any reason we want to keep using a previous WinPE major or feature version, that can be done with these variables.
-$winPEmajorVersion = $windowsMajorVersion
-$winPEfeatureVersion = '2004'
-$winREfeatureVersion = $windowsFeatureVersion
-
-if ($false) { # Change to "$true" for Windows 11
-    $windowsMajorVersion = '11'
-    $windowsFeatureVersion = '21H2'
-
-    $winPEmajorVersion = $windowsMajorVersion
-    $winPEfeatureVersion = $windowsFeatureVersion
-    $winREfeatureVersion = $windowsFeatureVersion
-}
+$winPEmajorVersion = '11' # It is fine to use WinPE/WinRE from Windows 11 even when Windows 10 will be installed.
+$winPEfeatureVersion = $windows11featureVersion
+$winREfeatureVersion = $winPEfeatureVersion
 
 $winPEname = "WinPE-$winPEmajorVersion-$winPEfeatureVersion"
-$winPEoutputPath = "$HOME\Documents\Free Geek\$winPEname"
 
-$winPEdriversPath = "$HOME\Documents\Free Geek\WinPE Drivers to Install"
-$winREnetDriversPath = "$HOME\Documents\Free Geek\WinRE Net Drivers to Install"
+$basePath = "$HOME\Documents\Free Geek"
+if (Test-Path "$HOME\Documents\Free Geek.lnk") {
+    $basePath = (New-Object -ComObject WScript.Shell).CreateShortcut("$HOME\Documents\Free Geek.lnk").TargetPath
+}
 
-$osImagesSourcePath = "$HOME\Documents\Free Geek\Windows-$windowsMajorVersion-Pro-$windowsFeatureVersion" # Used to include latest installation WIM in "os-images" folder in WinPE USB
+$winPEoutputPath = "$basePath\$winPEname"
 
-$winREimagesSourcePath = "$HOME\Documents\Free Geek\Windows-$windowsMajorVersion-Pro-$winREfeatureVersion"
+$winPEdriversPath = "$basePath\WinPE Drivers to Install"
+$winREnetDriversPath = "$basePath\WinRE Net Drivers to Install"
+
+$winREimagesSourcePath = "$basePath\Windows-$winPEmajorVersion-Pro-$winREfeatureVersion"
 $winREname = "WinRE-$winPEmajorVersion-$winREfeatureVersion"
+
+# Used to include latest installation WIM in "os-images" folder in WinPE USB
+$win10imagesSourcePath = "$basePath\Windows-10-Pro-$windows10featureVersion"
+$win11imagesSourcePath = "$basePath\Windows-11-Pro-$windows11featureVersion"
 
 $setupResourcesSourcePath = "$(Split-Path -Parent $PSScriptRoot)\Setup Resources" # Used to include "setup-resources" folder in WinPE USB
 $appInstallersSourcePath = "$PSScriptRoot\App Installers" # Used to include "app-installers" folder in WinPE USB
@@ -61,32 +59,31 @@ $appInstallersSourcePath = "$PSScriptRoot\App Installers" # Used to include "app
 
 Write-Output "`n  Creating WinPE Image...`n`n`n`n" # Add empty lines for PowerShell progress UI
 
-
-if ((Test-Path "$winPEoutputPath\mount") -and ((Get-ChildItem "$winPEoutputPath\mount").Count -gt 0)) {
-    Write-Output "`n  Unmounting Previously Mounted OLD WinPE Image..."
-    Dismount-WindowsImage -Path "$winPEoutputPath\mount" -Discard -ErrorAction Stop | Out-Null
-    Remove-Item "$winPEoutputPath\mount" -Recurse -Force -ErrorAction Stop
+$systemTempDir = [System.Environment]::GetEnvironmentVariable('TEMP', 'Machine') # Get SYSTEM (not user) temporary directory, which should be "\Windows\Temp".
+if (-not (Test-Path $systemTempDir)) {
+    $systemTempDir = '\Windows\Temp'
 }
 
-if ((Test-Path "$winPEoutputPath\mountPE") -and ((Get-ChildItem "$winPEoutputPath\mountPE").Count -gt 0)) {
+if ((Test-Path "$systemTempDir\mountPE") -and ((Get-ChildItem "$systemTempDir\mountPE").Count -gt 0)) {
     Write-Output "`n  Unmounting Previously Mounted WinPE Image..."
-    Dismount-WindowsImage -Path "$winPEoutputPath\mountPE" -Discard -ErrorAction Stop | Out-Null
-    Remove-Item "$winPEoutputPath\mountPE" -Recurse -Force -ErrorAction Stop
+    Dismount-WindowsImage -Path "$systemTempDir\mountPE" -Discard -ErrorAction Stop | Out-Null
+    Remove-Item "$systemTempDir\mountPE" -Recurse -Force -ErrorAction Stop
 }
 
 
-# TODO: Re-work this script to not need to re-create the entire WinPE everytime and be able to easily maintain the 2 versions with and without Wi-Fi (net) drivers (for iPXE vs USB).
-<#if (Test-Path "$winPEoutputPath\media\sources\boot.wim") {
-    $promptCaption = '  Previously Copied WinPE Image from ADK and Installed PowerShell - Do You Want Fully to Re-Create WinPE?'
-    $promptMessage = "`n  Fully re-creating WinPE is not normally necessary...`n  All existing resources will be updated and new resources will be copied (except Drivers) without needing to fully re-create WinPE.`n  Although, if you have REMOVED or RENAMED some resources that are put into the System32 folder, they will NOT be removed from WinPE unless you fully re-create WinPE.`n  Also, if you have CHANGED DRIVERS they will NOT be UPDATED unless you fully re-create WinPE.`n`n"
-    $promptChoices = '&Yes', '&No'
+# TODO: Eventually, re-work this script to not need to re-create the entire WinPE everytime and be able to easily maintain the 2 versions with and without Wi-Fi (net) drivers (for iPXE vs USB).
+if (Test-Path "$winPEoutputPath\media\sources\boot.wim") {
+    $promptCaption = "  `"$winPEname`" Has Already Been Created - Do You Want to Delete & Re-Create WinPE?"
+    $promptChoices = '&No, Exit', '&Yes'
 
-    $promptResponse = $Host.UI.PromptForChoice($promptCaption, $promptMessage, $promptChoices, 1)
+    $promptResponse = $Host.UI.PromptForChoice($promptCaption, "`n", $promptChoices, 1)
 
-    #>if (<#($promptResponse -eq 0) -and #>(Test-Path $winPEoutputPath)) {
+    if ($promptResponse -eq 0) {
+        exit 0
+    } elseif (Test-Path $winPEoutputPath) {
         Remove-Item $winPEoutputPath -Recurse -Force -ErrorAction Stop
-    }<#
-}#>
+    }
+}
 
 
 $didJustRunCopyPE = $false
@@ -107,7 +104,7 @@ if (-not (Test-Path "$winPEoutputPath\media\sources\boot.wim")) {
     # Delete the "mount" folder created by ADK since we won't use it.
     Remove-Item "$winPEoutputPath\mount" -Recurse -Force -ErrorAction Stop
 
-    if ((Test-Path "$winPEoutputPath\media\sources\boot.wim") -and ($latestWinRE = Get-ChildItem $winREimagesSourcePath -Filter "$winREname*.wim" | Sort-Object -Property LastWriteTime | Select-Object -Last 1)) {
+    if ((Test-Path "$winPEoutputPath\media\sources\boot.wim") -and ($latestWinRE = Get-ChildItem $winREimagesSourcePath -Filter "$winREname-*.wim" | Sort-Object -Property LastWriteTime | Select-Object -Last 1)) {
         $latestWinREpath = $latestWinRE.FullName
         $latestWinREfilename = $latestWinRE.BaseName
 
@@ -130,6 +127,9 @@ if (-not (Test-Path "$winPEoutputPath\media\sources\boot.wim")) {
     $didJustRunCopyPE = $true
 }
 
+$startDate = Get-Date
+Write-Output "`n  Starting at $startDate..."
+
 $wimDetails = Get-WindowsImage -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 -ErrorAction Stop
 $wimDetails # Print wimDetails
 
@@ -142,29 +142,29 @@ if ($wimDetails.ImageName -like '*Recovery Environment*') {
 
 Write-Output "`n  Mounting $wimImageBaseName Image..."
 
-if (-not (Test-Path "$winPEoutputPath\mountPE")) {
-    New-Item -ItemType 'Directory' -Path "$winPEoutputPath\mountPE" -ErrorAction Stop | Out-Null
+if (-not (Test-Path "$systemTempDir\mountPE")) {
+    New-Item -ItemType 'Directory' -Path "$systemTempDir\mountPE" -ErrorAction Stop | Out-Null
 }
 
 # Dism /Mount-Image /ImageFile:"C:\WinPE_amd64_PS\media\sources\boot.wim" /Index:1 /MountDir:"C:\WinPE_amd64_PS\mount"
-Mount-WindowsImage -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 -Path "$winPEoutputPath\mountPE" -CheckIntegrity -ErrorAction Stop | Out-Null
+Mount-WindowsImage -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 -Path "$systemTempDir\mountPE" -CheckIntegrity -ErrorAction Stop | Out-Null
 
 
 Write-Output "`n  Increasing WinPE Scratch Space..."
 # Increase WinPE Scratch Space: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-mount-and-customize#add-temporary-storage-scratch-space
 # If too manu GUI apps get launched during testing it appears the limited default of 32 MB of scratch space can get used up and then other stuff can fail to load such as required DISM PowerShell modules.
 
-Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$winPEoutputPath\mountPE`"", '/Get-ScratchSpace'
+Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountPE`"", '/Get-ScratchSpace'
 
 # PowerShell equivalent of DISM's "/Set-ScratchSpace" does not seem to exist.
-$dismSetScratchSpaceExitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$winPEoutputPath\mountPE`"", '/Set-ScratchSpace:512').ExitCode
+$dismSetScratchSpaceExitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountPE`"", '/Set-ScratchSpace:512').ExitCode
 
 if ($dismSetScratchSpaceExitCode -ne 0) {
     Write-Host "`n  ERROR: FAILED TO INCREASE WINPE SCRATCH SPACE - EXIT CODE: $dismSetScratchSpaceExitCode" -ForegroundColor Red
 }
 
 
-$winPEoptionalFeatures = (Get-WindowsOptionalFeature -Path "$winPEoutputPath\mountPE" | Where-Object State -eq Enabled).FeatureName | Sort-Object -Unique
+$winPEoptionalFeatures = (Get-WindowsOptionalFeature -Path "$systemTempDir\mountPE" | Where-Object State -eq Enabled).FeatureName | Sort-Object -Unique
 # Pre-Installed WinPE Features: *NONE*
 # Pre-Installed WinRE Features: Microsoft-Windows-WinPE-ATBroker-Package, Microsoft-Windows-WinPE-AudioCore-Package, Microsoft-Windows-WinPE-AudioDrivers-Package, Microsoft-Windows-WinPE-Narrator-Package, Microsoft-Windows-WinPE-Speech-TTS-Package, Microsoft-Windows-WinPE-SRH-Package, WinPE-EnhancedStorage, WinPE-FMAPI-Package, WinPE-HTA, WinPE-Rejuv, WinPE-Scripting, WinPE-SecureStartup, WinPE-SRT, WinPE-StorageWMI, WinPE-TPM, WinPE-WDS-Tools, WinPE-WiFi, WinPE-WMI
 
@@ -174,21 +174,24 @@ if ($didJustRunCopyPE) {
     Write-Output "`n  Installing PowerShell Into $wimImageBaseName Image..."
     $winPEpackagesToInstall = @('WMI', 'NetFX', 'Scripting', 'PowerShell', 'StorageWMI', 'DismCmdlets')
     foreach ($thisWinPEpackageToInstall in $winPEpackagesToInstall) {
-        if ($winPEoptionalFeatures -notcontains "WinPE-$thisWinPEpackageToInstall") { # Some of these will already be installed if we are starting with a WinRE image..
-            Write-Output "    Installing $thisWinPEpackageToInstall Package Into $wimImageBaseName Image..."
+        if ($winPEoptionalFeatures -notcontains "WinPE-$thisWinPEpackageToInstall") { # Some of these will already be installed if we are starting with a WinRE image...
+            $packageStartDate = Get-Date
+            Write-Output "    Installing $thisWinPEpackageToInstall Package Into $wimImageBaseName Image at $($updateStartDate)..."
             # Dism /Add-Package /Image:"C:\WinPE_amd64_PS\mount" /PackagePath:"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-PACKAGENAME.cab"
-            Add-WindowsPackage -Path "$winPEoutputPath\mountPE" -PackagePath "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-$thisWinPEpackageToInstall.cab" -WarningAction Stop -ErrorAction Stop | Out-Null
+            Add-WindowsPackage -Path "$systemTempDir\mountPE" -PackagePath "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-$thisWinPEpackageToInstall.cab" -WarningAction Stop -ErrorAction Stop | Out-Null
             # Dism /Add-Package /Image:"C:\WinPE_amd64_PS\mount" /PackagePath:"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\en-us\WinPE-PACKAGENAME_en-us.cab"
-            Add-WindowsPackage -Path "$winPEoutputPath\mountPE" -PackagePath "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\en-us\WinPE-$($thisWinPEpackageToInstall)_en-us.cab" -WarningAction Stop -ErrorAction Stop | Out-Null
+            Add-WindowsPackage -Path "$systemTempDir\mountPE" -PackagePath "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\en-us\WinPE-$($thisWinPEpackageToInstall)_en-us.cab" -WarningAction Stop -ErrorAction Stop | Out-Null
+            $packageEndDate = Get-Date
+            Write-Output "      Finished Installing at $($packageEndDate) ($([math]::Round(($packageEndDate - $packageStartDate).TotalMinutes, 2)) Minutes)"
         } else {
             Write-Output "    $thisWinPEpackageToInstall Package ALREADY INSTALLED"
         }
     }
 
-    $winPEoptionalFeatures = (Get-WindowsOptionalFeature -Path "$winPEoutputPath\mountPE" | Where-Object State -eq Enabled).FeatureName | Sort-Object -Unique
+    $winPEoptionalFeatures = (Get-WindowsOptionalFeature -Path "$systemTempDir\mountPE" | Where-Object State -eq Enabled).FeatureName | Sort-Object -Unique
     Write-Output "`n  Installed Features AFTER PowerShell: $($winPEoptionalFeatures -Join ', ')"
     
-    Write-Output "`n  Disabled Features: $((Get-WindowsOptionalFeature -Path "$winPEoutputPath\mountPE" | Where-Object State -eq Disabled | Sort-Object -Unique).FeatureName -Join ', ')"
+    Write-Output "`n  Disabled Features: $((Get-WindowsOptionalFeature -Path "$systemTempDir\mountPE" | Where-Object State -eq Disabled | Sort-Object -Unique).FeatureName -Join ', ')"
     
     if (Test-Path $winPEdriversPath) {
         $winPEdriverInfPaths = (Get-ChildItem $winPEdriversPath -Recurse -File -Include '*.inf').FullName
@@ -203,7 +206,7 @@ if ($didJustRunCopyPE) {
                 
                 try {
                     Write-Output "    Installing Driver $thisDriverIndex of $($winPEdriverInfPaths.Count): $thisDriverFolderName..."
-                    Add-WindowsDriver -Path "$winPEoutputPath\mountPE" -Driver $thisDriverInfPath -ErrorAction Stop | Out-Null
+                    Add-WindowsDriver -Path "$systemTempDir\mountPE" -Driver $thisDriverInfPath -ErrorAction Stop | Out-Null
                 } catch {
                     Write-Host "      ERROR INSTALLING DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
                 }
@@ -218,10 +221,10 @@ if ($didJustRunCopyPE) {
 Write-Output "`n  Setting LongPathsEnabled in $wimImageBaseName Registry..."
 
 # IMPORTANT: Some Lenovo Driver Packs create very long paths and LongPathsEnabled needs to be set in WinPE to be able to successfully read the files at long paths within these Driver Packs.
-# https://docs.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation#enable-long-paths-in-windows-10-version-1607-and-later
+# https://docs.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=powershell#enable-long-paths-in-windows-10-version-1607-and-later
 # To edit registry of offline wim: https://www.tenforums.com/tutorials/95002-dism-edit-registry-offline-image.html
 
-$regLoadExitCode = (Start-Process 'reg' -NoNewWindow -Wait -PassThru -RedirectStandardOutput 'NUL' -ArgumentList 'load', "HKLM\OFFLINE-$wimImageBaseName-SYSTEM", "`"$winPEoutputPath\mountPE\Windows\System32\Config\System`"").ExitCode
+$regLoadExitCode = (Start-Process 'reg' -NoNewWindow -Wait -PassThru -RedirectStandardOutput 'NUL' -ArgumentList 'load', "HKLM\OFFLINE-$wimImageBaseName-SYSTEM", "`"$systemTempDir\mountPE\Windows\System32\Config\System`"").ExitCode
 
 if ($regLoadExitCode -eq 0) {
     $winPEfileSystemRegistryPath = "HKLM:\OFFLINE-$wimImageBaseName-SYSTEM\ControlSet001\Control\FileSystem"
@@ -281,7 +284,7 @@ if (Test-Path "$PSScriptRoot\Process Explorer Exports for Missing DLLs") {
             foreach ($thisProcessExplorerLogLine in (Get-Content $_.FullName)) {
                 if ($thisProcessExplorerLogLine.Contains('\Windows\System32\') -and (-not ($thisProcessExplorerLogLine.EndsWith('.exe')))) {
                     $thisDLLPathInOS = $thisProcessExplorerLogLine -replace '^[^:\\]*:\\', '\'
-                    $thisDLLPathInWinPE = $thisProcessExplorerLogLine -replace '^[^:\\]*:\\', "$winPEoutputPath\mountPE\"
+                    $thisDLLPathInWinPE = $thisProcessExplorerLogLine -replace '^[^:\\]*:\\', "$systemTempDir\mountPE\"
                     
                     if (-not (Test-Path $thisDLLPathInWinPE)) {
                         if ($ignoreMissingDLLs.Contains($(Split-Path $thisDLLPathInOS -Leaf))) {
@@ -305,36 +308,36 @@ if (Test-Path "$PSScriptRoot\Process Explorer Exports for Missing DLLs") {
 }
 
 
-if (-not (Test-Path "$winPEoutputPath\mountPE\Windows\System32\W32tm.exe")) {
+if (-not (Test-Path "$systemTempDir\mountPE\Windows\System32\W32tm.exe")) {
     Write-Output "`n  Copying `"W32tm.exe`" Into $wimImageBaseName Image..."
 
     # Install W32tm.exe into WinPE so we can sync time in WinPE to be sure QA Helper can be installed since if time is far off HTTPS will fail.
-    Copy-Item '\Windows\System32\W32tm.exe' "$winPEoutputPath\mountPE\Windows\System32" -Force -ErrorAction Stop
+    Copy-Item '\Windows\System32\W32tm.exe' "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
 }
 
-if (-not (Test-Path "$winPEoutputPath\mountPE\Windows\System32\taskkill.exe")) {
+if (-not (Test-Path "$systemTempDir\mountPE\Windows\System32\taskkill.exe")) {
     Write-Output "`n  Copying `"taskkill.exe`" Into $wimImageBaseName Image for QA Helper to Use..."
 
     # Install taskkill.exe into WinPE so we can call it from QA Helper for convenience of not having to rely on killing with PowerShell (which is slower to load).
-    Copy-Item '\Windows\System32\taskkill.exe' "$winPEoutputPath\mountPE\Windows\System32" -Force -ErrorAction Stop
+    Copy-Item '\Windows\System32\taskkill.exe' "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
 }
 
 if ($winPEoptionalFeatures -contains 'Microsoft-Windows-WinPE-AudioDrivers-Package') {
     # WinRE supports audio, so add these files for QA Helper to be able to use.
     
-    if (-not (Test-Path "$winPEoutputPath\mountPE\Windows\System32\SndVol.exe")) {
+    if (-not (Test-Path "$systemTempDir\mountPE\Windows\System32\SndVol.exe")) {
         Write-Output "`n  Copying `"SndVol.exe`" Into $wimImageBaseName Image for QA Helper Audio Test..."
     
-        Copy-Item '\Windows\System32\SndVol.exe' "$winPEoutputPath\mountPE\Windows\System32" -Force -ErrorAction Stop
+        Copy-Item '\Windows\System32\SndVol.exe' "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
     }
 
-    if (-not (Test-Path "$winPEoutputPath\mountPE\Windows\Media")) {
+    if (-not (Test-Path "$systemTempDir\mountPE\Windows\Media")) {
         Write-Output "`n  Copying Success and Error Sound Files Into $wimImageBaseName Image for QA Helper to Use..."
 
-        New-Item -ItemType 'Directory' -Path "$winPEoutputPath\mountPE\Windows\Media" -ErrorAction Stop | Out-Null
+        New-Item -ItemType 'Directory' -Path "$systemTempDir\mountPE\Windows\Media" -ErrorAction Stop | Out-Null
 
-        Copy-Item '\Windows\Media\Windows Foreground.wav' "$winPEoutputPath\mountPE\Windows\Media" -Force -ErrorAction Stop 
-        Copy-Item '\Windows\Media\Windows Exclamation.wav' "$winPEoutputPath\mountPE\Windows\Media" -Force -ErrorAction Stop  
+        Copy-Item '\Windows\Media\Windows Foreground.wav' "$systemTempDir\mountPE\Windows\Media" -Force -ErrorAction Stop 
+        Copy-Item '\Windows\Media\Windows Exclamation.wav' "$systemTempDir\mountPE\Windows\Media" -Force -ErrorAction Stop  
     }
 }
 
@@ -343,7 +346,7 @@ if (Test-Path "$PSScriptRoot\System32 Folder Resources") {
 
     if ($system32FolderResourcesToCopy.Count -gt 0) {
         Write-Output "`n  Copying System32 Folder Resources Into $wimImageBaseName Image..."
-        Copy-Item "$PSScriptRoot\System32 Folder Resources\*" "$winPEoutputPath\mountPE\Windows\System32" -Recurse -Force -ErrorAction Stop
+        Copy-Item "$PSScriptRoot\System32 Folder Resources\*" "$systemTempDir\mountPE\Windows\System32" -Recurse -Force -ErrorAction Stop
     } else {
         Write-Host "`n  NOTHING IN `"System32 Folder Resources`" TO COPY" -ForegroundColor Yellow
     }
@@ -358,13 +361,25 @@ if (Test-Path "$PSScriptRoot\Install Folder Resources") {
     if ($installFolderResourcesToCopy.Count -gt 0) {
         Write-Output "`n  Copying Install Folder Resources Into $wimImageBaseName Image..."
 
-        if (Test-Path "$winPEoutputPath\mountPE\Install") {
-            Remove-Item "$winPEoutputPath\mountPE\Install" -Recurse -Force -ErrorAction Stop
+        if (Test-Path "$systemTempDir\mountPE\Install") {
+            Remove-Item "$systemTempDir\mountPE\Install" -Recurse -Force -ErrorAction Stop
         }
 
-        New-Item -ItemType 'Directory' -Path "$winPEoutputPath\mountPE\Install" -ErrorAction Stop | Out-Null
+        New-Item -ItemType 'Directory' -Path "$systemTempDir\mountPE\Install" -ErrorAction Stop | Out-Null
 
-        Copy-Item "$PSScriptRoot\Install Folder Resources\*" "$winPEoutputPath\mountPE\Install" -Recurse -Force -ErrorAction Stop
+        Copy-Item "$PSScriptRoot\Install Folder Resources\*" "$systemTempDir\mountPE\Install" -Recurse -Force -ErrorAction Stop
+
+        Write-Output "    Unarchiving Java in Install Folder in $wimImageBaseName Image..."
+
+        if (Test-Path "$systemTempDir\mountPE\Install\QA Helper\java-jre") {
+            Remove-Item "$systemTempDir\mountPE\Install\QA Helper\java-jre" -Recurse -Force -ErrorAction Stop
+        }
+
+        Expand-Archive "$systemTempDir\mountPE\Install\QA Helper\jlink-jre-*_windows-x64.zip" "$systemTempDir\mountPE\Install\QA Helper\" -Force -ErrorAction Stop
+
+        if (Test-Path "$systemTempDir\mountPE\Install\QA Helper\jlink-jre-*_windows-x64.zip") {
+            Remove-Item "$systemTempDir\mountPE\Install\QA Helper\jlink-jre-*_windows-x64.zip" -Force -ErrorAction Stop
+        }
     } else {
         Write-Host "`n  NOTHING IN `"Install Folder Resources`" TO COPY" -ForegroundColor Yellow
     }
@@ -375,13 +390,13 @@ if (Test-Path "$PSScriptRoot\Install Folder Resources") {
 
 Write-Output "`n  Cleaning Up $wimImageBaseName Image..."
 # PowerShell equivalent of DISM's "/Cleanup-Image /StartComponentCleanup /ResetBase" does not seem to exist.
-$dismCleanupExitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$winPEoutputPath\mountPE`"", '/Cleanup-Image', '/StartComponentCleanup', '/ResetBase').ExitCode
+$dismCleanupExitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountPE`"", '/Cleanup-Image', '/StartComponentCleanup', '/ResetBase').ExitCode
 
 if ($dismCleanupExitCode -eq 0) {
     Write-Output "`n  Unmounting and Saving Updated $wimImageBaseName Image..."
     # Dism /Unmount-Image /MountDir:C:\WinPE_amd64_PS\mount /Commit
-    Dismount-WindowsImage -Path "$winPEoutputPath\mountPE" -CheckIntegrity -Save -ErrorAction Stop | Out-Null
-    Remove-Item "$winPEoutputPath\mountPE" -Recurse -Force -ErrorAction Stop
+    Dismount-WindowsImage -Path "$systemTempDir\mountPE" -CheckIntegrity -Save -ErrorAction Stop | Out-Null
+    Remove-Item "$systemTempDir\mountPE" -Recurse -Force -ErrorAction Stop
     Get-WindowsImage -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 -ErrorAction Stop
 
     Write-Output "`n  Exporting Compressed $wimImageBaseName Image as `"$winPEname.wim`"..."
@@ -413,14 +428,15 @@ if ($didJustRunCopyPE -and ($winPEoptionalFeatures -contains 'WinPE-WiFi') -and 
         if (Test-Path "$winPEoutputPath\media\sources\boot.wim") {
             Write-Output "`n  Re-Mounting $wimImageBaseName Image for Net Drivers..."
             
-            if (-not (Test-Path "$winPEoutputPath\mountPE")) {
-                New-Item -ItemType 'Directory' -Path "$winPEoutputPath\mountPE" -ErrorAction Stop | Out-Null
+            if (-not (Test-Path "$systemTempDir\mountPE")) {
+                New-Item -ItemType 'Directory' -Path "$systemTempDir\mountPE" -ErrorAction Stop | Out-Null
             }
         
-            Mount-WindowsImage -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 -Path "$winPEoutputPath\mountPE" -CheckIntegrity -ErrorAction Stop | Out-Null
+            Mount-WindowsImage -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 -Path "$systemTempDir\mountPE" -CheckIntegrity -ErrorAction Stop | Out-Null
         }
-        
-        Write-Output "`n  Installing $($winREnetDriverInfPaths.Count) Net Drivers Into $wimImageBaseName Image..."
+
+        $startDriversDate = Get-Date
+        Write-Output "`n  Installing $($winREnetDriverInfPaths.Count) Net Drivers Into $wimImageBaseName Image at $startDriversDate..."
 
         $thisDriverIndex = 0
         foreach ($thisDriverInfPath in $winREnetDriverInfPaths) {
@@ -429,22 +445,25 @@ if ($didJustRunCopyPE -and ($winPEoptionalFeatures -contains 'WinPE-WiFi') -and 
             
             try {
                 Write-Output "    Installing Net Driver $thisDriverIndex of $($winREnetDriverInfPaths.Count): $thisDriverFolderName..."
-                Add-WindowsDriver -Path "$winPEoutputPath\mountPE" -Driver $thisDriverInfPath -ErrorAction Stop | Out-Null
+                Add-WindowsDriver -Path "$systemTempDir\mountPE" -Driver $thisDriverInfPath -ErrorAction Stop | Out-Null
             } catch {
                 Write-Host "      ERROR INSTALLING NET DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
             }
         }
+
+        $endDriversDate = Get-Date
+        Write-Output "`n  Installing Net Driver at $endDriversDate ($([math]::Round(($endDriversDate - $startDriversDate).TotalMinutes, 2)) Minutes)..."
     }
 
     Write-Output "`n  Cleaning Up $wimImageBaseName Net Image..."
     # PowerShell equivalent of DISM's "/Cleanup-Image /StartComponentCleanup /ResetBase" does not seem to exist.
-    $dismCleanupExitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$winPEoutputPath\mountPE`"", '/Cleanup-Image', '/StartComponentCleanup', '/ResetBase').ExitCode
+    $dismCleanupExitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountPE`"", '/Cleanup-Image', '/StartComponentCleanup', '/ResetBase').ExitCode
 
     if ($dismCleanupExitCode -eq 0) {
         Write-Output "`n  Unmounting and Saving Updated $wimImageBaseName Net Image..."
         # Dism /Unmount-Image /MountDir:C:\WinPE_amd64_PS\mount /Commit
-        Dismount-WindowsImage -Path "$winPEoutputPath\mountPE" -CheckIntegrity -Save -ErrorAction Stop | Out-Null
-        Remove-Item "$winPEoutputPath\mountPE" -Recurse -Force -ErrorAction Stop
+        Dismount-WindowsImage -Path "$systemTempDir\mountPE" -CheckIntegrity -Save -ErrorAction Stop | Out-Null
+        Remove-Item "$systemTempDir\mountPE" -Recurse -Force -ErrorAction Stop
         Get-WindowsImage -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 -ErrorAction Stop
 
         Write-Output "`n  Exporting Compressed $wimImageBaseName Image as `"$winPEname-NetDrivers.wim`"..."
@@ -479,35 +498,68 @@ if (Test-Path "$winPEoutputPath\media") {
 
     New-Item -ItemType 'Directory' -Path "$winPEoutputPath\media\windows-resources" -ErrorAction Stop | Out-Null
 
-    if (Test-Path $osImagesSourcePath) {
-        if ($latestWim = Get-ChildItem $osImagesSourcePath -Filter '*.wim' | Sort-Object -Property LastWriteTime | Select-Object -Last 1) {
-            $latestWimPath = $latestWim.FullName
-            $latestWimFilename = $latestWim.BaseName
+    $maxFat32FileSize = 4294967294
 
-            Write-Output "    Copying Latest Windows Install Image ($latestWimFilename) Into `"windows-resources\os-images`"..."
+    if (Test-Path $win10imagesSourcePath) {
+        if ($latestWin10wim = Get-ChildItem $win10imagesSourcePath -Filter "Windows-10-Pro-$windows10featureVersion-*.wim" | Sort-Object -Property LastWriteTime | Select-Object -Last 1) {
+            $latestWin10wimPath = $latestWin10wim.FullName
+            $latestWin10wimFilename = $latestWin10wim.BaseName
+
+            Write-Output "    Copying Latest Windows 10 Install Image ($latestWin10wimFilename) Into `"windows-resources\os-images`"..."
             
             New-Item -ItemType 'Directory' -Path "$winPEoutputPath\media\windows-resources\os-images" -ErrorAction Stop | Out-Null
 
-            $maxFat32FileSize = 4294967294
-            $wimFileSize = $latestWim.Length
+            $wimFileSize = $latestWin10wim.Length
 
             if ($wimFileSize -le $maxFat32FileSize) {
-                Write-Output "      Windows Install Image Is Within FAT32 Max File Size ($wimFileSize <= $maxFat32FileSize)"
+                Write-Output "      Windows 10 Install Image Is Within FAT32 Max File Size ($wimFileSize <= $maxFat32FileSize)"
 
-                Copy-Item $latestWimPath "$winPEoutputPath\media\windows-resources\os-images" -ErrorAction Stop
+                Copy-Item $latestWin10wimPath "$winPEoutputPath\media\windows-resources\os-images" -ErrorAction Stop
             } else {
                 $splitMBs = 2500
-                Write-Host "      Windows Install Image Is Bigger Than FAT32 Max File Size ($wimFileSize > $maxFat32FileSize)`n      SPLITTING WINDOWS IMAGE INTO $splitMBs MB SWMs" -ForegroundColor Yellow
+                Write-Host "      Windows 10 Install Image Is Bigger Than FAT32 Max File Size ($wimFileSize > $maxFat32FileSize)`n      SPLITTING WINDOWS IMAGE INTO $splitMBs MB SWMs" -ForegroundColor Yellow
 
-                Split-WindowsImage -ImagePath $latestWimPath -SplitImagePath "$winPEoutputPath\media\windows-resources\os-images\$latestWimFilename+.swm" -FileSize $splitMBs -CheckIntegrity -ErrorAction Stop | Out-Null
+                Split-WindowsImage -ImagePath $latestWin10wimPath -SplitImagePath "$winPEoutputPath\media\windows-resources\os-images\$latestWin10wimFilename+.swm" -FileSize $splitMBs -CheckIntegrity -ErrorAction Stop | Out-Null
 
-                Rename-Item "$winPEoutputPath\media\windows-resources\os-images\$latestWimFilename+.swm" "$winPEoutputPath\media\windows-resources\os-images\$latestWimFilename+1.swm"
+                Rename-Item "$winPEoutputPath\media\windows-resources\os-images\$latestWin10wimFilename+.swm" "$winPEoutputPath\media\windows-resources\os-images\$latestWin10wimFilename+1.swm"
             }
         } else {
-            Write-Host "    NO WINDOWS INSTALL IMAGE FILE FOR $wimImageBaseName USB" -ForegroundColor Yellow
+            Write-Host "    NO WINDOWS 10 INSTALL IMAGE FILE FOR $wimImageBaseName USB" -ForegroundColor Yellow
         }
     } else {
-        Write-Host "    NO WINDOWS INSTALL IMAGE FOLDER FOR $wimImageBaseName USB" -ForegroundColor Yellow
+        Write-Host "    NO WINDOWS 10 INSTALL IMAGE FOLDER FOR $wimImageBaseName USB" -ForegroundColor Yellow
+    }
+
+    if (Test-Path $win11imagesSourcePath) {
+        if ($latestWin11wim = Get-ChildItem $win11imagesSourcePath -Filter "Windows-11-Pro-$windows11featureVersion-*.wim" | Sort-Object -Property LastWriteTime | Select-Object -Last 1) {
+            $latestWin11wimPath = $latestWin11wim.FullName
+            $latestWin11wimFilename = $latestWin11wim.BaseName
+
+            Write-Output "    Copying Latest Windows 11 Install Image ($latestWin11wimFilename) Into `"windows-resources\os-images`"..."
+            
+            if (-not (Test-Path "$winPEoutputPath\media\windows-resources\os-images")) {
+                New-Item -ItemType 'Directory' -Path "$winPEoutputPath\media\windows-resources\os-images" -ErrorAction Stop | Out-Null
+            }
+
+            $wimFileSize = $latestWin11wim.Length
+
+            if ($wimFileSize -le $maxFat32FileSize) {
+                Write-Output "      Windows 11 Install Image Is Within FAT32 Max File Size ($wimFileSize <= $maxFat32FileSize)"
+
+                Copy-Item $latestWin11wimPath "$winPEoutputPath\media\windows-resources\os-images" -ErrorAction Stop
+            } else {
+                $splitMBs = 2500
+                Write-Host "      Windows 11 Install Image Is Bigger Than FAT32 Max File Size ($wimFileSize > $maxFat32FileSize)`n      SPLITTING WINDOWS IMAGE INTO $splitMBs MB SWMs" -ForegroundColor Yellow
+
+                Split-WindowsImage -ImagePath $latestWin11wimPath -SplitImagePath "$winPEoutputPath\media\windows-resources\os-images\$latestWin11wimFilename+.swm" -FileSize $splitMBs -CheckIntegrity -ErrorAction Stop | Out-Null
+
+                Rename-Item "$winPEoutputPath\media\windows-resources\os-images\$latestWin11wimFilename+.swm" "$winPEoutputPath\media\windows-resources\os-images\$latestWin11wimFilename+1.swm"
+            }
+        } else {
+            Write-Host "    NO WINDOWS 11 INSTALL IMAGE FILE FOR $wimImageBaseName USB" -ForegroundColor Yellow
+        }
+    } else {
+        Write-Host "    NO WINDOWS 11 INSTALL IMAGE FOLDER FOR $wimImageBaseName USB" -ForegroundColor Yellow
     }
 
     if (Test-Path $setupResourcesSourcePath) {
@@ -532,3 +584,6 @@ if (Test-Path "$winPEoutputPath\media") {
 } else {
     Write-Host "`n`n  NO MEDIA FOLDER FOR $wimImageBaseName USB" -ForegroundColor Red
 }
+
+$endDate = Get-Date
+Write-Output "`n  Finished at $endDate ($([math]::Round(($endDate - $startDate).TotalMinutes, 2)) Minutes)"

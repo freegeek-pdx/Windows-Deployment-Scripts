@@ -77,14 +77,16 @@ foreach ($thisDriverPack in $hpDriverPackCatalogXML.NewDataSet.HPClientDriverPac
     if (($thisDriverPack.Architecture -eq '64-bit') -and (-not $thisDriverPack.OSName.Contains(' IoT '))) {
         $osVersionNumber = 0
 
-        if ($thisDriverPack.OSName.StartsWith('Windows 10') -and $thisDriverPack.OSName.Contains(',')) {
-            $osVersionNumber = $thisDriverPack.OSName -Replace 'Windows 10 64-bit, '
+        if (($thisDriverPack.OSName.StartsWith('Windows 10') -or $thisDriverPack.OSName.StartsWith('Windows 11')) -and $thisDriverPack.OSName.Contains(',')) {
+            $osVersionNumber = $thisDriverPack.OSName -Replace 'Windows 10 64-bit, ', '10'
+            $osVersionNumber = $osVersionNumber -Replace 'Windows 11 64-bit, ', '11'
             $osVersionNumber = $osVersionNumber -Replace 'H1', '03'
             $osVersionNumber = $osVersionNumber -Replace 'H2', '09'
             $osVersionNumber = [decimal]($osVersionNumber -Replace '[^0-9]').Trim()
         } else {
             $osVersionNumber = $thisDriverPack.OSName -Replace '64-bit'
             $osVersionNumber = [decimal]($osVersionNumber -Replace '[^0-9.]').Trim()
+            $osVersionNumber *= 10000
         }
 
         $systemIDs = $thisDriverPack.SystemId.Split(',').Trim().ToLower()
@@ -378,4 +380,4 @@ if ($IsWindows -or ($null -eq $IsWindows)) {
     $Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 }
 
-Read-Host 'DONE - PRESS ENTER TO EXIT'
+Read-Host 'DONE - PRESS ENTER TO EXIT' | Out-Null

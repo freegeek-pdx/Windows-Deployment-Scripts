@@ -19,6 +19,9 @@ UNUSED-*
 # Ignore specific folders within "Create WinPE Image":
 Install\ Folder\ Resources/
 
+# Ignore specific folders within "Setup Resources":
+PerformanceTest/
+
 # INCLUDE specific XML file within "Setup Resources":
 !UnattendAudit.xml
 

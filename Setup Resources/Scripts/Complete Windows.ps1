@@ -26,7 +26,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2021.12.30-1
+# Version: 2022.3.29-1
 
 param(
 	[Parameter(Position = 0)]
@@ -55,6 +55,8 @@ if (-not (Test-Path '\Windows\System32\Sysprep\Unattend.xml')) {
 	exit 2
 }
 
+$isWindows11 = (Get-CimInstance Win32_OperatingSystem -Property Caption).Caption.Contains('Windows 11')
+
 $focusWindowFunctionTypes = Add-Type -PassThru -Name FocusWindow -MemberDefinition @'
 	[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
 	[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
@@ -62,7 +64,7 @@ $focusWindowFunctionTypes = Add-Type -PassThru -Name FocusWindow -MemberDefiniti
 '@
 
 function FocusScriptWindow {
-	# Based On: https://stackoverflow.com/questions/42566799/how-to-bring-focus-to-window-by-process-name/58548853#58548853
+	# Based On: https://stackoverflow.com/a/58548853
 	
 	$scriptWindowHandle = (Get-Process -Id $PID).MainWindowHandle
 	
@@ -72,11 +74,15 @@ function FocusScriptWindow {
 			$focusWindowFunctionTypes::ShowWindow($scriptWindowHandle, 9) | Out-Null
 		}
 	}
+	
+	(New-Object -ComObject Wscript.Shell).AppActivate($Host.UI.RawUI.WindowTitle) | Out-Null # Also try "AppActivate" since "SetForegroundWindow" seems to maybe not work as well on Windows 11.
 }
 
 
 if ($onlyCacheDriversMode) {
 	Write-Output "`n  Preparing to Cache Drivers..."
+} elseif ($isWindows11) {
+	Write-Output "`n  Verifying That This Computer Supports Windows 11 & Is Ready to Be Completed..."
 } else {
 	Write-Output "`n  Verifying That This Computer Is Ready to Be Completed..."
 }
@@ -106,6 +112,166 @@ if (-not $onlyCacheDriversMode) { # Only do this verification and setup if not o
 	$auditUnattendContents = Get-Content -Raw '\Windows\System32\Sysprep\Unattend.xml'
 
 	if (-not $auditUnattendContents.Contains('\Complete Windows.ps1')) { # Only actually verify and confirm if this script HAS NOT run before.
+		if ($isWindows11) {
+			# Do not show separate title (or success message) for the following Windows 11 compatibility checks as they falls under the "Verifying That This Computer Is Ready to Be Completed" phase.
+			# https://www.microsoft.com/en-us/windows/windows-11-specifications
+
+			$tpmSpecVersionString = (Get-CimInstance Win32_TPM -Namespace 'ROOT\CIMV2\Security\MicrosoftTPM' -ErrorAction SilentlyContinue).SpecVersion
+			$win11compatibleTPM = $false
+			
+			if ($null -ne $tpmSpecVersionString) {
+				$tpmSpecVersionString = $tpmSpecVersionString.Split(',')[0] # Use the first value in the "SpecVersion" comma separated string instead of "PhysicalPresenseVersionInfo" since the latter can be inaccurate when the former is correct.
+				$win11compatibleTPM = ((($tpmSpecVersionString -Replace '[^0-9.]', '') -as [double]) -ge 2.0)
+			} else {
+				$tpmSpecVersionString = 'UNKNOWN'
+			}
+
+			if (Test-Path '\Install\Diagnostic Tools\WhyNotWin11.exe') { # Use WhyNotWin11 to help detect if the exact CPU model is compatible and more: https://github.com/rcmaehl/WhyNotWin11
+				Remove-Item '\Install\WhyNotWin11 Log.csv' -Force -ErrorAction SilentlyContinue
+				Start-Process '\Install\Diagnostic Tools\WhyNotWin11.exe' -NoNewWindow -Wait -ArgumentList '/export', 'CSV', '"C:\Install\WhyNotWin11 Log.csv"', '/silent', '/force' -ErrorAction SilentlyContinue
+			}
+
+			$win11compatibleArchitecture = $false
+			$win11compatibleBootMethod = $false
+			$win11compatibleCPUmodel = $false
+			$win11compatibleCPUcores = $false
+			$win11compatibleCPUspeed = $false
+			$win11compatibleGPU = $false
+			$win11compatiblePartitionType = $false
+			$win11compatibleRAM = $false
+			$win11compatibleSecureBoot = $false
+			$win11compatibleStorage = $false
+			$win11compatibleTPMfromWhyNotWin11 = $false
+			$checkedWithWhyNotWin11 = $false
+
+			if (Test-Path '\Install\WhyNotWin11 Log.csv') {
+				$whyNotWin11LogLastLine = Get-Content '\Install\WhyNotWin11 Log.csv' -Last 1
+
+				if ($null -ne $whyNotWin11LogLastLine) {
+					$whyNotWin11LogValues = $whyNotWin11LogLastLine.Split(',')
+
+					if ($whyNotWin11LogValues.Count -eq 12) {
+						# Index 0 is "Hostname" which is not useful for these Windows 11 compatibility checks.
+						$win11compatibleArchitecture = ($whyNotWin11LogValues[1] -eq 'True')
+						$win11compatibleBootMethod = ($whyNotWin11LogValues[2] -eq 'True')
+						$win11compatibleCPUmodel = ($whyNotWin11LogValues[3] -eq 'True')
+						$win11compatibleCPUcores = ($whyNotWin11LogValues[4] -eq 'True')
+						$win11compatibleCPUspeed = ($whyNotWin11LogValues[5] -eq 'True')
+						$win11compatibleGPU = ($whyNotWin11LogValues[6] -eq 'True')
+						$win11compatiblePartitionType = ($whyNotWin11LogValues[7] -eq 'True')
+						$win11compatibleRAM = ($whyNotWin11LogValues[8] -eq 'True')
+						$win11compatibleSecureBoot = ($whyNotWin11LogValues[9] -eq 'True')
+						$win11compatibleStorage = ($whyNotWin11LogValues[10] -eq 'True')
+						$win11compatibleTPMfromWhyNotWin11 = ($whyNotWin11LogValues[11] -eq 'True') # We already manually checked TPM version, but doesn't hurt to confirm that WinNotWin11 agrees.
+
+						$checkedWithWhyNotWin11 = $true
+					}
+				}
+			}
+
+			Write-Host "`n    CPU Compatible: " -NoNewline
+			if (-not $win11compatibleCPUspeed) {
+				Write-Host 'NO (At Least 1 GHz Speed REQUIRED)' -ForegroundColor Red
+			} elseif (-not $win11compatibleCPUcores) {
+				Write-Host 'NO (At Least Dual-Core REQUIRED)' -ForegroundColor Red
+			} elseif (-not $win11compatibleArchitecture) {
+				# This incompatibility should never happen since we only refurbish 64-bit processors and only have 64-bit Windows installers.
+				Write-Host 'NO (64-bit REQUIRED)' -ForegroundColor Red
+			} elseif (-not $win11compatibleCPUmodel) {
+				Write-Host 'NO (Model NOT Supported)' -ForegroundColor Red
+			} else {
+				Write-Host 'YES' -ForegroundColor Green
+			}
+
+			Write-Host '    RAM 4 GB or More: ' -NoNewline
+			if ($win11compatibleRAM) {
+				Write-Host 'YES' -ForegroundColor Green
+			} else {
+				Write-Host 'NO (At Least 4 GB REQUIRED)' -ForegroundColor Red
+			}
+
+			Write-Host '    Storage 64 GB or More: ' -NoNewline
+			if ($win11compatibleStorage) {
+				Write-Host 'YES' -ForegroundColor Green
+			} else {
+				Write-Host 'NO (At Least 64 GB REQUIRED)' -ForegroundColor Red
+			}
+
+			Write-Host '    GPU Compatible: ' -NoNewline
+			if ($win11compatibleGPU) {
+				Write-Host 'YES' -ForegroundColor Green
+			} else {
+				Write-Host 'NO (DirectX 12 + WDDM 2.0 REQUIRED)' -ForegroundColor Red
+			}
+
+			Write-Host '    UEFI Enabled: ' -NoNewline
+			if (-not $win11compatibleBootMethod) {
+				Write-Host 'NO (Booted in Legacy BIOS Mode)' -ForegroundColor Red
+			} elseif (-not $win11compatibleSecureBoot) {
+				# Secure Boot DOES NOT need to be enabled, the computer just needs to be Secure Boot capable: https://support.microsoft.com/en-us/windows/windows-11-and-secure-boot-a8ff1202-c0d9-42f5-940f-843abef64fad
+				# And WhyNotWin11 only verifies that the computer is Secure Boot capable, not that it is enabled: https://github.com/rcmaehl/WhyNotWin11/blob/16123e4e891e9ba90c23cffccd5876d7ab2cfef3/includes/_Checks.au3#L219 & https://github.com/rcmaehl/WhyNotWin11/blob/1a2459a8cfc754644af7e94f33762eaaca544a07/includes/WhyNotWin11_accessibility.au3#L223
+				Write-Host 'NO (NOT Secure Boot Capable)' -ForegroundColor Red
+			} elseif (-not $win11compatiblePartitionType) {
+				Write-Host 'NO (GPT Format REQUIRED)' -ForegroundColor Red
+			} else {
+				Write-Host 'YES' -ForegroundColor Green
+			}
+
+			Write-Host '    TPM 2.0 Enabled: ' -NoNewline
+			if ($win11compatibleTPM) {
+				if ($win11compatibleTPMfromWhyNotWin11) {
+					Write-Host 'YES' -ForegroundColor Green
+				} else {
+					Write-Host 'MAYBE' -ForegroundColor Yellow
+				}
+			} elseif (($tpmSpecVersionString -eq 'UNKNOWN') -or ($tpmSpecVersionString -eq 'Not Supported')) {
+				Write-Host 'NO (Not Detected)' -ForegroundColor Red
+			} else {
+				Write-Host "NO (Version $tpmSpecVersionString)" -ForegroundColor Red
+			}
+
+			if (-not $checkedWithWhyNotWin11) {
+				Write-Host "`n  ERROR: Failed to run WhyNotWin11 to verify Windows 11 support. - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+				FocusScriptWindow
+				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+				$notWin11compatibleResponse = Read-Host '  Press ENTER to Shut Down This Computer'
+
+				if ((-not $testMode) -or ($notWin11compatibleResponse -ne 'TESTING')) { # Can bypass in test mode even if the computer isn't compatible with Windows 11.
+					Stop-Computer
+
+					exit 0 # Not sure if exit is necessary after Stop-Computer but doesn't hurt.
+				}
+			} elseif (-not $win11compatibleGPU) {
+				# The GPU could not be verified in WinPE/WinRE since GPU drivers were not available, but it's generally assumed that GPUs will be compatible if everything else was compatible.
+				# So, if this check failed, we need to make sure the technician makes I.T. aware that this issue could actually happen since it was a time wasting Windows 11 installation when Windows 10 must be installed instead.
+
+				Write-Host "`n  ERROR: GPU is NOT compatible with Windows 11. - THIS IS UNEXPECTED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+				FocusScriptWindow
+				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+				$notWin11compatibleResponse = Read-Host '  Press ENTER to Shut Down This Computer'
+
+				if ((-not $testMode) -or ($notWin11compatibleResponse -ne 'TESTING')) { # Can bypass in test mode even if the computer isn't compatible with Windows 11.
+					Stop-Computer
+
+					exit 0 # Not sure if exit is necessary after Stop-Computer but doesn't hurt.
+				}
+			} elseif ((-not $win11compatibleTPM) -or (-not $win11compatibleArchitecture) -or (-not $win11compatibleBootMethod) -or (-not $win11compatibleCPUmodel) -or (-not $win11compatibleCPUcores) -or (-not $win11compatibleCPUspeed) -or (-not $win11compatiblePartitionType) -or (-not $win11compatibleRAM) -or (-not $win11compatibleSecureBoot) -or (-not $win11compatibleStorage) -or (-not $win11compatibleTPMfromWhyNotWin11)) {
+				# None of the previous elseif checks should fail (unless in Test Mode) because it was all verified in WinPE before allowing Windows 11 to be installed.
+				# So, if we got here, this computer needs to be sent to Free Geek I.T. to see what went wrong.
+
+				Write-Host "`n  ERROR: Failed to verify Windows 11 support. - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+				FocusScriptWindow
+				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+				$notWin11compatibleResponse = Read-Host '  Press ENTER to Shut Down This Computer'
+
+				if ((-not $testMode) -or ($notWin11compatibleResponse -ne 'TESTING')) { # Can bypass in test mode even if the computer isn't compatible with Windows 11.
+					Stop-Computer
+
+					exit 0 # Not sure if exit is necessary after Stop-Computer but doesn't hurt.
+				}
+			}
+		}
+
 		$hasRefurbProductKey = $false
 		$dpkID = $null
 		$didUploadCBRifDPK = $true
@@ -210,7 +376,7 @@ if (-not $onlyCacheDriversMode) { # Only do this verification and setup if not o
 				Write-Host "`n`n  ERROR: `"QA Helper`" DOES NOT EXISTS - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
 				FocusScriptWindow
 				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-				Read-Host '  Press ENTER to Exit'
+				Read-Host '  Press ENTER to Exit' | Out-Null
 
 				exit 4
 			}
@@ -240,7 +406,7 @@ if (-not $onlyCacheDriversMode) { # Only do this verification and setup if not o
 					Write-Host "`n`n  ERROR: `"QA Helper`" DOES NOT EXISTS - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
 					FocusScriptWindow
 					$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-					Read-Host '  Press ENTER to Exit'
+					Read-Host '  Press ENTER to Exit' | Out-Null
 		
 					exit 6
 				}
@@ -316,7 +482,7 @@ try {
 	Write-Host "`n  ERROR: REQUIRED `"smb-credentials.xml`" DOES NOT EXISTS OR HAS INVALID CONTENTS - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
 	FocusScriptWindow
 	$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-	Read-Host '  Press ENTER to Exit'
+	Read-Host '  Press ENTER to Exit' | Out-Null
 
 	exit 7
 }
@@ -438,7 +604,7 @@ for ( ; ; ) {
 							$compatibleDeviceIDsForDrivers = (($pnpEntityCompatibleAndHardwareIDs.HardwareID + $pnpEntityCompatibleAndHardwareIDs.CompatibleID) | Where-Object { ($null -ne $_) } | Sort-Object -Unique).ToUpper()
 							
 							$excludedInfNames = @(
-								'unifhid', # EXCLUDING "unifhid.inf" because it's just the Logitech USB Adapter Driver (and previously thought it may have been related to hanging on "Preparing Windows" screen in installed OS when installed in WinPE in 20H2 but it turns out it wasn't related. Still don't want it included in the Drivers Cache).
+								'unifhid', # EXCLUDING "unifhid.inf" because it's just the Logitech USB Adapter Driver (and previously thought it may have been related to hanging on "Preparing Windows" screen in installed OS when installed in WinPE in Win 10 20H2 but it turns out it wasn't related. Still don't want it included in the Drivers Cache).
 								'tbwkern' # EXCLUDING "tbwkern.inf" because it's just the Kensington MouseWorks Driver
 							)
 
@@ -985,7 +1151,7 @@ for ( ; ; ) {
 
 				if (Test-Path '\Install\') {
 					# Do not delete self yet in case something fails and we need to restart and run this script again.
-					Remove-Item '\Install\*' -Exclude '*Log.txt', "$(Split-Path $PSCommandPath -Leaf)" -Recurse -Force -ErrorAction Stop
+					Remove-Item '\Install\*' -Exclude '*Log.txt', 'smb-credentials.xml', "$(Split-Path $PSCommandPath -Leaf)" -Recurse -Force -ErrorAction Stop
 					
 					Write-Host "`n  Successfully Cleaned Up Leftover Files and Folders from Installation and Setup Process" -ForegroundColor Green
 				}
@@ -1058,7 +1224,7 @@ for ( ; ; ) {
 				if ($testMode) {
 					FocusScriptWindow
 					$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-					Read-Host "    DEBUG - Press ENTER To Run Sysprep $sysprepOobeArgs"
+					Read-Host "    DEBUG - Press ENTER To Run Sysprep $sysprepOobeArgs" | Out-Null
 				}
 				
 				Remove-Item "$Env:TEMP\fgComplete-*.txt" -Force -ErrorAction SilentlyContinue
@@ -1164,7 +1330,7 @@ for ( ; ; ) {
 				Write-Host "`n`n  AUTOMATIC SHUT DOWN DISABLED IN TEST MODE`n" -ForegroundColor Yellow
 				FocusScriptWindow
 				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-				Read-Host '  Press ENTER to Shut Down'
+				Read-Host '  Press ENTER to Shut Down' | Out-Null
 			} else {
 				$rebootTimeout = 15
 				
@@ -1204,7 +1370,7 @@ for ( ; ; ) {
 		} else {
 			FocusScriptWindow
 			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-			Read-Host '  Manually Reboot This Computer or Press ENTER to Try Again'
+			Read-Host '  Manually Reboot This Computer or Press ENTER to Try Again' | Out-Null
 		}
 	} else { # IS $onlyCacheDriversMode
 		if ($didCacheDrivers) {

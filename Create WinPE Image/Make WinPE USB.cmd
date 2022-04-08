@@ -21,8 +21,7 @@
 NET SESSION 1>NUL 2>NUL
 IF %ERRORLEVEL% NEQ 0 powershell.exe -NoLogo -NoProfile -Command "Start-Process '%0' -Verb RunAs" & EXIT /B 1
 
-SET WIN_PE_NAME=WinPE-10-2004
-:: SET WIN_PE_NAME=WinPE-11-22000
+SET WIN_PE_NAME=WinPE-11-21H2
 
 ECHO.
 ECHO   Make %WIN_PE_NAME% USB...
@@ -33,12 +32,14 @@ SET WIN_PE_OUTPUT_PATH=%USERPROFILE%\Documents\Free Geek\%WIN_PE_NAME%
 SET /P USB_DRIVE_LETTER="> Enter USB Drive Letter for %WIN_PE_NAME%: "
 
 ECHO.
+ECHO   STARTING ON %DATE% AT %TIME%...
+ECHO.
 
 :: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-create-usb-bootable-drive#create-a-bootable-winpe-usb-drive
 CALL "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\MakeWinPEMedia.cmd" /UFD "%WIN_PE_OUTPUT_PATH%" %USB_DRIVE_LETTER%:
 
 ECHO.
-ECHO   DONE!
+ECHO   DONE ON %DATE% AT %TIME%
 ECHO.
 ECHO   Press Any Key to Close This Window
 

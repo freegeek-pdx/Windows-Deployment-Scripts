@@ -187,8 +187,10 @@ foreach ($thisDriverPack in $lenovoDriverPackCatalogXMLv1.Products.Product) {
                     $osVersionNumber = 8.1
                 } elseif ($thisDriverPack.os -eq 'win10') {
                     $osVersionNumber = 10
+                } elseif ($thisDriverPack.os -eq 'win11') {
+                    $osVersionNumber = 11
                 }
-            } elseif ($thisDriverPack.os -eq 'win10') {
+            } elseif (($thisDriverPack.os -eq 'win10') -or ($thisDriverPack.os -eq 'win11')) {
                 $osVersionNumber = $thisDriverPack.build
                 $osVersionNumber = $osVersionNumber -Replace 'H1', '03'
                 $osVersionNumber = $osVersionNumber -Replace 'H2', '09'
@@ -253,13 +255,15 @@ if (Test-Path "$PSScriptRoot/DriverPackCatalog-LenovoV1-EXEsFromSupportPages.xml
                 if ($null -ne $thisExeFromSupportPage.DownloadURL) {
                     $osVersionNumber = $thisExeFromSupportPage.OS -Replace '64-bit'
 
-                    if ($osVersionNumber.StartsWith('Windows 10') -and $osVersionNumber.Contains(' (Version ')) {
-                        $osVersionNumber = $osVersionNumber -Replace 'Windows 10 \(Version '
+                    if (($osVersionNumber.StartsWith('Windows 10') -or $osVersionNumber.StartsWith('Windows 11')) -and $osVersionNumber.Contains(' (Version ')) {
+                        $osVersionNumber = $osVersionNumber -Replace 'Windows 10 \(Version ', '10'
+                        $osVersionNumber = $osVersionNumber -Replace 'Windows 11 \(Version ', '11'
                         $osVersionNumber = $osVersionNumber -Replace 'H1', '03'
                         $osVersionNumber = $osVersionNumber -Replace 'H2', '09'
                         $osVersionNumber = [decimal]($osVersionNumber -Replace '[^0-9]').Trim()
                     } else {
                         $osVersionNumber = [decimal]($osVersionNumber -Replace '[^0-9.]').Trim()
+                        $osVersionNumber *= 10000
                     }
 
                     if ($osVersionNumber -gt $osVersionForExe) {
@@ -547,4 +551,4 @@ if ($IsWindows -or ($null -eq $IsWindows)) {
     $Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 }
 
-Read-Host 'DONE - PRESS ENTER TO EXIT'
+Read-Host 'DONE - PRESS ENTER TO EXIT' | Out-Null

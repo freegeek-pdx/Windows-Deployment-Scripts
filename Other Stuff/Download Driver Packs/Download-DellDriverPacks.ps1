@@ -354,4 +354,4 @@ if ($IsWindows -or ($null -eq $IsWindows)) {
     $Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 }
 
-Read-Host 'DONE - PRESS ENTER TO EXIT'
+Read-Host 'DONE - PRESS ENTER TO EXIT' | Out-Null

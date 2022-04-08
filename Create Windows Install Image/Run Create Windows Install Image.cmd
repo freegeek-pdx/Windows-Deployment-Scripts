@@ -24,7 +24,7 @@ IF %ERRORLEVEL% NEQ 0 powershell.exe -NoLogo -NoProfile -Command "Start-Process 
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Unrestricted -File "%~dp0Create Windows Install Image.ps1"
 
 ECHO.
-ECHO   DONE!
+ECHO   DONE ON %DATE% AT %TIME%
 ECHO.
 ECHO   Press Any Key to Close This Window
 

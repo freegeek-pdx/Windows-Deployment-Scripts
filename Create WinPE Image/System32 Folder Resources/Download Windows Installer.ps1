@@ -70,6 +70,6 @@ for ( ; ; ) {
 		Write-Host "`n`n  IMPORTANT: Make sure Ethernet cable is plugged securely and try again." -ForegroundColor Red
 		Write-Host "`n`n  If this issue continues, please inform Free Geek I.T.`n" -ForegroundColor Red
 		$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-		Read-Host -Prompt '  Press ENTER to Try Again or Press "Control + C" (or Close This Window) to Cancel and Reboot'
+		Read-Host '  Press ENTER to Try Again or Press "Control + C" (or Close This Window) to Cancel and Reboot' | Out-Null
 	}
 }

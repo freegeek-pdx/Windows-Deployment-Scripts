@@ -16,13 +16,15 @@
 
 @ECHO OFF
 
-:: Download the latest JDK version and extract the folder on the Desktop.
+:: TODO: Rewrite this in PowerShell to automate the entire process like the equivalent Linux script.
+
+:: To use this script, you must download the latest JDK version and extract the folder on the Desktop.
 
 :: Set the version of the JDK (in the folder name "jdk-#") below: 
-SET JDK_VERSION=17.0.1
+SET JDK_VERSION=18
 
 ECHO.
-ECHO   Creating JLink JDK...
+ECHO   Creating JLink JRE...
 ECHO.
 
 SET DESKTOP_PATH=%USERPROFILE%\Desktop
@@ -31,7 +33,7 @@ IF NOT EXIST %DESKTOP_PATH% SET DESKTOP_PATH=%USERPROFILE%\OneDrive\Desktop
 SET JDK_PATH=%DESKTOP_PATH%\jdk-%JDK_VERSION%
 
 IF EXIST "%DESKTOP_PATH%\java-jre" RMDIR /S /Q "%DESKTOP_PATH%\java-jre"
-%JDK_PATH%\bin\jlink.exe --add-modules java.base,java.desktop,java.logging --strip-debug --no-man-pages --no-header-files --compress=2 --output="%DESKTOP_PATH%\java-jre"
+%JDK_PATH%\bin\jlink.exe --add-modules "java.base,java.desktop,java.logging" --strip-debug --no-man-pages --no-header-files --compress "2" --output "%DESKTOP_PATH%\java-jre"
 :: java.datatransfer, java.prefs, and java.xml are included automatically with java.desktop
 
 IF EXIST "%DESKTOP_PATH%\jlink-jre-%JDK_VERSION%_windows-x64.zip" DEL /F "%DESKTOP_PATH%\jlink-jre-%JDK_VERSION%_windows-x64.zip"

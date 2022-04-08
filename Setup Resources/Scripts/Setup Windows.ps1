@@ -27,7 +27,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2021.12.31-1
+# Version: 2022.3.28-1
 
 param(
 	[Parameter(Position = 0)]
@@ -47,13 +47,72 @@ $testMode = (Test-Path '\Install\TESTING')
 $desktopPath = [Environment]::GetFolderPath('Desktop')
 $isWindows11 = (Get-CimInstance Win32_OperatingSystem -Property Caption).Caption.Contains('Windows 11')
 
+if ($isWindows11) {
+	# When on Windows 11, use C# code to detect if the Start Menu is open on first boot. See "CloseStartMenuOnFirstBootOfWindows11" function below for more information.
+	# From: https://social.technet.microsoft.com/Forums/lync/en-US/c0652d6e-a4fd-4547-942a-7d28ca58b440/call-cocreateinstance-with-clsid#answers & https://stackoverflow.com/a/12010841 
+
+	Add-Type -Language CSharp -TypeDefinition @"
+using System;
+using System.Reflection;
+using System.Runtime.InteropServices;
+
+namespace AppVisible
+{
+	[ComImport, Guid("2246EA2D-CAEA-4444-A3C4-6DE827E44313"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+	public interface IAppVisibility {
+		HRESULT GetAppVisibilityOnMonitor([In] IntPtr hMonitor, [Out] out MONITOR_APP_VISIBILITY pMode);
+		HRESULT IsLauncherVisible([Out] out bool pfVisible);
+		HRESULT Advise([In] IAppVisibilityEvents pCallback, [Out] out int pdwCookie);
+		HRESULT Unadvise([In] int dwCookie);
+	}
+
+	public enum HRESULT : long {
+		S_FALSE = 0x0001,
+		S_OK = 0x0000,
+		E_INVALIDARG = 0x80070057,
+		E_OUTOFMEMORY = 0x8007000E
+	}
+	public enum MONITOR_APP_VISIBILITY {
+		MAV_UNKNOWN = 0, // The mode for the monitor is unknown
+		MAV_NO_APP_VISIBLE = 1,
+		MAV_APP_VISIBLE = 2
+	}
+
+	[ComImport, Guid("6584CE6B-7D82-49C2-89C9-C6BC02BA8C38"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+	public interface IAppVisibilityEvents {
+		HRESULT AppVisibilityOnMonitorChanged(
+			[In] IntPtr hMonitor,
+			[In] MONITOR_APP_VISIBILITY previousMode,
+			[In] MONITOR_APP_VISIBILITY currentMode);
+
+		HRESULT LauncherVisibilityChange([In] bool currentVisibleState);
+	}
+
+	public class App 
+	{		
+		public static bool IsLauncherVisible()
+		{
+			Type tIAppVisibility = Type.GetTypeFromCLSID(new Guid("7E5FE3D9-985F-4908-91F9-EE19F9FD1514"));
+			IAppVisibility appVisibility = (IAppVisibility)Activator.CreateInstance(tIAppVisibility);
+			bool launcherVisible;
+			if(HRESULT.S_OK == appVisibility.IsLauncherVisible(out launcherVisible)) {
+				return launcherVisible;
+			}
+			return false;
+		}
+	}
+}
+"@
+}
 
 function CloseStartMenuOnFirstBootOfWindows11 {
-	if ($isWindows11 -and (-not (Test-Path "$desktopPath\QA Helper.lnk"))) { # Checking that QA Helper shortcut is not on the Desktop indicates first boot.
-		# In Windows 11 (as of beta 22000.100), the Start Menu is opened automatically on first boot, so send Escape key to close it.
-		# This function will be called periodically throughout the script (mostly in each FocusScriptWindow call) since we can't know exactly when the Desktop will be loaded since the script rund before login.
+	if ($isWindows11 -and (-not (Test-Path "$desktopPath\QA Helper.lnk")) -and [AppVisible.App]::IsLauncherVisible()) { # Checking that QA Helper shortcut is not on the Desktop indicates first boot.
+		# In Windows 11 (as of 21H2), the Start Menu opens automatically on first boot, so detect if it's open and then send Control+Escape key to toggle it closed.
+		# This is called the "quiet period" where no other apps are supposed to launch and the Start menu is opened to encourage users to check it out: https://docs.microsoft.com/en-us/windows-hardware/customize/desktop/customize-oobe-in-windows-11#reaching-the-desktop-and-the-quiet-period
+		# But, this is just an inconvenience when booting into Audit mode for testing, I hope to some day find a way to disable this "quite period", probably via some Registry changes or something.
+		# This function will be called periodically throughout the script (mostly in each FocusScriptWindow call) since we can't know exactly when the Desktop will be loaded since the script runs before login.
 
-		(New-Object -ComObject Wscript.Shell).SendKeys('{ESC}')
+		(New-Object -ComObject Wscript.Shell).SendKeys('^{ESC}') # Simulate Control+Escape to TOGGLE the Start Menu (https://superuser.com/a/1072520), which will CLOSE it in this case since we've confirmed it's open with the "IsLauncherVisible" function.
 	}
 }
 
@@ -70,7 +129,7 @@ function FocusScriptWindow {
 	} catch {
 		CloseStartMenuOnFirstBootOfWindows11
 
-		# Based On: https://stackoverflow.com/questions/42566799/how-to-bring-focus-to-window-by-process-name/58548853#58548853
+		# Based On: https://stackoverflow.com/a/58548853
 		
 		$scriptWindowHandle = (Get-Process -Id $PID).MainWindowHandle
 		
@@ -80,6 +139,8 @@ function FocusScriptWindow {
 				$focusWindowFunctionTypes::ShowWindow($scriptWindowHandle, 9) | Out-Null
 			}
 		}
+
+		(New-Object -ComObject Wscript.Shell).AppActivate($Host.UI.RawUI.WindowTitle) | Out-Null # Also try "AppActivate" since "SetForegroundWindow" seems to maybe not work as well on Windows 11.
 	}
 }
 
@@ -90,7 +151,7 @@ if ($LastWindowsUpdatesCount -eq '') {
 	# Only run the following tasks if no LastWindowsUpdatesCount arg (don't bother re-running these if we're just relaunching this script).
 
 	
-	if (-not $isWindows11) { # In Windows 11 (as of beta 22000.100), this appears to no longer be necessary.
+	if (-not $isWindows11) { # In Windows 11 (as of 21H2), this appears to no longer be necessary.
 		# Disable Network Location Wizard FIRST because some fast computers can get to the Desktop very quickly after this script is launched during the Preparing Windows phase.
 		try {
 			# Setting "HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Network\NwCategoryWizard\Show" to "0" will turn off the Network Location Wizard
@@ -252,6 +313,10 @@ if ($LastWindowsUpdatesCount -eq '') {
 							$netshWlanAddProfileError = Get-Content -Raw "$Env:TEMP\fgSetup-netsh-wlan-add-profile-$thisWiFiProfileName-Output.txt"
 						}
 
+						if ($null -ne $netshWlanAddProfileError) {
+							$netshWlanAddProfileError = $netshWlanAddProfileError.Trim()
+						}
+
 						Write-Host "      ERROR ADDING PROFILE (Code $netshWlanAddProfileExitCode): $netshWlanAddProfileError" -ForegroundColor Red
 						
 						Add-Content '\Install\Windows Setup Log.txt' "Error Code $netshWlanAddProfileExitCode Adding Wi-Fi Network Profile: $thisWiFiProfileName - $(Get-Date)" -ErrorAction SilentlyContinue
@@ -401,7 +466,7 @@ if (-not (Get-LocalUser 'Administrator' -ErrorAction SilentlyContinue).Enabled) 
 			
 			FocusScriptWindow
 			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-			Read-Host '  Manually Reboot This Computer or Press ENTER to Try Again'
+			Read-Host '  Manually Reboot This Computer or Press ENTER to Try Again' | Out-Null
 			Clear-Host
 		} else {
 			break
@@ -467,7 +532,7 @@ function Install-QAHelper {
 			
 			FocusScriptWindow
 			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-			Read-Host '  Manually Reboot This Computer or Press ENTER to Try Again'
+			Read-Host '  Manually Reboot This Computer or Press ENTER to Try Again' | Out-Null
 			Clear-Host
 		} else {
 			break
@@ -677,7 +742,7 @@ function Install-WindowsUpdates {
 
 				FocusScriptWindow
 				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-				Read-Host "`n`n  Press ENTER to Finish Setup Without Windows Updates"
+				Read-Host "`n`n  Press ENTER to Finish Setup Without Windows Updates" | Out-Null
 				
 				Start-Process "powershell.exe" -WindowStyle Maximized -ArgumentList '-NoLogo', '-NoProfile', '-WindowStyle Maximized', '-ExecutionPolicy Unrestricted', "-File `"$PSCommandPath`" 0" -ErrorAction SilentlyContinue
 			} elseif ($rebootRequiredAfterWindowsUpdates) {
@@ -749,7 +814,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 		Write-Host "`n  ERROR: REQUIRED `"smb-credentials.xml`" DOES NOT EXISTS OR HAS INVALID CONTENTS - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
 		FocusScriptWindow
 		$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-		Read-Host '  Press ENTER to Exit'
+		Read-Host '  Press ENTER to Exit' | Out-Null
 
 		exit 2
 	}
@@ -974,13 +1039,13 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 		$waitForPreparingWindowsSeconds = 0
 		$didRestartExplorer = $false
 		
-		# The following loop is to workaround an in issue in 20H2. I am not sure if it's fixed in 21H1 but I've left it in place since it won't do anything even if it's no longer necessary.
+		# The following loop is to workaround an in issue in Win 10 20H2. I am not sure if it's fixed in 21H1 but I've left it in place since it won't do anything even if it's no longer necessary.
 		for ( ; ; ) {
 			try {
 				Get-Process 'LogonUI' -ErrorAction Stop | Out-Null
 				
 				if ((-not $didRestartExplorer) -or (($waitForPreparingWindowsSeconds % 10) -eq 0)) {
-					# This is here to catch an odd issue that seems to happen occasionally in 20H2 (never noticed it in 2004) where Windows stays on the "Preparing Windows" screen for an excessively long time (like for 8 MINUTES LONGER than a normal setup).
+					# This is here to catch an odd issue that seems to happen occasionally in Win 10 20H2 (never noticed it in Win 10 2004) where Windows stays on the "Preparing Windows" screen for an excessively long time (like for 8 MINUTES LONGER than a normal setup).
 					# I noticed that whenever this happened, by the time Windows finally did get to the Desktop, the taskbar was not fully set up. When clicking the Start menu, a progress display would appear for a moment and then the taskbar would get setup.
 					# After some more experimentation when this happened, I tried restarting explorer.exe instead of clicking the Start menu to see if that would properly set up the taskbar as well, and it did!
 					# Then I had the thought that maybe when this long delay was happening because the "Preparing Windows" phase was simply waiting for the taskbar to get setup and only finally getting to the Desktop after giving up after some long timeout.
@@ -1097,7 +1162,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 		
 		FocusScriptWindow
 		$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-		Read-Host '  Manually Reboot This Computer or Press ENTER to Try Again'
+		Read-Host '  Manually Reboot This Computer or Press ENTER to Try Again' | Out-Null
 	}
 } else {
 	if ((Test-Path '\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1') -or (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
@@ -1143,7 +1208,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 					Write-Host "`n`n  AUTOMATIC REBOOT DISABLED IN TEST MODE`n" -ForegroundColor Yellow
 					
 					$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-					Read-Host '  Press ENTER to Reboot After Adjusting Screen Scaling'
+					Read-Host '  Press ENTER to Reboot After Adjusting Screen Scaling' | Out-Null
 				} else {
 					$rebootTimeout = 15
 					
@@ -1167,6 +1232,169 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			}
 		} else {
 			Install-WindowsUpdates # Will exit (and launch a new instance of this script) or reboot if successful.
+		}
+	}
+
+	if ($isWindows11) {
+		Write-Output "`n`n  Verifying That This Computer Supports Windows 11...`n" # https://www.microsoft.com/en-us/windows/windows-11-specifications
+
+		$tpmSpecVersionString = (Get-CimInstance Win32_TPM -Namespace 'ROOT\CIMV2\Security\MicrosoftTPM' -ErrorAction SilentlyContinue).SpecVersion
+		$win11compatibleTPM = $false
+		
+		if ($null -ne $tpmSpecVersionString) {
+			$tpmSpecVersionString = $tpmSpecVersionString.Split(',')[0] # Use the first value in the "SpecVersion" comma separated string instead of "PhysicalPresenseVersionInfo" since the latter can be inaccurate when the former is correct.
+			$win11compatibleTPM = ((($tpmSpecVersionString -Replace '[^0-9.]', '') -as [double]) -ge 2.0)
+		} else {
+			$tpmSpecVersionString = 'UNKNOWN'
+		}
+
+		if (Test-Path '\Install\Diagnostic Tools\WhyNotWin11.exe') { # Use WhyNotWin11 to help detect if the exact CPU model is compatible and more: https://github.com/rcmaehl/WhyNotWin11
+			Remove-Item '\Install\WhyNotWin11 Log.csv' -Force -ErrorAction SilentlyContinue
+			Start-Process '\Install\Diagnostic Tools\WhyNotWin11.exe' -NoNewWindow -Wait -ArgumentList '/export', 'CSV', '"C:\Install\WhyNotWin11 Log.csv"', '/silent', '/force' -ErrorAction SilentlyContinue
+		}
+
+		$win11compatibleArchitecture = $false
+		$win11compatibleBootMethod = $false
+		$win11compatibleCPUmodel = $false
+		$win11compatibleCPUcores = $false
+		$win11compatibleCPUspeed = $false
+		$win11compatibleGPU = $false
+		$win11compatiblePartitionType = $false
+		$win11compatibleRAM = $false
+		$win11compatibleSecureBoot = $false
+		$win11compatibleStorage = $false
+		$win11compatibleTPMfromWhyNotWin11 = $false
+		$checkedWithWhyNotWin11 = $false
+
+		if (Test-Path '\Install\WhyNotWin11 Log.csv') {
+			$whyNotWin11LogLastLine = Get-Content '\Install\WhyNotWin11 Log.csv' -Last 1
+
+			if ($null -ne $whyNotWin11LogLastLine) {
+				$whyNotWin11LogValues = $whyNotWin11LogLastLine.Split(',')
+
+				if ($whyNotWin11LogValues.Count -eq 12) {
+					# Index 0 is "Hostname" which is not useful for these Windows 11 compatibility checks.
+					$win11compatibleArchitecture = ($whyNotWin11LogValues[1] -eq 'True')
+					$win11compatibleBootMethod = ($whyNotWin11LogValues[2] -eq 'True')
+					$win11compatibleCPUmodel = ($whyNotWin11LogValues[3] -eq 'True')
+					$win11compatibleCPUcores = ($whyNotWin11LogValues[4] -eq 'True')
+					$win11compatibleCPUspeed = ($whyNotWin11LogValues[5] -eq 'True')
+					$win11compatibleGPU = ($whyNotWin11LogValues[6] -eq 'True')
+					$win11compatiblePartitionType = ($whyNotWin11LogValues[7] -eq 'True')
+					$win11compatibleRAM = ($whyNotWin11LogValues[8] -eq 'True')
+					$win11compatibleSecureBoot = ($whyNotWin11LogValues[9] -eq 'True')
+					$win11compatibleStorage = ($whyNotWin11LogValues[10] -eq 'True')
+					$win11compatibleTPMfromWhyNotWin11 = ($whyNotWin11LogValues[11] -eq 'True') # We already manually checked TPM version, but doesn't hurt to confirm that WinNotWin11 agrees.
+
+					$checkedWithWhyNotWin11 = $true
+				}
+			}
+		}
+
+		Write-Host '    CPU Compatible: ' -NoNewline
+		if (-not $win11compatibleCPUspeed) {
+			Write-Host 'NO (At Least 1 GHz Speed REQUIRED)' -ForegroundColor Red
+		} elseif (-not $win11compatibleCPUcores) {
+			Write-Host 'NO (At Least Dual-Core REQUIRED)' -ForegroundColor Red
+		} elseif (-not $win11compatibleArchitecture) {
+			# This incompatibility should never happen since we only refurbish 64-bit processors and only have 64-bit Windows installers.
+			Write-Host 'NO (64-bit REQUIRED)' -ForegroundColor Red
+		} elseif (-not $win11compatibleCPUmodel) {
+			Write-Host 'NO (Model NOT Supported)' -ForegroundColor Red
+		} else {
+			Write-Host 'YES' -ForegroundColor Green
+		}
+
+		Write-Host '    RAM 4 GB or More: ' -NoNewline
+		if ($win11compatibleRAM) {
+			Write-Host 'YES' -ForegroundColor Green
+		} else {
+			Write-Host 'NO (At Least 4 GB REQUIRED)' -ForegroundColor Red
+		}
+
+		Write-Host '    Storage 64 GB or More: ' -NoNewline
+		if ($win11compatibleStorage) {
+			Write-Host 'YES' -ForegroundColor Green
+		} else {
+			Write-Host 'NO (At Least 64 GB REQUIRED)' -ForegroundColor Red
+		}
+
+		Write-Host '    GPU Compatible: ' -NoNewline
+		if ($win11compatibleGPU) {
+			Write-Host 'YES' -ForegroundColor Green
+		} else {
+			Write-Host 'NO (DirectX 12 + WDDM 2.0 REQUIRED)' -ForegroundColor Red
+		}
+
+		Write-Host '    UEFI Enabled: ' -NoNewline
+		if (-not $win11compatibleBootMethod) {
+			Write-Host 'NO (Booted in Legacy BIOS Mode)' -ForegroundColor Red
+		} elseif (-not $win11compatibleSecureBoot) {
+			# Secure Boot DOES NOT need to be enabled, the computer just needs to be Secure Boot capable: https://support.microsoft.com/en-us/windows/windows-11-and-secure-boot-a8ff1202-c0d9-42f5-940f-843abef64fad
+			# And WhyNotWin11 only verifies that the computer is Secure Boot capable, not that it is enabled: https://github.com/rcmaehl/WhyNotWin11/blob/16123e4e891e9ba90c23cffccd5876d7ab2cfef3/includes/_Checks.au3#L219 & https://github.com/rcmaehl/WhyNotWin11/blob/1a2459a8cfc754644af7e94f33762eaaca544a07/includes/WhyNotWin11_accessibility.au3#L223
+			Write-Host 'NO (NOT Secure Boot Capable)' -ForegroundColor Red
+		} elseif (-not $win11compatiblePartitionType) {
+			Write-Host 'NO (GPT Format REQUIRED)' -ForegroundColor Red
+		} else {
+			Write-Host 'YES' -ForegroundColor Green
+		}
+
+		Write-Host '    TPM 2.0 Enabled: ' -NoNewline
+		if ($win11compatibleTPM) {
+			if ($win11compatibleTPMfromWhyNotWin11) {
+				Write-Host 'YES' -ForegroundColor Green
+			} else {
+				Write-Host 'MAYBE' -ForegroundColor Yellow
+			}
+		} elseif (($tpmSpecVersionString -eq 'UNKNOWN') -or ($tpmSpecVersionString -eq 'Not Supported')) {
+			Write-Host 'NO (Not Detected)' -ForegroundColor Red
+		} else {
+			Write-Host "NO (Version $tpmSpecVersionString)" -ForegroundColor Red
+		}
+
+		if (-not $checkedWithWhyNotWin11) {
+			Write-Host "`n  ERROR: Failed to run WhyNotWin11 to verify Windows 11 support. - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+			FocusScriptWindow
+			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+			$notWin11compatibleResponse = Read-Host '  Press ENTER to Shut Down This Computer'
+
+			if ((-not $testMode) -or ($notWin11compatibleResponse -ne 'TESTING')) { # Can bypass in test mode even if the computer isn't compatible with Windows 11.
+				Stop-Computer
+
+				exit 0 # Not sure if exit is necessary after Stop-Computer but doesn't hurt.
+			}
+		} elseif (-not $win11compatibleGPU) {
+			# The GPU could not be verified in WinPE/WinRE since GPU drivers were not available, but it's generally assumed that GPUs will be compatible if everything else was compatible.
+			# So, if this check failed, we need to make sure the technician makes I.T. aware that this issue could actually happen since it was a time wasting Windows 11 installation when Windows 10 must be installed instead.
+
+			Write-Host "`n  ERROR: GPU is NOT compatible with Windows 11. - THIS IS UNEXPECTED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+			FocusScriptWindow
+			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+			$notWin11compatibleResponse = Read-Host '  Press ENTER to Shut Down This Computer'
+
+			if ((-not $testMode) -or ($notWin11compatibleResponse -ne 'TESTING')) { # Can bypass in test mode even if the computer isn't compatible with Windows 11.
+				Stop-Computer
+
+				exit 0 # Not sure if exit is necessary after Stop-Computer but doesn't hurt.
+			}
+		} elseif ($win11compatibleTPM -and $win11compatibleArchitecture -and $win11compatibleBootMethod -and $win11compatibleCPUmodel -and $win11compatibleCPUcores -and $win11compatibleCPUspeed -and $win11compatiblePartitionType -and $win11compatibleRAM -and $win11compatibleSecureBoot -and $win11compatibleStorage -and $win11compatibleTPMfromWhyNotWin11) {
+			Write-Host "`n  Successfully Verified Windows 11 Support" -ForegroundColor Green
+			
+			Add-Content '\Install\Windows Setup Log.txt' "Verified Windows 11 Support - $(Get-Date)" -ErrorAction SilentlyContinue
+		} else {
+			# None of the previous elseif checks should fail (unless in Test Mode) because it was all verified in WinPE before allowing Windows 11 to be installed.
+			# So, if we got here, this computer needs to be sent to Free Geek I.T. to see what went wrong.
+
+			Write-Host "`n  ERROR: Failed to verify Windows 11 support. - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+			FocusScriptWindow
+			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+			$notWin11compatibleResponse = Read-Host '  Press ENTER to Shut Down This Computer'
+
+			if ((-not $testMode) -or ($notWin11compatibleResponse -ne 'TESTING')) { # Can bypass in test mode even if the computer isn't compatible with Windows 11.
+				Stop-Computer
+
+				exit 0 # Not sure if exit is necessary after Stop-Computer but doesn't hurt.
+			}
 		}
 	}
 

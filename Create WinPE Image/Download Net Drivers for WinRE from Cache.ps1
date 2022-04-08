@@ -14,7 +14,12 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-$winREnetDriversOutputPath = "$HOME\Documents\Free Geek\WinRE Net Drivers to Install"
+$basePath = "$HOME\Documents\Free Geek"
+if (Test-Path "$HOME\Documents\Free Geek.lnk") {
+    $basePath = (New-Object -ComObject WScript.Shell).CreateShortcut("$HOME\Documents\Free Geek.lnk").TargetPath
+}
+
+$winREnetDriversOutputPath = "$basePath\WinRE Net Drivers to Install"
 
 [xml]$smbCredentialsXML = Get-Content "$PSScriptRoot\Install Folder Resources\Scripts\smb-credentials.xml" -ErrorAction Stop
 
@@ -69,6 +74,7 @@ Write-Output "`n  Downloading Net Drivers for WinRE from Driver Cache..."
 $allCachedDriverPaths = (Get-ChildItem "$driversCacheBasePath\Unique Drivers" -Directory).FullName
 
 # This Driver .inf parsing code is based on code written for "Install Windows.ps1"
+$thisDriverIndex = 0
 foreach ($thisDriverFolderPath in $allCachedDriverPaths) {
     $thisDriverFolderName = (Split-Path $thisDriverFolderPath -Leaf)
 
@@ -98,15 +104,16 @@ foreach ($thisDriverFolderPath in $allCachedDriverPaths) {
                     $thisDriverClass = $thisDriverInfLine.Substring($lineEqualsIndex + 1).Trim().ToUpper() # It appears that the Class Names will never be in quotes or be variables that need to be translated.
 
                     if ($thisDriverClass -eq 'NET') {
+                        $thisDriverIndex ++
                         if (-not (Test-Path "$winREnetDriversOutputPath\$thisDriverFolderName")) {
                             try {
-                                Write-Output "    Downloading Net Driver: $thisDriverFolderName..."
+                                Write-Output "    $thisDriverIndex) Downloading Net Driver: $thisDriverFolderName..."
                                 Copy-Item $thisDriverFolderPath $winREnetDriversOutputPath -Recurse -Force -ErrorAction Stop
                             } catch {
                                 Write-Host "      ERROR DOWNLOADING NET DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
                             }
                         } else {
-                            Write-Output "    ALREADY DOWNLOADED NET DRIVER: $thisDriverFolderName..."
+                            Write-Output "    $thisDriverIndex) ALREADY DOWNLOADED NET DRIVER: $thisDriverFolderName..."
                         }
                     }
 
@@ -119,4 +126,4 @@ foreach ($thisDriverFolderPath in $allCachedDriverPaths) {
 
 Remove-SmbMapping -RemotePath $smbShare -Force -UpdateProfile -ErrorAction SilentlyContinue # Done with SMB Share now, so remove it.
 
-Read-Host "`n  DONE"
+Read-Host "`n  DONE" | Out-Null

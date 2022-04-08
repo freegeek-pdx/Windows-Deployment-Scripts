@@ -27,7 +27,7 @@ CALL "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deploym
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Unrestricted -File "%~dp0Create WinPE Image.ps1"
 
 ECHO.
-ECHO   DONE!
+ECHO   DONE ON %DATE% AT %TIME%
 ECHO.
 ECHO   Press Any Key to Close This Window
 
