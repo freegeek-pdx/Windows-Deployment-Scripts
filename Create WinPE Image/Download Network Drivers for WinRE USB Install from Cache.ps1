@@ -19,7 +19,7 @@ if (Test-Path "$HOME\Documents\Free Geek.lnk") {
     $basePath = (New-Object -ComObject WScript.Shell).CreateShortcut("$HOME\Documents\Free Geek.lnk").TargetPath
 }
 
-$winREnetDriversOutputPath = "$basePath\WinRE Net Drivers to Install"
+$winREnetDriversOutputPath = "$basePath\WinRE Network Drivers for USB Install"
 
 [xml]$smbCredentialsXML = Get-Content "$PSScriptRoot\Install Folder Resources\Scripts\smb-credentials.xml" -ErrorAction Stop
 
@@ -69,12 +69,15 @@ if (-not (Test-Path $winREnetDriversOutputPath)) {
     New-Item -ItemType 'Directory' -Path $winREnetDriversOutputPath -ErrorAction Stop | Out-Null
 }
 
-Write-Output "`n  Downloading Net Drivers for WinRE from Driver Cache..."
+Write-Output "`n  Downloading Network Drivers for WinRE USB Install from Driver Cache..."
 
 $allCachedDriverPaths = (Get-ChildItem "$driversCacheBasePath\Unique Drivers" -Directory).FullName
 
+$netDriverFolderNames = @()
+
 # This Driver .inf parsing code is based on code written for "Install Windows.ps1"
 $thisDriverIndex = 0
+$downloadedNetDriversCount = 0
 foreach ($thisDriverFolderPath in $allCachedDriverPaths) {
     $thisDriverFolderName = (Split-Path $thisDriverFolderPath -Leaf)
 
@@ -105,15 +108,17 @@ foreach ($thisDriverFolderPath in $allCachedDriverPaths) {
 
                     if ($thisDriverClass -eq 'NET') {
                         $thisDriverIndex ++
+                        $netDriverFolderNames += $thisDriverFolderName
                         if (-not (Test-Path "$winREnetDriversOutputPath\$thisDriverFolderName")) {
                             try {
-                                Write-Output "    $thisDriverIndex) Downloading Net Driver: $thisDriverFolderName..."
+                                Write-Output "    $thisDriverIndex) Downloading Network Driver: $thisDriverFolderName..."
                                 Copy-Item $thisDriverFolderPath $winREnetDriversOutputPath -Recurse -Force -ErrorAction Stop
+                                $downloadedNetDriversCount ++
                             } catch {
-                                Write-Host "      ERROR DOWNLOADING NET DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
+                                Write-Host "      ERROR DOWNLOADING NETWORK DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
                             }
                         } else {
-                            Write-Output "    $thisDriverIndex) ALREADY DOWNLOADED NET DRIVER: $thisDriverFolderName..."
+                            Write-Output "    $thisDriverIndex) ALREADY DOWNLOADED NETWORK DRIVER: $thisDriverFolderName..."
                         }
                     }
 
@@ -126,4 +131,28 @@ foreach ($thisDriverFolderPath in $allCachedDriverPaths) {
 
 Remove-SmbMapping -RemotePath $smbShare -Force -UpdateProfile -ErrorAction SilentlyContinue # Done with SMB Share now, so remove it.
 
-Read-Host "`n  DONE" | Out-Null
+Write-Host "`n  Downloaded $downloadedNetDriversCount Network Drivers from Cache" -ForegroundColor Green
+
+try {
+    Write-Output "`n`n  Checking Downloaded Network Drivers for Stray (No Longer Cached) Drivers to Delete..."
+
+    $deletedStrayDownloadedNetDriversCount = 0
+
+    Get-ChildItem "$winREnetDriversOutputPath" -ErrorAction Stop | ForEach-Object {
+        if (-not $netDriverFolderNames.Contains($_.Name)) {
+            $deletedStrayDownloadedNetDriversCount ++
+            Remove-Item $_.FullName -Recurse -Force -ErrorAction Stop
+        }
+    }
+
+    if ($deletedStrayDownloadedNetDriversCount -eq 0) {
+        Write-Host "`n  Checked Downloaded Network Drivers and Found No Strays to Delete" -ForegroundColor Green
+    } else {
+        Write-Host "`n  Deleted $deletedStrayDownloadedNetDriversCount Strays From Downloaded Network Drivers" -ForegroundColor Green
+    }
+} catch {
+    Write-Host "`n  ERROR DELETED STRAY DOWNLOADED NETWORK DRIVERS: $_" -ForegroundColor Red
+    Write-Host "`n  ERROR: Failed to check for or delete stray downloaded network drivers." -ForegroundColor Red
+}
+
+Read-Host "`n`n  DONE DOWNLOADING NETWORK DRIVERS FROM CACHE" | Out-Null

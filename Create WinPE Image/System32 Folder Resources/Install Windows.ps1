@@ -1,8 +1,8 @@
 #
 # By Pico Mitchell for Free Geek
 # Originally written and tested in September 2020 for Windows 10, version 2004
-# Tested in December 2021 for Windows 10, version 21H2
-# AND Tested in December 2021 for Windows 11, version 21H2
+# Tested in November 2022 for Windows 10, version 22H2
+# AND Tested in November 2022 for Windows 11, version 22H2
 #
 # MIT License
 #
@@ -19,7 +19,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2022.4.6-1
+# Version: 2022.11.5-1
 
 # PowerShell must be installed in WinPE to run this script (which will be taken care of automatically if WinPE is built with "Create WinPE Image.ps1"):
 # https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-adding-powershell-support-to-windows-pe
@@ -301,8 +301,10 @@ if (Test-Path '\Install\DPK\oa3tool.exe') {
 				$oa3toolValidateError = Get-Content -Raw "$Env:TEMP\fgInstall-oa3tool-Validate-Output.txt"
 			}
 
-			Write-Host "`n  ERROR RUNNING OA3TOOL VALIDATE: $oa3toolValidateError" -ForegroundColor Red
-			Write-Host "`n  ERROR: OEM Activation Tool 3.0 (oa3tool.exe) validation failed (oa3tool Exit Code = $oa3toolValidateExitCode)." -ForegroundColor Red
+			if (!$oa3toolValidateError.Contains('failed to find the ACPI MSDM table')) { # Only the yellow "Failed to Detect DPK in SMBIOS" message below will be displayed for this expected failure state.
+				Write-Host "`n  ERROR RUNNING OA3TOOL VALIDATE: $oa3toolValidateError" -ForegroundColor Red
+				Write-Host "`n  ERROR: OEM Activation Tool 3.0 (oa3tool.exe) validation failed (oa3tool Exit Code = $oa3toolValidateExitCode)." -ForegroundColor Red
+			}
 		}
 	} catch {
 		Write-Host "`n  ERROR STARTING OA3TOOL: $_" -ForegroundColor Red
@@ -699,7 +701,10 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 	
 	$didInstallWindowsImage = $false # Keep track of if Windows Image was successfully installed in a previous loop to know whether the drive needs to be reformatted and the install re-attempted.
 	$didInstallDrivers = $false # Keep track of if drivers were successfully installed in a previous loop to not unnecessarily reinstall them.
-	
+
+	$didCreateRecoveryPartition = $false # Keep track of if Recovery was successfully created and setup in a previous
+	$didSetUpRecovery = $false # loop to not unnecessarily do it again (which seems to fail on subsequent attempts).
+
 	$biosOrUEFI = $null
 
 	for ( ; ; ) {
@@ -1058,7 +1063,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 							Write-Host "`n  WINDOWS 11 COMPATIBILITY CHECKS ARE OVERRIDDEN IN TEST MODE" -ForegroundColor Yellow
 						}
 
-						if (Test-Path $latestWin11wimPath) {
+						if (($null -ne $latestWin11wimPath) -and (Test-Path $latestWin11wimPath)) {
 							Write-Host "`n  This Computer Is Compatible With Window 11" -ForegroundColor Green	
 
 							Write-Output "`n`n  Choose Windows Version for $installDriveName...`n"
@@ -1099,7 +1104,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 								if ($confirmWin11 -eq '0') {
 									Write-Host "`n  Windows 10 Will Be Installed..." -ForegroundColor Yellow
-								
+
 									Start-Sleep 2
 									break
 								} else {
@@ -1387,7 +1392,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 			if ($lastTaskSucceeded) {
 				Start-Sleep 3 # Sleep for a few seconds to be able to see last results before clearing screen.
 				Clear-Host
-				Write-Output "`n  Installing Windows Onto $installDriveName...`n`n`n`n`n`n  Windows Image: $latestWimDisplayName" # Add empty lines for PowerShell progress UI
+				Write-Output "`n  Installing Windows Onto $installDriveName...`n`n`n`n`n`n  Windows Version: $latestWimDisplayName" # Add empty lines for PowerShell progress UI
 				
 				try {
 					# Would like to use Expand-WindowsImage's "-CheckIntegrity" parameter, but it generally takes too long.
@@ -1407,7 +1412,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					# If Expand-WindowsImage fails, the progress bar doesn't complete itself and the incomplete progress will still show above the next progress bar during the next re-attempt.
 					# I tried calling "Write-Progress -Activity 'Operation' -Status 'Running' -Completed" manually to clear it, but that doesn't work. Not sure what to do about that issue.
 					
-					$dismLogContents = Get-Content -Raw "$Env:WINDIR\Logs\Dism\dism.log" -ErrorAction SilentlyContinue
+					$dismLogContents = Get-Content -Raw "$Env:WINDIR\Logs\DISM\dism.log" -ErrorAction SilentlyContinue
 					if (($null -eq $dismLogContents) -or ($dismLogContents -eq '')) {
 						$dismLogContents = ' N/A'
 					} else {
@@ -1968,7 +1973,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 							}
 							
 							if ($installedDriversCount -eq 0) {
-								$dismLogContents = Get-Content -Raw "$Env:WINDIR\Logs\Dism\dism.log" -ErrorAction SilentlyContinue
+								$dismLogContents = Get-Content -Raw "$Env:WINDIR\Logs\DISM\dism.log" -ErrorAction SilentlyContinue
 								if (($null -eq $dismLogContents) -or ($dismLogContents -eq '')) {
 									$dismLogContents = ' N/A'
 								} else {
@@ -1998,7 +2003,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 			}
 		}
 		
-		if ($lastTaskSucceeded -and (-not $isBaseInstall)) {
+		if ($lastTaskSucceeded -and (-not $isBaseInstall) -and (-not $didCreateRecoveryPartition)) {
 			Write-Output "`n`n  Copying Setup Resources Onto $installDriveName..."
 			
 			try {
@@ -2061,186 +2066,190 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 		if ($lastTaskSucceeded) {
 			if (Test-Path 'W:\Windows\System32\Recovery\Winre.wim') {
-				Start-Sleep 3 # Sleep for a few seconds to be able to see last results before clearing screen.
-				Clear-Host
-				Write-Output "`n  Creating Recovery Partition...`n`n`n`n`n`n`n`n`n" # Add empty lines for PowerShell progress UI
-
-				try {
-					# Recovery Parition Sizing Research and Notes:
-					
-					# Windows 10 1903 (v1) ISO Installer made Recovery partition 529 MB for 365 MB WinRE, which is 164 MB over WinRE size.
-					# Windows 10 1903 (v2) ISO Installer made Recovery partition 529 MB for 409 MB WinRE, which is 120 MB over WinRE size.
-					# Windows 10 1909 ISO Installer made Recovery partition 529 MB for 418 MB WinRE, which is 111 MB over WinRE size.
-
-					# On Win 10 1909 and older, the Recovery partition was at the FRONT of the drive, contrary to documentation.
-					# On Win 10 2004 and newer, the Recovery partition is at the END of the drive, as documentation specifies it should be:
-					# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/hard-drives-and-partitions#recovery-partitions
-					# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/configure-uefigpt-based-hard-drive-partitions#partition-layout
-
-					# There also seems to be a change in the drive paritioning code at this point since the Recovery partition was always 529 MB in Win 10 1909 and older, regardless of WinRE size.
-					# Then, in Win 10 2004 and newer, the Recovery partition size seems to get set dynamically to be 102 MB larger than actual WinRE size.
-
-					# Windows 10 2004 ISO Installer made Recovery partition 505 MB for 403 MB WinRE, which is 102 MB over WinRE size.
-					# Windows 10 20H2 (v1) ISO Installer made Recovery partition 498 MB for 396 MB WinRE, which is 102 MB over WinRE size.
-					# Windows 10 20H2 (v2) ISO Installer made Recovery partition 499 MB for 397 MB WinRE, which is 102 MB over WinRE size.
-					# Windows 10 21H1 ISO Installer made Recovery partition 508 MB for 406 MB WinRE, which is 102 MB over WinRE size.
-
-					# Windows 11 Beta 22000.100 ISO Installer made Recovery partition 495 MB for 392 MB WinRE, which is 103 MB over WinRE size. (Could actually still be about 102 MB but shown as 103 MB because of MB rounding.)
-
-					# I've seen that if there is too little free space on the Recovery partition, then Windows will move WinRE out of the Recovery partition and into Recovery folder at the root of the main Windows partition.
-					# This documentations states 52 MB minimum of free space: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/configure-uefigpt-based-hard-drive-partitions#recovery-tools-partition
-					# But through testing on 21H1, I found that 66 MB of free space is needed in this script for Windows to not move WinRE to the root of the main Windows partition (it will get moved with only 65 MB free, but not with 66 MB free).
-					# Although, as the documentation also states, "The file system itself can take up additional space. For example, NTFS may reserve 5-15MB or more on a 750MB partition."
-					# I have confirmed that the NTFS takes up these 14 MBs (by observing the used space in an "empty" NTFS partition) and that 52 MB appears to be the actual free space.
-					# This script just needed to create 66 MB of free space to account for those 14 MBs that NTFS will take up for an end result of 52 MBs of free space (as the documentation states).
-
-					# Based on the recommendation in this same documentation (https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/configure-uefigpt-based-hard-drive-partitions#recovery-tools-partition),
-					# we will create a Recovery partition that is least 250 MB larger than the WinRE size (and rounded up to the nearest 50 MB for clean and round Recovery partition sizes).
-					# This will result in a larger Recovery partition than the Windows ISO Installer creates, but still a drop in the bucket (less than 1 GB) for hard drive capacities and better to have extra space for safety.
-					
-					# The Recovery partition size is being calculated dynamically like this since Cumulative updates are pre-installed into WinRE which will make it larger than the WinRE sizes shown above from the original ISOs.
-					# And, since the WinRE size will be slightly different after each time Cumulative updates are pre-installed, I don't want to have to check and change a hardcoded Recovery partition size if it becomes too small.
-
-					$recoveryPartitionSizeFreeSpaceBytes = 250MB
-					$recoveryPartitionSizeRoundUpToNearestBytes = 50MB
-
-					$winreSizeBytes = (Get-Item 'W:\Windows\System32\Recovery\Winre.wim').Length
-					$recoveryPartitionSizeBytes = ([math]::Ceiling(($winreSizeBytes + $recoveryPartitionSizeFreeSpaceBytes) / $recoveryPartitionSizeRoundUpToNearestBytes) * $recoveryPartitionSizeRoundUpToNearestBytes)
+				if (-not $didCreateRecoveryPartition) {
+					Start-Sleep 3 # Sleep for a few seconds to be able to see last results before clearing screen.
+					Clear-Host
+					Write-Output "`n  Creating Recovery Partition...`n`n`n`n`n`n`n`n`n" # Add empty lines for PowerShell progress UI
 
 					try {
-						Write-Host "    Resizing Windows Partition for $($recoveryPartitionSizeBytes / 1MB) MB Recovery Partition..." -NoNewline
+						# Recovery Parition Sizing Research and Notes:
+						
+						# Windows 10 1903 (v1) ISO Installer made Recovery partition 529 MB for 365 MB WinRE, which is 164 MB over WinRE size.
+						# Windows 10 1903 (v2) ISO Installer made Recovery partition 529 MB for 409 MB WinRE, which is 120 MB over WinRE size.
+						# Windows 10 1909 ISO Installer made Recovery partition 529 MB for 418 MB WinRE, which is 111 MB over WinRE size.
 
-						# Do not use "Get-PartitionSupportedSize -DriveLetter 'W' -ErrorAction Stop).SizeMax" here since that seems to actually include some unusable space and will result in the Recovery partition being smaller than intended.
-						Resize-Partition -DriveLetter 'W' -Size ((Get-Partition -DriveLetter 'W' -ErrorAction Stop).Size - $recoveryPartitionSizeBytes) -ErrorAction Stop
+						# On Win 10 1909 and older, the Recovery partition was at the FRONT of the drive, contrary to documentation.
+						# On Win 10 2004 and newer, the Recovery partition is at the END of the drive, as documentation specifies it should be:
+						# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/hard-drives-and-partitions#recovery-partitions
+						# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/configure-uefigpt-based-hard-drive-partitions#partition-layout
 
-						Write-Host ' RESIZED' -ForegroundColor Green
+						# There also seems to be a change in the drive paritioning code at this point since the Recovery partition was always 529 MB in Win 10 1909 and older, regardless of WinRE size.
+						# Then, in Win 10 2004 and newer, the Recovery partition size seems to get set dynamically to be 102 MB larger than actual WinRE size.
+
+						# Windows 10 2004 ISO Installer made Recovery partition 505 MB for 403 MB WinRE, which is 102 MB over WinRE size.
+						# Windows 10 20H2 (v1) ISO Installer made Recovery partition 498 MB for 396 MB WinRE, which is 102 MB over WinRE size.
+						# Windows 10 20H2 (v2) ISO Installer made Recovery partition 499 MB for 397 MB WinRE, which is 102 MB over WinRE size.
+						# Windows 10 21H1 ISO Installer made Recovery partition 508 MB for 406 MB WinRE, which is 102 MB over WinRE size.
+
+						# Windows 11 Beta 22000.100 ISO Installer made Recovery partition 495 MB for 392 MB WinRE, which is 103 MB over WinRE size. (Could actually still be about 102 MB but shown as 103 MB because of MB rounding.)
+
+						# I've seen that if there is too little free space on the Recovery partition, then Windows will move WinRE out of the Recovery partition and into Recovery folder at the root of the main Windows partition.
+						# This documentations states 52 MB minimum of free space: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/configure-uefigpt-based-hard-drive-partitions#recovery-tools-partition
+						# But through testing on 21H1, I found that 66 MB of free space is needed in this script for Windows to not move WinRE to the root of the main Windows partition (it will get moved with only 65 MB free, but not with 66 MB free).
+						# Although, as the documentation also states, "The file system itself can take up additional space. For example, NTFS may reserve 5-15MB or more on a 750MB partition."
+						# I have confirmed that the NTFS takes up these 14 MBs (by observing the used space in an "empty" NTFS partition) and that 52 MB appears to be the actual free space.
+						# This script just needed to create 66 MB of free space to account for those 14 MBs that NTFS will take up for an end result of 52 MBs of free space (as the documentation states).
+
+						# Based on the recommendation in this same documentation (https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/configure-uefigpt-based-hard-drive-partitions#recovery-tools-partition),
+						# we will create a Recovery partition that is least 250 MB larger than the WinRE size (and rounded up to the nearest 50 MB for clean and round Recovery partition sizes).
+						# This will result in a larger Recovery partition than the Windows ISO Installer creates, but still a drop in the bucket (less than 1 GB) for hard drive capacities and better to have extra space for safety.
+						
+						# The Recovery partition size is being calculated dynamically like this since Cumulative updates are pre-installed into WinRE which will make it larger than the WinRE sizes shown above from the original ISOs.
+						# And, since the WinRE size will be slightly different after each time Cumulative updates are pre-installed, I don't want to have to check and change a hardcoded Recovery partition size if it becomes too small.
+
+						$recoveryPartitionSizeFreeSpaceBytes = 250MB
+						$recoveryPartitionSizeRoundUpToNearestBytes = 50MB
+
+						$winreSizeBytes = (Get-Item 'W:\Windows\System32\Recovery\Winre.wim').Length
+						$recoveryPartitionSizeBytes = ([math]::Ceiling(($winreSizeBytes + $recoveryPartitionSizeFreeSpaceBytes) / $recoveryPartitionSizeRoundUpToNearestBytes) * $recoveryPartitionSizeRoundUpToNearestBytes)
+
+						try {
+							Write-Host "    Resizing Windows Partition for $($recoveryPartitionSizeBytes / 1MB) MB Recovery Partition..." -NoNewline
+
+							# Do not use "Get-PartitionSupportedSize -DriveLetter 'W' -ErrorAction Stop).SizeMax" here since that seems to actually include some unusable space and will result in the Recovery partition being smaller than intended.
+							Resize-Partition -DriveLetter 'W' -Size ((Get-Partition -DriveLetter 'W' -ErrorAction Stop).Size - $recoveryPartitionSizeBytes) -ErrorAction Stop
+
+							Write-Host ' RESIZED' -ForegroundColor Green
+						} catch {
+							Write-Host ' FAILED' -ForegroundColor Red
+							throw $_
+						}
+
+						try {
+							Write-Host "    Creating $($recoveryPartitionSizeBytes / 1MB) MB Recovery Partition for $([math]::Round($winreSizeBytes / 1MB)) MB WinRE..." -NoNewline
+							
+							# Recovery partition is created as last partition using leftover space unused by previous partitions.
+							# $windowsPartitionSize was resized by subtracting $recoveryPartitionSizeBytes for this reason.
+
+							$recoveryPartition = $null
+							
+							if ($biosOrUEFI -eq 'UEFI') {
+								$recoveryPartition = New-Partition $installDriveID -GptType '{de94bba4-06d1-4d40-a16a-bfd50179d6ac}' -UseMaximumSize -DriveLetter 'R' -ErrorAction Stop
+
+								# The Recovery partition in UEFI mode must have GPT Attributes of 0x8000000000000001.
+								# There seems to be no way to set GPT Attributes in PowerShell (specifically GPT_ATTRIBUTE_PLATFORM_REQUIRED), so DiskPart must be used for this to properly set up the Recovery partition in UEFI mode.
+								# For more info: https://social.technet.microsoft.com/Forums/en-US/4f04df47-8bd6-4fff-bd79-8d3b45c23f8a/last-pieces-of-the-puzzle-converting-diskpart-script-to-powershell-storage-cmdlets
+								
+								$diskpartSetGptAttributesCommands = @(
+									"select disk $installDriveID",
+									"select partition $($recoveryPartition.PartitionNumber)",
+									'gpt attributes=0x8000000000000001',
+									'exit'
+								)
+								
+								Remove-Item "$Env:TEMP\fgInstall-*.txt" -Force -ErrorAction SilentlyContinue
+
+								Set-Content -Path "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Commands.txt" -Value $diskpartSetGptAttributesCommands -Force -ErrorAction Stop
+								
+								$diskpartSetGptAttributesExitCode = (Start-Process 'diskpart.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Error.txt" -ArgumentList '/s', "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Commands.txt" -ErrorAction Stop).ExitCode
+								$diskpartSetGptAttributesOutput = Get-Content -Raw "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Output.txt"
+								$diskpartSetGptAttributesError = Get-Content -Raw "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Error.txt"
+								
+								if (($diskpartSetGptAttributesExitCode -ne 0) -or ($null -ne $diskpartSetGptAttributesError) -or ($null -eq $diskpartSetGptAttributesOutput) -or (-not $diskpartSetGptAttributesOutput.Contains('DiskPart successfully assigned the attributes to the selected GPT partition.'))) {
+									if ($null -eq $diskpartSetGptAttributesOutput) {
+										$diskpartSetGptAttributesOutput = 'N/A'
+									}
+
+									if ($null -eq $diskpartSetGptAttributesError) {
+										$diskpartSetGptAttributesError = 'N/A (Check DISKPART OUTPUT)' # DiskPart seems to include runtime errors in the regular output.
+									}
+
+									throw "DiskPart Exit Code = $diskpartSetGptAttributesExitCode`n`n  DISKPART OUTPUT: $diskpartSetGptAttributesOutput`n`n  DISKPART ERROR: $diskpartSetGptAttributesError"
+								}
+							} else {
+								$recoveryPartition = New-Partition $installDriveID -MbrType 'IFS' -UseMaximumSize -DriveLetter 'R' -ErrorAction Stop
+							}
+							
+							Format-Volume -Partition $recoveryPartition -FileSystem 'NTFS' -NewFileSystemLabel 'Recovery' -ErrorAction Stop | Out-Null
+
+							if ($biosOrUEFI -eq 'Legacy BIOS') {
+								# The Recovery partition for BIOS must have a type of 0x27 (in hex, or 39 in decimal). This can be done in DiskPart with the command "set id=27"
+								# But, I found it can also be done in PowerShell by setting the equivalent MbrType decimal value.
+								# For some reason New-Partition only accepts specific MbrType values, so the correct value can't be set when creating the partition.
+								# Luckily, Set-Partition accepts MbrType values of any UInt16 and setting MbrType 39 correctly shows as "Type: 27" when confirmed with DiskPart.
+
+								# Also, this MUST be done AFTER the partition has been formatted or it won't take effect. Maybe because formatting overwrites it?
+
+								$recoveryPartition | Set-Partition -MbrType 39 -ErrorAction Stop
+							}
+							
+							Write-Host ' CREATED' -ForegroundColor Green
+						} catch {
+							Write-Host ' FAILED' -ForegroundColor Red
+							throw $_
+						}
 					} catch {
-						Write-Host ' FAILED' -ForegroundColor Red
-						throw $_
+						Write-Host "`n  ERROR CREATING RECOVERY PARTITION: $_" -ForegroundColor Red
+						
+						$lastTaskSucceeded = $false
 					}
 
-					try {
-						Write-Host "    Creating $($recoveryPartitionSizeBytes / 1MB) MB Recovery Partition for $([math]::Round($winreSizeBytes / 1MB)) MB WinRE..." -NoNewline
-						
-						# Recovery partition is created as last partition using leftover space unused by previous partitions.
-						# $windowsPartitionSize was resized by subtracting $recoveryPartitionSizeBytes for this reason.
+					if ($testMode -or (-not $lastTaskSucceeded)) {
+						Write-Host "`n  DRIVE DETAILS:" -ForegroundColor Yellow
 
-						$recoveryPartition = $null
-						
-						if ($biosOrUEFI -eq 'UEFI') {
-							$recoveryPartition = New-Partition $installDriveID -GptType '{de94bba4-06d1-4d40-a16a-bfd50179d6ac}' -UseMaximumSize -DriveLetter 'R' -ErrorAction Stop
+						try {
+							# Output all partition details from DiskPart (since it shows all GPT Attributes, MBR Types, etc) to be able to examine failures in detail (and successes when in test mode).
 
-							# The Recovery partition in UEFI mode must have GPT Attributes of 0x8000000000000001.
-							# There seems to be no way to set GPT Attributes in PowerShell (specifically GPT_ATTRIBUTE_PLATFORM_REQUIRED), so DiskPart must be used for this to properly set up the Recovery partition in UEFI mode.
-							# For more info: https://social.technet.microsoft.com/Forums/en-US/4f04df47-8bd6-4fff-bd79-8d3b45c23f8a/last-pieces-of-the-puzzle-converting-diskpart-script-to-powershell-storage-cmdlets
-							
-							$diskpartSetGptAttributesCommands = @(
-								"select disk $installDriveID",
-								"select partition $($recoveryPartition.PartitionNumber)",
-								'gpt attributes=0x8000000000000001',
-								'exit'
-							)
+							$diskpartGetPartitionDetailsCommands = @("select disk $installDriveID", 'list partition')
+
+							$numberOfPartitions = 3
+
+							if ($biosOrUEFI -eq 'UEFI') {
+								$numberOfPartitions = 4
+							}
+
+							for ($thisPartitionNumber = 1; $thisPartitionNumber -le $numberOfPartitions; $thisPartitionNumber ++) {
+								$diskpartGetPartitionDetailsCommands += "select partition $thisPartitionNumber"
+								$diskpartGetPartitionDetailsCommands += 'detail partition'
+							}
+
+							$diskpartGetPartitionDetailsCommands += 'exit'
 							
 							Remove-Item "$Env:TEMP\fgInstall-*.txt" -Force -ErrorAction SilentlyContinue
 
-							Set-Content -Path "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Commands.txt" -Value $diskpartSetGptAttributesCommands -Force -ErrorAction Stop
+							Set-Content -Path "$Env:TEMP\fgInstall-diskpart-GetPartitionDetails-Commands.txt" -Value $diskpartGetPartitionDetailsCommands -Force -ErrorAction Stop
 							
-							$diskpartSetGptAttributesExitCode = (Start-Process 'diskpart.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Error.txt" -ArgumentList '/s', "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Commands.txt" -ErrorAction Stop).ExitCode
-							$diskpartSetGptAttributesOutput = Get-Content -Raw "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Output.txt"
-							$diskpartSetGptAttributesError = Get-Content -Raw "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Error.txt"
-							
-							if (($diskpartSetGptAttributesExitCode -ne 0) -or ($null -ne $diskpartSetGptAttributesError) -or ($null -eq $diskpartSetGptAttributesOutput) -or (-not $diskpartSetGptAttributesOutput.Contains('DiskPart successfully assigned the attributes to the selected GPT partition.'))) {
-								if ($null -eq $diskpartSetGptAttributesOutput) {
-									$diskpartSetGptAttributesOutput = 'N/A'
-								}
+							$diskpartGetPartitionDetailsExitCode = (Start-Process 'diskpart.exe' -NoNewWindow -Wait -PassThru -ArgumentList '/s', "$Env:TEMP\fgInstall-diskpart-GetPartitionDetails-Commands.txt" -ErrorAction Stop).ExitCode # Do NOT RedirectStandardOutput OR RedirectStandardError because we want everything outputted in window.
 
-								if ($null -eq $diskpartSetGptAttributesError) {
-									$diskpartSetGptAttributesError = 'N/A (Check DISKPART OUTPUT)' # DiskPart seems to include runtime errors in the regular output.
-								}
-
-								throw "DiskPart Exit Code = $diskpartSetGptAttributesExitCode`n`n  DISKPART OUTPUT: $diskpartSetGptAttributesOutput`n`n  DISKPART ERROR: $diskpartSetGptAttributesError"
+							if ($diskpartGetPartitionDetailsExitCode -ne 0) {
+								throw "DiskPart Exit Code = $diskpartGetPartitionDetailsExitCode"
 							}
-						} else {
-							$recoveryPartition = New-Partition $installDriveID -MbrType 'IFS' -UseMaximumSize -DriveLetter 'R' -ErrorAction Stop
-						}
-						
-						Format-Volume -Partition $recoveryPartition -FileSystem 'NTFS' -NewFileSystemLabel 'Recovery' -ErrorAction Stop | Out-Null
-
-						if ($biosOrUEFI -eq 'Legacy BIOS') {
-							# The Recovery partition for BIOS must have a type of 0x27 (in hex, or 39 in decimal). This can be done in DiskPart with the command "set id=27"
-							# But, I found it can also be done in PowerShell by setting the equivalent MbrType decimal value.
-							# For some reason New-Partition only accepts specific MbrType values, so the correct value can't be set when creating the partition.
-							# Luckily, Set-Partition accepts MbrType values of any UInt16 and setting MbrType 39 correctly shows as "Type: 27" when confirmed with DiskPart.
-
-							# Also, this MUST be done AFTER the partition has been formatted or it won't take effect. Maybe because formatting overwrites it?
-
-							$recoveryPartition | Set-Partition -MbrType 39 -ErrorAction Stop
-						}
-						
-						Write-Host ' CREATED' -ForegroundColor Green
-					} catch {
-						Write-Host ' FAILED' -ForegroundColor Red
-						throw $_
-					}
-				} catch {
-					Write-Host "`n  ERROR CREATING RECOVERY PARTITION: $_" -ForegroundColor Red
-					
-					$lastTaskSucceeded = $false
-				}
-
-				if ($testMode -or (-not $lastTaskSucceeded)) {
-					Write-Host "`n  DRIVE DETAILS:" -ForegroundColor Yellow
-
-					try {
-						# Output all partition details from DiskPart (since it shows all GPT Attributes, MBR Types, etc) to be able to examine failures in detail (and successes when in test mode).
-
-						$diskpartGetPartitionDetailsCommands = @("select disk $installDriveID", 'list partition')
-
-						$numberOfPartitions = 3
-
-						if ($biosOrUEFI -eq 'UEFI') {
-							$numberOfPartitions = 4
-						}
-
-						for ($thisPartitionNumber = 1; $thisPartitionNumber -le $numberOfPartitions; $thisPartitionNumber ++) {
-							$diskpartGetPartitionDetailsCommands += "select partition $thisPartitionNumber"
-							$diskpartGetPartitionDetailsCommands += 'detail partition'
-						}
-
-						$diskpartGetPartitionDetailsCommands += 'exit'
-						
-						Remove-Item "$Env:TEMP\fgInstall-*.txt" -Force -ErrorAction SilentlyContinue
-
-						Set-Content -Path "$Env:TEMP\fgInstall-diskpart-GetPartitionDetails-Commands.txt" -Value $diskpartGetPartitionDetailsCommands -Force -ErrorAction Stop
-						
-						$diskpartGetPartitionDetailsExitCode = (Start-Process 'diskpart.exe' -NoNewWindow -Wait -PassThru -ArgumentList '/s', "$Env:TEMP\fgInstall-diskpart-GetPartitionDetails-Commands.txt" -ErrorAction Stop).ExitCode # Do NOT RedirectStandardOutput OR RedirectStandardError because we want everything outputted in window.
-
-						if ($diskpartGetPartitionDetailsExitCode -ne 0) {
-							throw "DiskPart Exit Code = $diskpartGetPartitionDetailsExitCode"
-						}
-					} catch {
-						try {
-							Get-Partition $installDriveID -ErrorAction Stop # Output info from Get-Partition if DiskPart details failed.
 						} catch {
-							Get-Disk $installDriveID # If Get-Partition and DiskPart failed, output info from Get-Disk instead.
+							try {
+								Get-Partition $installDriveID -ErrorAction Stop # Output info from Get-Partition if DiskPart details failed.
+							} catch {
+								Get-Disk $installDriveID # If Get-Partition and DiskPart failed, output info from Get-Disk instead.
+							}
 						}
 					}
-				}
 
-				if ($lastTaskSucceeded) {
-					Write-Host "`n  Successfully Created Recovery Partition" -ForegroundColor Green
+					if ($lastTaskSucceeded) {
+						Write-Host "`n  Successfully Created Recovery Partition" -ForegroundColor Green
 
-					if ($testMode) {
-						Write-Host "`n`n  PAUSED TO EXAMINE DRIVE DETAILS IN TEST MODE`n" -ForegroundColor Yellow
-						FocusScriptWindow
-						$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-						Read-Host '  Press ENTER to Set Up Recovery Environment' | Out-Null
+						$didCreateRecoveryPartition = $true
+
+						if ($testMode) {
+							Write-Host "`n`n  PAUSED TO EXAMINE DRIVE DETAILS IN TEST MODE`n" -ForegroundColor Yellow
+							FocusScriptWindow
+							$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+							Read-Host '  Press ENTER to Set Up Recovery Environment' | Out-Null
+						}
+					} else {
+						Write-Host "`n  ERROR: Failed to create Recovery partition." -ForegroundColor Red
 					}
-				} else {
-					Write-Host "`n  ERROR: Failed to create Recovery partition." -ForegroundColor Red
 				}
 
-				if ($lastTaskSucceeded) {
+				if ($lastTaskSucceeded -and (-not $didSetUpRecovery)) {
 					Write-Output "`n`n  Setting Up Recovery Environment for $installDriveName..."
 					
 					# Setup Recovery Environment Reference: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/windows-deployment-sample-scripts-sxs#applyrecoverybat
@@ -2261,6 +2270,8 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 							
 							if (($reAgentcSetreimageExitCode -eq 0) -and ($null -eq $reAgentcSetreimageError)) {
 								Write-Host "`n  Successfully Set Up Recovery Environment for $installDriveName" -ForegroundColor Green
+
+								$didSetUpRecovery = $true
 							} else {
 								if ($null -eq $reAgentcSetreimageError) {
 									$reAgentcSetreimageError = Get-Content -Raw "$Env:TEMP\fgInstall-REAgentC-setreimage-Output.txt"
@@ -2312,11 +2323,11 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 				# IMPORTANT: Set drive as bootable LAST (unlike the sample code) so that user can't boot into an incomplete installation (ie. no recovery) if anything went wrong.
 				
 				Remove-Item "$Env:TEMP\fgInstall-*.txt" -Force -ErrorAction SilentlyContinue
-				
-				# BCDBoot.exe exists in WinPE but sample code shows running it from the installed OS.
-				$bcdBootExitCode = (Start-Process 'W:\Windows\System32\BCDBoot.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-BCDBoot-s-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-BCDBoot-s-Error.txt" -ArgumentList 'W:\Windows', '/s', 'S:' -ErrorAction Stop).ExitCode
-				$bcdBootOutput = Get-Content -Raw "$Env:TEMP\fgInstall-BCDBoot-s-Output.txt"
-				$bcdBootError = Get-Content -Raw "$Env:TEMP\fgInstall-BCDBoot-s-Error.txt"
+
+				# bcdboot.exe exists in WinPE but sample code shows running it from the installed OS.
+				$bcdBootExitCode = (Start-Process 'W:\Windows\System32\bcdboot.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-bcdboot-s-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-bcdboot-s-Error.txt" -ArgumentList 'W:\Windows', '/s', 'S:' -ErrorAction Stop).ExitCode
+				$bcdBootOutput = Get-Content -Raw "$Env:TEMP\fgInstall-bcdboot-s-Output.txt"
+				$bcdBootError = Get-Content -Raw "$Env:TEMP\fgInstall-bcdboot-s-Error.txt"
 
 				if (($bcdBootExitCode -eq 0) -and ($null -eq $bcdBootError) -and ($null -ne $bcdBootOutput) -and ($bcdBootOutput -eq "Boot files successfully created.`r`n")) {
 					Write-Host "`n  Successfully Set $installDriveName as Bootable" -ForegroundColor Green
@@ -2326,7 +2337,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					}
 					
 					Write-Host "`n  ERROR SETTING $installDriveName AS BOOTABLE: $bcdBootError" -ForegroundColor Red
-					Write-Host "`n  ERROR: Failed to set $installDriveName as bootable (BCDBoot Exit Code = $bcdBootExitCode)." -ForegroundColor Red
+					Write-Host "`n  ERROR: Failed to set $installDriveName as bootable (bcdboot Exit Code = $bcdBootExitCode)." -ForegroundColor Red
 
 					$lastTaskSucceeded = $false
 				}

@@ -9,8 +9,8 @@
 #
 # By Pico Mitchell for Free Geek
 # Originally written and tested in September 2020 for Windows 10, version 2004
-# Tested in December 2021 for Windows 10, version 21H2
-# AND Tested in December 2021 for Windows 11, version 21H2
+# Tested in November 2022 for Windows 10, version 22H2
+# AND Tested in November 2022 for Windows 11, version 22H2
 #
 # MIT License
 #
@@ -27,7 +27,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2022.3.28-1
+# Version: 2022.11.4-1
 
 param(
 	[Parameter(Position = 0)]
@@ -95,7 +95,7 @@ namespace AppVisible
 			Type tIAppVisibility = Type.GetTypeFromCLSID(new Guid("7E5FE3D9-985F-4908-91F9-EE19F9FD1514"));
 			IAppVisibility appVisibility = (IAppVisibility)Activator.CreateInstance(tIAppVisibility);
 			bool launcherVisible;
-			if(HRESULT.S_OK == appVisibility.IsLauncherVisible(out launcherVisible)) {
+			if (HRESULT.S_OK == appVisibility.IsLauncherVisible(out launcherVisible)) {
 				return launcherVisible;
 			}
 			return false;
@@ -415,6 +415,16 @@ if ($LastWindowsUpdatesCount -eq '') {
 		Stop-Process -Name 'sysprep' -ErrorAction Stop
 	} catch {
 		# Only try once to quit Sysprep in case it's running, but don't show any error if it's wasn't.
+	}
+
+	if (-not $isWindows11) {
+		try {
+			# PC Health Check app will be installed and automatically opened if/when KB5005463 is installed on Windows 10 (https://support.microsoft.com/en-us/topic/kb5005463-pc-health-check-application-e33cf4e2-49e2-4727-b913-f3c5b1ee0e56),
+			# but we don't want that opened so close it since it doesn't matter for our Windows 10 installations (but Windows will generally be rebooted after Windows Updates are installed instead of getting to this code and PC Health Check WILL NOT be automatically re-opened on upon reboot).
+			Stop-Process -Name 'PCHealthCheck' -ErrorAction Stop
+		} catch {
+			# Only try once to quit PCHealthCheck in case it's running, but don't show any error if it's wasn't.
+		}
 	}
 
 	if ($LastWindowsUpdatesCount -eq '0') {
@@ -966,7 +976,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			if ($lastTaskSucceeded -and ($null -ne $appInstallerFiles)) {
 				foreach ($thisAppInstallerFile in $appInstallerFiles) {
 					CloseStartMenuOnFirstBootOfWindows11 # Only close the Start menu (without FocusScriptWindow) before each installation (which opens automatically on first login on Windows 11) so that the installer window is visible since we don't know exactly when the Desktop will be loaded.
-					
+
 					try {
 						$thisInstallerBaseName = $thisAppInstallerFile.BaseName
 						$thisAppVersion = ''

@@ -21,7 +21,7 @@
 NET SESSION 1>NUL 2>NUL
 IF %ERRORLEVEL% NEQ 0 powershell.exe -NoLogo -NoProfile -Command "Start-Process '%0' -Verb RunAs" & EXIT /B 1
 
-:: DandISetEnv must be run here first for copype to work from within the PowerShell Script.
+:: "DandISetEnv" must be run here first for "copype" to work from within the PowerShell Script.
 CALL "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
 
 powershell.exe -NoLogo -NoProfile -ExecutionPolicy Unrestricted -File "%~dp0Create WinPE Image.ps1"

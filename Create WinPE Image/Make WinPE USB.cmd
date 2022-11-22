@@ -21,7 +21,7 @@
 NET SESSION 1>NUL 2>NUL
 IF %ERRORLEVEL% NEQ 0 powershell.exe -NoLogo -NoProfile -Command "Start-Process '%0' -Verb RunAs" & EXIT /B 1
 
-SET WIN_PE_NAME=WinPE-11-21H2
+SET WIN_PE_NAME=WinPE 11 22H2
 
 ECHO.
 ECHO   Make %WIN_PE_NAME% USB...

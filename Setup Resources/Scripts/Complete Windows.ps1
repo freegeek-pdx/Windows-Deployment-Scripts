@@ -8,8 +8,8 @@
 #
 # By Pico Mitchell for Free Geek
 # Originally written and tested in September 2020 for Windows 10, version 2004
-# Tested in December 2021 for Windows 10, version 21H2
-# AND Tested in December 2021 for Windows 11, version 21H2
+# Tested in November 2022 for Windows 10, version 22H2
+# AND Tested in November 2022 for Windows 11, version 22H2
 #
 # MIT License
 #
@@ -26,7 +26,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2022.3.29-1
+# Version: 2022.11.5-1
 
 param(
 	[Parameter(Position = 0)]
@@ -680,7 +680,7 @@ for ( ; ; ) {
 							$installedCompatibleDrivers = $installedCompatibleDrivers | Sort-Object -Property 'ClassName', 'HardwareDescription', 'Version', 'OriginalFileName'
 							$installedCompatibleDriverFolderNames = $installedCompatibleDriverFolderNames | Sort-Object
 						} catch {
-							$dismLogContents = Get-Content -Raw "$Env:WINDIR\Logs\Dism\dism.log" -ErrorAction SilentlyContinue
+							$dismLogContents = Get-Content -Raw "$Env:WINDIR\Logs\DISM\dism.log" -ErrorAction SilentlyContinue
 							if (($null -eq $dismLogContents) -or ($dismLogContents -eq '')) {
 								$dismLogContents = ' N/A'
 							} else {

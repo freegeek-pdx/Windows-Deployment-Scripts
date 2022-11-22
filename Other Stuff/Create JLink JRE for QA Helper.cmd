@@ -21,23 +21,24 @@
 :: To use this script, you must download the latest JDK version and extract the folder on the Desktop.
 
 :: Set the version of the JDK (in the folder name "jdk-#") below: 
-SET JDK_VERSION=18
+SET JDK_VERSION=19.0.1
 
 ECHO.
-ECHO   Creating JLink JRE...
+ECHO   Creating JLink JRE %JDK_VERSION%...
 ECHO.
 
 SET DESKTOP_PATH=%USERPROFILE%\Desktop
 IF NOT EXIST %DESKTOP_PATH% SET DESKTOP_PATH=%USERPROFILE%\OneDrive\Desktop
 
 SET JDK_PATH=%DESKTOP_PATH%\jdk-%JDK_VERSION%
+IF NOT EXIST "%JDK_PATH%" ECHO   ERROR: %JDK_PATH% DOES NOT EXIST!
 
 IF EXIST "%DESKTOP_PATH%\java-jre" RMDIR /S /Q "%DESKTOP_PATH%\java-jre"
-%JDK_PATH%\bin\jlink.exe --add-modules "java.base,java.desktop,java.logging" --strip-debug --no-man-pages --no-header-files --compress "2" --output "%DESKTOP_PATH%\java-jre"
+IF EXIST "%JDK_PATH%" %JDK_PATH%\bin\jlink.exe --add-modules "java.base,java.desktop,java.logging" --strip-debug --no-man-pages --no-header-files --compress "2" --output "%DESKTOP_PATH%\java-jre"
 :: java.datatransfer, java.prefs, and java.xml are included automatically with java.desktop
 
 IF EXIST "%DESKTOP_PATH%\jlink-jre-%JDK_VERSION%_windows-x64.zip" DEL /F "%DESKTOP_PATH%\jlink-jre-%JDK_VERSION%_windows-x64.zip"
-"\Program Files\7-Zip\7z.exe" a "%DESKTOP_PATH%\jlink-jre-%JDK_VERSION%_windows-x64.zip" "%DESKTOP_PATH%\java-jre"
+IF EXIST "%JDK_PATH%" "\Program Files\7-Zip\7z.exe" a "%DESKTOP_PATH%\jlink-jre-%JDK_VERSION%_windows-x64.zip" "%DESKTOP_PATH%\java-jre"
 
 ECHO.
 ECHO   DONE!

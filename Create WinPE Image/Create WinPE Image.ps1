@@ -25,33 +25,33 @@
 # Reference (Adding PowerShell to WinPE): https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-adding-powershell-support-to-windows-pe
 # Reference (Optimize and Shrink WinPE): https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-optimize
 
-# IMPORTANT: "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat" must be run from within the CMD launcher file first for copype to work.
+# IMPORTANT: "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat" must be run from within the CMD launcher file first for "copype" to work.
 
-$windows10featureVersion = '21H2'
+$windows10featureVersion = '22H2'
 $windows11featureVersion = $windows10featureVersion
 
 $winPEmajorVersion = '11' # It is fine to use WinPE/WinRE from Windows 11 even when Windows 10 will be installed.
 $winPEfeatureVersion = $windows11featureVersion
 $winREfeatureVersion = $winPEfeatureVersion
 
-$winPEname = "WinPE-$winPEmajorVersion-$winPEfeatureVersion"
-
 $basePath = "$HOME\Documents\Free Geek"
 if (Test-Path "$HOME\Documents\Free Geek.lnk") {
     $basePath = (New-Object -ComObject WScript.Shell).CreateShortcut("$HOME\Documents\Free Geek.lnk").TargetPath
 }
 
-$winPEoutputPath = "$basePath\$winPEname"
+$winPEname = "WinPE-$winPEmajorVersion-$winPEfeatureVersion"
+
+$winPEoutputPath = "$basePath\$($winPEname.Replace('-', ' '))"
 
 $winPEdriversPath = "$basePath\WinPE Drivers to Install"
-$winREnetDriversPath = "$basePath\WinRE Net Drivers to Install"
+$winREnetDriversPath = "$basePath\WinRE Network Drivers for USB Install"
 
-$winREimagesSourcePath = "$basePath\Windows-$winPEmajorVersion-Pro-$winREfeatureVersion"
+$winREimagesSourcePath = "$basePath\Windows $winPEmajorVersion Pro $winREfeatureVersion"
 $winREname = "WinRE-$winPEmajorVersion-$winREfeatureVersion"
 
 # Used to include latest installation WIM in "os-images" folder in WinPE USB
-$win10imagesSourcePath = "$basePath\Windows-10-Pro-$windows10featureVersion"
-$win11imagesSourcePath = "$basePath\Windows-11-Pro-$windows11featureVersion"
+$win10imagesSourcePath = "$basePath\Windows 10 Pro $windows10featureVersion"
+$win11imagesSourcePath = "$basePath\Windows 11 Pro $windows11featureVersion"
 
 $setupResourcesSourcePath = "$(Split-Path -Parent $PSScriptRoot)\Setup Resources" # Used to include "setup-resources" folder in WinPE USB
 $appInstallersSourcePath = "$PSScriptRoot\App Installers" # Used to include "app-installers" folder in WinPE USB
@@ -130,6 +130,10 @@ if (-not (Test-Path "$winPEoutputPath\media\sources\boot.wim")) {
 $startDate = Get-Date
 Write-Output "`n  Starting at $startDate..."
 
+$excludedCompareWinPeWimContentPaths = @('\Install\', '\Windows\Microsoft.NET\', '\Windows\servicing\', '\Windows\System32\CatRoot\', '\Windows\System32\DriverStore\FileRepository\', '\Windows\WinSxS\') # Exclude these paths from the differnce comparison because these are the paths we expect to be different (even though "\Install\" and "\Windows\Microsoft.NET\" will only exist on the updated image, exclude them too to make the comparision lists smaller so the comparison is faster).
+$sourceWinPeWimSizeBytes = (Get-Item "$winPEoutputPath\media\sources\boot.wim").Length
+$sourceWinPeWimContentPaths = Get-WindowsImageContent -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 | Select-String $excludedCompareWinPeWimContentPaths -SimpleMatch -NotMatch # Exclude paths from the source lists since it's more efficient than letting them be compared and ignoring them from the results.
+
 $wimDetails = Get-WindowsImage -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 -ErrorAction Stop
 $wimDetails # Print wimDetails
 
@@ -161,6 +165,7 @@ $dismSetScratchSpaceExitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThr
 
 if ($dismSetScratchSpaceExitCode -ne 0) {
     Write-Host "`n  ERROR: FAILED TO INCREASE WINPE SCRATCH SPACE - EXIT CODE: $dismSetScratchSpaceExitCode" -ForegroundColor Red
+    exit $dismSetScratchSpaceExitCode
 }
 
 
@@ -176,13 +181,13 @@ if ($didJustRunCopyPE) {
     foreach ($thisWinPEpackageToInstall in $winPEpackagesToInstall) {
         if ($winPEoptionalFeatures -notcontains "WinPE-$thisWinPEpackageToInstall") { # Some of these will already be installed if we are starting with a WinRE image...
             $packageStartDate = Get-Date
-            Write-Output "    Installing $thisWinPEpackageToInstall Package Into $wimImageBaseName Image at $($updateStartDate)..."
+            Write-Output "    Installing $thisWinPEpackageToInstall Package Into $wimImageBaseName Image at $updateStartDate..."
             # Dism /Add-Package /Image:"C:\WinPE_amd64_PS\mount" /PackagePath:"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-PACKAGENAME.cab"
             Add-WindowsPackage -Path "$systemTempDir\mountPE" -PackagePath "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-$thisWinPEpackageToInstall.cab" -WarningAction Stop -ErrorAction Stop | Out-Null
             # Dism /Add-Package /Image:"C:\WinPE_amd64_PS\mount" /PackagePath:"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\en-us\WinPE-PACKAGENAME_en-us.cab"
             Add-WindowsPackage -Path "$systemTempDir\mountPE" -PackagePath "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\en-us\WinPE-$($thisWinPEpackageToInstall)_en-us.cab" -WarningAction Stop -ErrorAction Stop | Out-Null
             $packageEndDate = Get-Date
-            Write-Output "      Finished Installing at $($packageEndDate) ($([math]::Round(($packageEndDate - $packageStartDate).TotalMinutes, 2)) Minutes)"
+            Write-Output "      Finished Installing at $packageEndDate ($([math]::Round(($packageEndDate - $packageStartDate).TotalMinutes, 2)) Minutes)"
         } else {
             Write-Output "    $thisWinPEpackageToInstall Package ALREADY INSTALLED"
         }
@@ -262,9 +267,9 @@ if (Test-Path "$PSScriptRoot\Process Explorer Exports for Missing DLLs") {
     # Before exporting the list of DLLs as described below, click around in the desired app and perform all the actions that will be performed in WinPE so any extra DLLs get loaded as they may not be needed/loaded yet right when an app launches.
     
     # Process Explorer: https://docs.microsoft.com/en-us/sysinternals/downloads/process-explorer
-    # In Process Explorer, first make sure "Show DLLs" is enabled and the DLLs are visible in the lower pane (otherwise the list of DLLs will not get exported in the next step).
-    # Then, select desired running process (such as javaw.exe) in the list and choose "Save" to save the process info (which includes DLLs) into a text file (ending in ".exe.txt") into the "Process Explorer Exports for Missing DLLs" for parsing below.
-    # IMPORTANT: Any missing DLLs detected will be copied from the running version of Windows into WinPE/WinRE, so the running version should be compatible with the feature version (ie. Win 10 21H2) as the WinPE/WinRE version.
+    # In Process Explorer, first make sure "Show Lower Pane" is enabled and the "DLLs" tab is select and visible in the lower pane (otherwise the list of DLLs will not get exported in the next step).
+    # Then, select desired running process (such as "javaw.exe") in the list and choose "Save" to save the process info (which includes DLLs) into a text file (ending in ".exe.txt") into the "Process Explorer Exports for Missing DLLs" for parsing below.
+    # IMPORTANT: Any missing DLLs detected will be copied from the running version of Windows into WinPE/WinRE, so the running version should be compatible with the feature version (ie. Win 10 22H2) as the WinPE/WinRE version.
 
     if ($processExplorerExportsToParse.Count -gt 0) {
         Write-Output "`n  Checking Process Explorer Exports for Missing DLLs in $wimImageBaseName Image..."
@@ -283,8 +288,8 @@ if (Test-Path "$PSScriptRoot\Process Explorer Exports for Missing DLLs") {
             
             foreach ($thisProcessExplorerLogLine in (Get-Content $_.FullName)) {
                 if ($thisProcessExplorerLogLine.Contains('\Windows\System32\') -and (-not ($thisProcessExplorerLogLine.EndsWith('.exe')))) {
-                    $thisDLLPathInOS = $thisProcessExplorerLogLine -replace '^[^:\\]*:\\', '\'
-                    $thisDLLPathInWinPE = $thisProcessExplorerLogLine -replace '^[^:\\]*:\\', "$systemTempDir\mountPE\"
+                    $thisDLLPathInOS = $thisProcessExplorerLogLine -Replace '^[^:\\]*:\\', '\'
+                    $thisDLLPathInWinPE = $thisProcessExplorerLogLine -Replace '^[^:\\]*:\\', "$systemTempDir\mountPE\"
                     
                     if (-not (Test-Path $thisDLLPathInWinPE)) {
                         if ($ignoreMissingDLLs.Contains($(Split-Path $thisDLLPathInOS -Leaf))) {
@@ -387,6 +392,42 @@ if (Test-Path "$PSScriptRoot\Install Folder Resources") {
     Write-Host "`n  NO `"Install Folder Resources`" FOLDER" -ForegroundColor Yellow
 }
 
+$windows11ExtractedDriversPath = "$win11imagesSourcePath\Extracted Network Drivers"
+if ($didJustRunCopyPE -and ($winPEmajorVersion -eq '11') -and (Test-Path $windows11ExtractedDriversPath)) {
+    # NOTE: When using WinPE/WinRE 11 22H2 as the installation environment for both Windows 10 and 11, some network drivers are not available for older systems that don't support Windows 11 (which wasn't an issue with initial WinRE 11 version 21H2/22000).
+    # Having the installation environment be able to establish a network connection is critical for downloading QA Helper, as well as connecting to local SMB shares to retrieve the Windows install images.
+    # Through testing, I found that extracting all the default network drivers from the full Windows 11 image and installing them into the WinRE 11 image allowed all my test systems to properly make network connections (installing all drivers from WinRE 10 did not work).
+    # So, the network drivers will always be extracted from the full Windows images in the "Create Windows Install Image" script, so they can be installed into the WinRE image here.
+
+    $windows11DriverInfPaths = (Get-ChildItem $windows11ExtractedDriversPath -Recurse -File -Include '*.inf').FullName
+
+    if ($windows11DriverInfPaths.Count -gt 0) {
+        $startDriversDate = Get-Date
+        Write-Output "`n  Installing $($windows11DriverInfPaths.Count) Windows 11 Default Network Drivers Into $wimImageBaseName Image at $startDriversDate..."
+
+        $thisDriverIndex = 0
+        $installedDriverCount = 0
+        foreach ($thisDriverInfPath in $windows11DriverInfPaths) {
+            $thisDriverIndex ++
+            $thisDriverFolderName = (Split-Path (Split-Path $thisDriverInfPath -Parent) -Leaf)
+            
+            if (-not (Test-Path "$systemTempDir\mountPE\Windows\System32\DriverStore\FileRepository\$thisDriverFolderName")) {
+                try {
+                    Write-Output "    Installing Windows 11 Default Network Driver $thisDriverIndex of $($windows11DriverInfPaths.Count): $thisDriverFolderName..."
+                    Add-WindowsDriver -Path "$systemTempDir\mountPE" -Driver $thisDriverInfPath -ErrorAction Stop | Out-Null
+                    $installedDriverCount ++
+                } catch {
+                    Write-Host "      ERROR INSTALLING WINDOWS 11 DEFAULT NETWORK DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
+                }
+            } else {
+                Write-Output "    Windows 11 Default Network Driver $thisDriverIndex of $($windows11DriverInfPaths.Count) ALREADY EXISTS in $wimImageBaseName 11: $thisDriverFolderName..."
+            }
+        }
+
+        $endDriversDate = Get-Date
+        Write-Output "`n  Finished Installing $installedDriverCount Windows 11 Default Network Drivers at $endDriversDate ($([math]::Round(($endDriversDate - $startDriversDate).TotalMinutes, 2)) Minutes)..."
+    }
+}
 
 Write-Output "`n  Cleaning Up $wimImageBaseName Image..."
 # PowerShell equivalent of DISM's "/Cleanup-Image /StartComponentCleanup /ResetBase" does not seem to exist.
@@ -410,14 +451,43 @@ if ($dismCleanupExitCode -eq 0) {
     # "-Setbootable" does not seem to be necessary (USBs will boot without it being set), but it doesn't seem to hurt anything so leaving it in place.
     Export-WindowsImage -SourceImagePath "$winPEoutputPath\media\sources\boot.wim" -SourceIndex 1 -DestinationImagePath "$winPEoutputPath\$winPEname.wim" -CheckIntegrity -CompressionType 'max' -Setbootable -ErrorAction Stop | Out-Null
     Get-WindowsImage -ImagePath "$winPEoutputPath\$winPEname.wim" -Index 1 -ErrorAction Stop
+
+
+    Write-Output "`n  Verifying Exported Updated WinPE Image Contents Against Source WinPE Image Contents..."
+    # NOTE: See comments in "Create Windows Install Image" about this manual verification of the exported WinPE/WinRE image.
+
+    $verifyingStartDate = Get-Date
+
+    $updatedWinPeWimSizeBytes = (Get-Item "$winPEoutputPath\$winPEname.wim").Length
+
+    if ($updatedWinPeWimSizeBytes -le $sourceWinPeWimSizeBytes) {
+        Write-Host "`n  ERROR: UPDATED WINPE WIM ($updatedWinPeWimSizeBytes) IS *SMALLER THAN* SOURCE WINPE WIM ($sourceWinPeWimSizeBytes) (THIS SHOULD NOT HAVE HAPPENED)" -ForegroundColor Red
+        exit 1
+    }
+
+    $updatedWinPeWimContentPaths = Get-WindowsImageContent -ImagePath "$winPEoutputPath\$winPEname.wim" -Index 1 | Select-String $excludedCompareWinPeWimContentPaths -SimpleMatch -NotMatch
+    $filePathsMissingFromUpdatedWinPeWIM = (Compare-Object -ReferenceObject $sourceWinPeWimContentPaths -DifferenceObject $updatedWinPeWimContentPaths | Where-Object SideIndicator -eq '<=').InputObject # Comparing text lists of paths from within the WIMs is MUCH faster than comparing mounted files via "Get-ChildItem -Recurse".
+    if ($filePathsMissingFromUpdatedWinPeWIM.Count -gt 0) {
+        Write-Host "`n  ERROR: THE FOLLOWING FILES ARE MISSING FROM UPDATED WINPE WIM (THIS SHOULD NOT HAVE HAPPENED)`n    $($filePathsMissingFromUpdatedWinPeWIM -Join "`n    ")" -ForegroundColor Red
+        exit 1
+    }
+
+    $verifyingEndDate = Get-Date
+    Write-Output "    Finished Verifying Exported Updated WinPE Image at $verifyingEndDate ($([math]::Round(($verifyingEndDate - $verifyingStartDate).TotalMinutes, 2)) Minutes)"
     
 
     Write-Output "`n  Overwriting Original $wimImageBaseName Image with Compressed $wimImageBaseName for USB Install..."
     # Replace boot.wim in sources folder for MakeWinPEMedia script.
     Copy-Item "$winPEoutputPath\$winPEname.wim" "$winPEoutputPath\media\sources\boot.wim" -Force -ErrorAction Stop
     Get-WindowsImage -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 -ErrorAction Stop
+
+
+    # Now that the exported WinPE image has been verified, use its contents as the source to be verified against for the next image that will be created from it that includes extra network drivers for the USB installer.
+    $sourceWinPeWimSizeBytes = (Get-Item "$winPEoutputPath\media\sources\boot.wim").Length
+    $sourceWinPeWimContentPaths = Get-WindowsImageContent -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 | Select-String $excludedCompareWinPeWimContentPaths -SimpleMatch -NotMatch # Exclude paths from the source lists since it's more efficient than letting them be compared and ignoring them from the results.
 } else {
     Write-Host "`n  ERROR: FAILED TO DISM CLEANUP - EXIT CODE: $dismCleanupExitCode" -ForegroundColor Red
+    exit 1
 }
 
 
@@ -426,7 +496,7 @@ if ($didJustRunCopyPE -and ($winPEoptionalFeatures -contains 'WinPE-WiFi') -and 
 
     if ($winREnetDriverInfPaths.Count -gt 0) {
         if (Test-Path "$winPEoutputPath\media\sources\boot.wim") {
-            Write-Output "`n  Re-Mounting $wimImageBaseName Image for Net Drivers..."
+            Write-Output "`n  Re-Mounting $wimImageBaseName Image to Install Network Drivers for USB Install..."
             
             if (-not (Test-Path "$systemTempDir\mountPE")) {
                 New-Item -ItemType 'Directory' -Path "$systemTempDir\mountPE" -ErrorAction Stop | Out-Null
@@ -436,55 +506,83 @@ if ($didJustRunCopyPE -and ($winPEoptionalFeatures -contains 'WinPE-WiFi') -and 
         }
 
         $startDriversDate = Get-Date
-        Write-Output "`n  Installing $($winREnetDriverInfPaths.Count) Net Drivers Into $wimImageBaseName Image at $startDriversDate..."
+        Write-Output "`n  Installing $($winREnetDriverInfPaths.Count) Network Drivers for USB Install Into $wimImageBaseName Image at $startDriversDate..."
 
         $thisDriverIndex = 0
         foreach ($thisDriverInfPath in $winREnetDriverInfPaths) {
             $thisDriverIndex ++
             $thisDriverFolderName = (Split-Path (Split-Path $thisDriverInfPath -Parent) -Leaf)
             
-            try {
-                Write-Output "    Installing Net Driver $thisDriverIndex of $($winREnetDriverInfPaths.Count): $thisDriverFolderName..."
-                Add-WindowsDriver -Path "$systemTempDir\mountPE" -Driver $thisDriverInfPath -ErrorAction Stop | Out-Null
-            } catch {
-                Write-Host "      ERROR INSTALLING NET DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
+            if (-not (Test-Path "$systemTempDir\mountPE\Windows\System32\DriverStore\FileRepository\$thisDriverFolderName")) {
+                try {
+                    Write-Output "    Installing Network Driver for USB Install $thisDriverIndex of $($winREnetDriverInfPaths.Count): $thisDriverFolderName..."
+                    Add-WindowsDriver -Path "$systemTempDir\mountPE" -Driver $thisDriverInfPath -ErrorAction Stop | Out-Null
+                } catch {
+                    Write-Host "      ERROR INSTALLING NETWORK DRIVER FOR USB INSTALL `"$thisDriverFolderName`": $_" -ForegroundColor Red
+                }
+            } else {
+                Write-Output "    Network Driver for USB Install $thisDriverIndex of $($winREnetDriverInfPaths.Count) ALREADY EXISTS in WinRE: $thisDriverFolderName..."
             }
         }
 
         $endDriversDate = Get-Date
-        Write-Output "`n  Installing Net Driver at $endDriversDate ($([math]::Round(($endDriversDate - $startDriversDate).TotalMinutes, 2)) Minutes)..."
+        Write-Output "`n  Finished Installing Network Drivers for USB Install at $endDriversDate ($([math]::Round(($endDriversDate - $startDriversDate).TotalMinutes, 2)) Minutes)..."
     }
 
-    Write-Output "`n  Cleaning Up $wimImageBaseName Net Image..."
+    Write-Output "`n  Cleaning Up $wimImageBaseName Image with Network Drivers for USB Install..."
     # PowerShell equivalent of DISM's "/Cleanup-Image /StartComponentCleanup /ResetBase" does not seem to exist.
     $dismCleanupExitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountPE`"", '/Cleanup-Image', '/StartComponentCleanup', '/ResetBase').ExitCode
 
     if ($dismCleanupExitCode -eq 0) {
-        Write-Output "`n  Unmounting and Saving Updated $wimImageBaseName Net Image..."
+        Write-Output "`n  Unmounting and Saving Updated $wimImageBaseName Image with Network Drivers for USB Install..."
         # Dism /Unmount-Image /MountDir:C:\WinPE_amd64_PS\mount /Commit
         Dismount-WindowsImage -Path "$systemTempDir\mountPE" -CheckIntegrity -Save -ErrorAction Stop | Out-Null
         Remove-Item "$systemTempDir\mountPE" -Recurse -Force -ErrorAction Stop
         Get-WindowsImage -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 -ErrorAction Stop
 
-        Write-Output "`n  Exporting Compressed $wimImageBaseName Image as `"$winPEname-NetDrivers.wim`"..."
+        Write-Output "`n  Exporting Compressed $wimImageBaseName Image as `"$winPEname-NetDriversForUSB.wim`"..."
         # https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-optimize#export-and-then-replace-the-image
         
-        if (Test-Path "$winPEoutputPath\$winPEname-NetDrivers.wim") {
-            Write-Output "    Deleting Previous $wimImageBaseName Image `"$winPEname-NetDrivers.wim`"..."
-            Remove-Item "$winPEoutputPath\$winPEname-NetDrivers.wim" -Force -ErrorAction Stop
+        if (Test-Path "$winPEoutputPath\$winPEname-NetDriversForUSB.wim") {
+            Write-Output "    Deleting Previous $wimImageBaseName Image `"$winPEname-NetDriversForUSB.wim`"..."
+            Remove-Item "$winPEoutputPath\$winPEname-NetDriversForUSB.wim" -Force -ErrorAction Stop
         }
         
         # "-Setbootable" does not seem to be necessary (USBs will boot without it being set), but it doesn't seem to hurt anything so leaving it in place.
-        Export-WindowsImage -SourceImagePath "$winPEoutputPath\media\sources\boot.wim" -SourceIndex 1 -DestinationImagePath "$winPEoutputPath\$winPEname-NetDrivers.wim" -CheckIntegrity -CompressionType 'max' -Setbootable -ErrorAction Stop | Out-Null
-        Get-WindowsImage -ImagePath "$winPEoutputPath\$winPEname-NetDrivers.wim" -Index 1 -ErrorAction Stop
+        Export-WindowsImage -SourceImagePath "$winPEoutputPath\media\sources\boot.wim" -SourceIndex 1 -DestinationImagePath "$winPEoutputPath\$winPEname-NetDriversForUSB.wim" -CheckIntegrity -CompressionType 'max' -Setbootable -ErrorAction Stop | Out-Null
+        Get-WindowsImage -ImagePath "$winPEoutputPath\$winPEname-NetDriversForUSB.wim" -Index 1 -ErrorAction Stop
         
 
-        Write-Output "`n  Overwriting Original $wimImageBaseName Image with Compressed $wimImageBaseName Net for USB Install..."
+        Write-Output "`n  Verifying Exported Updated WinPE Image with Network Drivers for USB Install Contents Against Source WinPE Image Contents..."
+        # NOTE: See comments in "Create Windows Install Image" about this manual verification of the exported WinPE/WinRE image.
+
+        $verifyingStartDate = Get-Date
+
+        $updatedWinPeWimSizeBytes = (Get-Item "$winPEoutputPath\$winPEname-NetDriversForUSB.wim").Length
+
+        if ($updatedWinPeWimSizeBytes -le $sourceWinPeWimSizeBytes) {
+            Write-Host "`n  ERROR: UPDATED WINPE WIM ($updatedWinPeWimSizeBytes) IS *SMALLER THAN* SOURCE WINPE WIM ($sourceWinPeWimSizeBytes) (THIS SHOULD NOT HAVE HAPPENED)" -ForegroundColor Red
+            exit 1
+        }
+
+        $updatedWinPeWimContentPaths = Get-WindowsImageContent -ImagePath "$winPEoutputPath\$winPEname-NetDriversForUSB.wim" -Index 1 | Select-String $excludedCompareWinPeWimContentPaths -SimpleMatch -NotMatch
+        $filePathsMissingFromUpdatedWinPeWIM = (Compare-Object -ReferenceObject $sourceWinPeWimContentPaths -DifferenceObject $updatedWinPeWimContentPaths | Where-Object SideIndicator -eq '<=').InputObject # Comparing text lists of paths from within the WIMs is MUCH faster than comparing mounted files via "Get-ChildItem -Recurse".
+        if ($filePathsMissingFromUpdatedWinPeWIM.Count -gt 0) {
+            Write-Host "`n  ERROR: THE FOLLOWING FILES ARE MISSING FROM UPDATED WINPE WIM (THIS SHOULD NOT HAVE HAPPENED)`n    $($filePathsMissingFromUpdatedWinPeWIM -Join "`n    ")" -ForegroundColor Red
+            exit 1
+        }
+
+        $verifyingEndDate = Get-Date
+        Write-Output "    Finished Verifying Exported Updated WinPE Image with Network Drivers for USB Install at $verifyingEndDate ($([math]::Round(($verifyingEndDate - $verifyingStartDate).TotalMinutes, 2)) Minutes)"
+
+
+        Write-Output "`n  Overwriting Original $wimImageBaseName Image with Compressed $wimImageBaseName with Network Drivers for USB Install..."
         # Replace boot.wim in sources folder for MakeWinPEMedia script.
-        Copy-Item "$winPEoutputPath\$winPEname-NetDrivers.wim" "$winPEoutputPath\media\sources\boot.wim" -Force -ErrorAction Stop
+        Copy-Item "$winPEoutputPath\$winPEname-NetDriversForUSB.wim" "$winPEoutputPath\media\sources\boot.wim" -Force -ErrorAction Stop
         Get-WindowsImage -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 -ErrorAction Stop
     } else {
         Write-Host "`n  ERROR: FAILED TO DISM CLEANUP - EXIT CODE: $dismCleanupExitCode" -ForegroundColor Red
+        exit 1
     }
 }
 
