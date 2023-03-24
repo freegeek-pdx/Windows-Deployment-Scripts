@@ -31,7 +31,7 @@ if ($IsWindows -or ($null -eq $IsWindows)) {
 Invoke-WebRequest -Uri 'http://ftp.hp.com/pub/caps-softpaq/cmit/HPClientDriverPackCatalog.cab' -OutFile "$PSScriptRoot\DriverPackCatalog-HP.cab"
 
 if (($IsWindows -or ($null -eq $IsWindows)) -and (Test-Path "$PSScriptRoot\DriverPackCatalog-HP.cab")) {
-    $expandExitCode = (Start-Process 'expand.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput 'NUL' -ArgumentList "`"$PSScriptRoot\DriverPackCatalog-HP.cab`"", "`"$PSScriptRoot\DriverPackCatalog-HP-NEW.xml`"").ExitCode
+    $expandExitCode = (Start-Process 'expand' -NoNewWindow -Wait -PassThru -RedirectStandardOutput 'NUL' -ArgumentList "`"$PSScriptRoot\DriverPackCatalog-HP.cab`"", "`"$PSScriptRoot\DriverPackCatalog-HP-NEW.xml`"").ExitCode
            
     if ($expandExitCode -ne 0) {
         Write-Output '>>> EXPANSION FAILED <<<'

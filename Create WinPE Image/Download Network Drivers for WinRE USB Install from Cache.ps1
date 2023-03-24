@@ -16,7 +16,7 @@
 
 $basePath = "$HOME\Documents\Free Geek"
 if (Test-Path "$HOME\Documents\Free Geek.lnk") {
-    $basePath = (New-Object -ComObject WScript.Shell).CreateShortcut("$HOME\Documents\Free Geek.lnk").TargetPath
+	$basePath = (New-Object -ComObject WScript.Shell).CreateShortcut("$HOME\Documents\Free Geek.lnk").TargetPath
 }
 
 $winREnetDriversOutputPath = "$basePath\WinRE Network Drivers for USB Install"
@@ -31,45 +31,45 @@ $smbPassword = $smbCredentialsXML.smbCredentials.driversReadOnlyShare.password
 $driversCacheBasePath = "$smbShare\Drivers\Cache"
 
 try {
-    Test-Connection $smbServerIP -Count 1 -Quiet -ErrorAction Stop | Out-Null
+	Test-Connection $smbServerIP -Count 1 -Quiet -ErrorAction Stop | Out-Null
 } catch {
-    Write-Host "`n  ERROR CONNECTING TO LOCAL FREE GEEK SERVER: $_" -ForegroundColor Red
-    exit 1
+	Write-Host "`n  ERROR CONNECTING TO LOCAL FREE GEEK SERVER: $_" -ForegroundColor Red
+	exit 1
 }
 
 Write-Host "`n  Mounting SMB Share for Drivers Cache - PLEASE WAIT, THIS MAY TAKE A MOMENT..." -NoNewline
-			
+
 # Try to connect to SMB Share 5 times before stopping to show error to user because sometimes it takes a few attempts, or it sometimes just fails and takes more manual reattempts before it finally works.
 for ($smbMountAttempt = 0; $smbMountAttempt -lt 5; $smbMountAttempt ++) {
-    try {
-        # If we don't get the New-SmbMapping return value it seems to be asynchronous, which results in messages being show out of order result and also result in a failure not being detected.
-        $smbMappingStatus = (New-SmbMapping -RemotePath $smbShare -UserName $smbUsername -Password $smbPassword -Persistent $false -ErrorAction Stop).Status
-        
-        if ($smbMappingStatus -eq 0) {
-            Write-Host "`n`n  Successfully Mounted SMB Share for Drivers Cache" -ForegroundColor Green
-        } else {
-            throw "SMB Mapping Status $smbMappingStatus"
-        }
+	try {
+		# If we don't get the New-SmbMapping return value it seems to be asynchronous, which results in messages being show out of order result and also result in a failure not being detected.
+		$smbMappingStatus = (New-SmbMapping -RemotePath $smbShare -UserName $smbUsername -Password $smbPassword -Persistent $false -ErrorAction Stop).Status
 
-        break
-    } catch {
-        if ($smbMountAttempt -lt 4) {
-            Write-Host '.' -NoNewline
-            Start-Sleep ($smbMountAttempt + 1) # Sleep a little longer after each attempt.
-        } else {
-            Write-Host "`n`n  ERROR MOUNTING SMB SHARE: $_" -ForegroundColor Red
-            Write-Host "`n  ERROR: Failed to connect to local Free Geek SMB share `"$smbShare`"." -ForegroundColor Red
-            
-            exit 2
-        }
-    }
+		if ($smbMappingStatus -eq 0) {
+			Write-Host "`n`n  Successfully Mounted SMB Share for Drivers Cache" -ForegroundColor Green
+		} else {
+			throw "SMB Mapping Status $smbMappingStatus"
+		}
+
+		break
+	} catch {
+		if ($smbMountAttempt -lt 4) {
+			Write-Host '.' -NoNewline
+			Start-Sleep ($smbMountAttempt + 1) # Sleep a little longer after each attempt.
+		} else {
+			Write-Host "`n`n  ERROR MOUNTING SMB SHARE: $_" -ForegroundColor Red
+			Write-Host "`n  ERROR: Failed to connect to local Free Geek SMB share `"$smbShare`"." -ForegroundColor Red
+
+			exit 2
+		}
+	}
 }
 
 if (-not (Test-Path $winREnetDriversOutputPath)) {
-    New-Item -ItemType 'Directory' -Path $winREnetDriversOutputPath -ErrorAction Stop | Out-Null
+	New-Item -ItemType 'Directory' -Path $winREnetDriversOutputPath -ErrorAction Stop | Out-Null
 }
 
-Write-Output "`n  Downloading Network Drivers for WinRE USB Install from Driver Cache..."
+Write-Output "`n  Downloading WinRE Network Drivers for USB Install from Driver Cache..."
 
 $allCachedDriverPaths = (Get-ChildItem "$driversCacheBasePath\Unique Drivers" -Directory).FullName
 
@@ -79,54 +79,54 @@ $netDriverFolderNames = @()
 $thisDriverIndex = 0
 $downloadedNetDriversCount = 0
 foreach ($thisDriverFolderPath in $allCachedDriverPaths) {
-    $thisDriverFolderName = (Split-Path $thisDriverFolderPath -Leaf)
+	$thisDriverFolderName = (Split-Path $thisDriverFolderPath -Leaf)
 
-    if ($thisDriverFolderName.Contains('.inf_amd64_')) {
-        $thisDriverInfContents = Get-Content "$thisDriverFolderPath\$($thisDriverFolderName.Substring(0, $thisDriverFolderName.IndexOf('.'))).inf"
+	if ($thisDriverFolderName.Contains('.inf_amd64_')) {
+		$thisDriverInfContents = Get-Content "$thisDriverFolderPath\$($thisDriverFolderName.Substring(0, $thisDriverFolderName.LastIndexOf('.'))).inf"
 
-        foreach ($thisDriverInfLine in $thisDriverInfContents) {
-            if (($lineCommentIndex = $thisDriverInfLine.IndexOf(';')) -gt -1) { # Remove .inf comments from each line before any parsing to avoid matching any text within comments.
-                $thisDriverInfLine = $thisDriverInfLine.Substring(0, $lineCommentIndex)
-            }
+		foreach ($thisDriverInfLine in $thisDriverInfContents) {
+			if (($lineCommentIndex = $thisDriverInfLine.IndexOf(';')) -gt -1) { # Remove .inf comments from each line before any parsing to avoid matching any text within comments.
+				$thisDriverInfLine = $thisDriverInfLine.Substring(0, $lineCommentIndex)
+			}
 
-            $thisDriverInfLine = $thisDriverInfLine.Trim()
+			$thisDriverInfLine = $thisDriverInfLine.Trim()
 
-            if ($thisDriverInfLine -ne '') {
-                $thisDriverInfLineUPPER = $thisDriverInfLine.ToUpper()
+			if ($thisDriverInfLine -ne '') {
+				$thisDriverInfLineUPPER = $thisDriverInfLine.ToUpper()
 
-                if ($thisDriverInfLine.StartsWith('[')) {
-                    # https://docs.microsoft.com/en-us/windows-hardware/drivers/install/inf-version-section
-                    $wasInfVersionSection = $isInfVersionSection
-                    $isInfVersionSection = ($thisDriverInfLineUPPER -eq '[VERSION]')
+				if ($thisDriverInfLine.StartsWith('[')) {
+					# https://docs.microsoft.com/en-us/windows-hardware/drivers/install/inf-version-section
+					$wasInfVersionSection = $isInfVersionSection
+					$isInfVersionSection = ($thisDriverInfLineUPPER -eq '[VERSION]')
 
-                    if ($wasInfVersionSection -and (-not $isInfVersionSection)) {
-                        # If passed Version section and didn't already break from getting a NET class, then we can stop reading lines because we don't want this driver.
-                        break
-                    }
-                } elseif ($isInfVersionSection -and (($lineEqualsIndex = $thisDriverInfLine.IndexOf('=')) -gt -1) -and $thisDriverInfLineUPPER.Contains('CLASS') -and (-not $thisDriverInfLineUPPER.Contains('CLASSGUID'))) {
-                    $thisDriverClass = $thisDriverInfLine.Substring($lineEqualsIndex + 1).Trim().ToUpper() # It appears that the Class Names will never be in quotes or be variables that need to be translated.
+					if ($wasInfVersionSection -and (-not $isInfVersionSection)) {
+						# If passed Version section and didn't already break from getting a NET class, then we can stop reading lines because we don't want this driver.
+						break
+					}
+				} elseif ($isInfVersionSection -and (($lineEqualsIndex = $thisDriverInfLine.IndexOf('=')) -gt -1) -and $thisDriverInfLineUPPER.Contains('CLASS') -and (-not $thisDriverInfLineUPPER.Contains('CLASSGUID'))) {
+					$thisDriverClass = $thisDriverInfLine.Substring($lineEqualsIndex + 1).Trim().ToUpper() # It appears that the Class Names will never be in quotes or be variables that need to be translated.
 
-                    if ($thisDriverClass -eq 'NET') {
-                        $thisDriverIndex ++
-                        $netDriverFolderNames += $thisDriverFolderName
-                        if (-not (Test-Path "$winREnetDriversOutputPath\$thisDriverFolderName")) {
-                            try {
-                                Write-Output "    $thisDriverIndex) Downloading Network Driver: $thisDriverFolderName..."
-                                Copy-Item $thisDriverFolderPath $winREnetDriversOutputPath -Recurse -Force -ErrorAction Stop
-                                $downloadedNetDriversCount ++
-                            } catch {
-                                Write-Host "      ERROR DOWNLOADING NETWORK DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
-                            }
-                        } else {
-                            Write-Output "    $thisDriverIndex) ALREADY DOWNLOADED NETWORK DRIVER: $thisDriverFolderName..."
-                        }
-                    }
+					if ($thisDriverClass -eq 'NET') {
+						$thisDriverIndex ++
+						$netDriverFolderNames += $thisDriverFolderName
+						if (-not (Test-Path "$winREnetDriversOutputPath\$thisDriverFolderName")) {
+							try {
+								Write-Output "    $thisDriverIndex) Downloading Network Driver: $thisDriverFolderName..."
+								Copy-Item $thisDriverFolderPath $winREnetDriversOutputPath -Recurse -Force -ErrorAction Stop
+								$downloadedNetDriversCount ++
+							} catch {
+								Write-Host "      ERROR DOWNLOADING NETWORK DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
+							}
+						} else {
+							Write-Output "    $thisDriverIndex) ALREADY DOWNLOADED NETWORK DRIVER: $thisDriverFolderName..."
+						}
+					}
 
-                    break
-                }
-            }
-        }
-    }
+					break
+				}
+			}
+		}
+	}
 }
 
 Remove-SmbMapping -RemotePath $smbShare -Force -UpdateProfile -ErrorAction SilentlyContinue # Done with SMB Share now, so remove it.
@@ -134,25 +134,25 @@ Remove-SmbMapping -RemotePath $smbShare -Force -UpdateProfile -ErrorAction Silen
 Write-Host "`n  Downloaded $downloadedNetDriversCount Network Drivers from Cache" -ForegroundColor Green
 
 try {
-    Write-Output "`n`n  Checking Downloaded Network Drivers for Stray (No Longer Cached) Drivers to Delete..."
+	Write-Output "`n`n  Checking Downloaded Network Drivers for Stray (No Longer Cached) Drivers to Delete..."
 
-    $deletedStrayDownloadedNetDriversCount = 0
+	$deletedStrayDownloadedNetDriversCount = 0
 
-    Get-ChildItem "$winREnetDriversOutputPath" -ErrorAction Stop | ForEach-Object {
-        if (-not $netDriverFolderNames.Contains($_.Name)) {
-            $deletedStrayDownloadedNetDriversCount ++
-            Remove-Item $_.FullName -Recurse -Force -ErrorAction Stop
-        }
-    }
+	Get-ChildItem "$winREnetDriversOutputPath" -ErrorAction Stop | ForEach-Object {
+		if (-not $netDriverFolderNames.Contains($_.Name)) {
+			$deletedStrayDownloadedNetDriversCount ++
+			Remove-Item $_.FullName -Recurse -Force -ErrorAction Stop
+		}
+	}
 
-    if ($deletedStrayDownloadedNetDriversCount -eq 0) {
-        Write-Host "`n  Checked Downloaded Network Drivers and Found No Strays to Delete" -ForegroundColor Green
-    } else {
-        Write-Host "`n  Deleted $deletedStrayDownloadedNetDriversCount Strays From Downloaded Network Drivers" -ForegroundColor Green
-    }
+	if ($deletedStrayDownloadedNetDriversCount -eq 0) {
+		Write-Host "`n  Checked Downloaded Network Drivers and Found No Strays to Delete" -ForegroundColor Green
+	} else {
+		Write-Host "`n  Deleted $deletedStrayDownloadedNetDriversCount Strays From Downloaded Network Drivers" -ForegroundColor Green
+	}
 } catch {
-    Write-Host "`n  ERROR DELETED STRAY DOWNLOADED NETWORK DRIVERS: $_" -ForegroundColor Red
-    Write-Host "`n  ERROR: Failed to check for or delete stray downloaded network drivers." -ForegroundColor Red
+	Write-Host "`n  ERROR DELETED STRAY DOWNLOADED NETWORK DRIVERS: $_" -ForegroundColor Red
+	Write-Host "`n  ERROR: Failed to check for or delete stray downloaded network drivers." -ForegroundColor Red
 }
 
 Read-Host "`n`n  DONE DOWNLOADING NETWORK DRIVERS FROM CACHE" | Out-Null

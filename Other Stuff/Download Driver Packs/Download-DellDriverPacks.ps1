@@ -33,7 +33,7 @@ if ($IsWindows -or ($null -eq $IsWindows)) {
 Invoke-WebRequest -Uri 'http://downloads.dell.com/catalog/DriverPackCatalog.cab' -OutFile "$PSScriptRoot\DriverPackCatalog-Dell.cab"
 
 if (($IsWindows -or ($null -eq $IsWindows)) -and (Test-Path "$PSScriptRoot\DriverPackCatalog-Dell.cab")) {
-    $expandExitCode = (Start-Process 'expand.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput 'NUL' -ArgumentList "`"$PSScriptRoot\DriverPackCatalog-Dell.cab`"", "`"$PSScriptRoot\DriverPackCatalog-Dell-NEW.xml`"").ExitCode
+    $expandExitCode = (Start-Process 'expand' -NoNewWindow -Wait -PassThru -RedirectStandardOutput 'NUL' -ArgumentList "`"$PSScriptRoot\DriverPackCatalog-Dell.cab`"", "`"$PSScriptRoot\DriverPackCatalog-Dell-NEW.xml`"").ExitCode
            
     if ($expandExitCode -ne 0) {
         Write-Output '>>> EXPANSION FAILED <<<'
@@ -263,10 +263,10 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
             if (-not (Test-Path "$cabExpansionPath\$($thisUniqueDriverPack.DriverPackID)")) {
                 Write-Output 'EXPANDING...'
 
-                # expand.exe will FAIL unless we make all necessary directories first.
+                # expand will FAIL unless we make all necessary directories first.
                 New-Item -ItemType 'Directory' -Force -Path "$cabExpansionPath\$($thisUniqueDriverPack.DriverPackID)" | Out-Null
 
-                $expandExitCode = (Start-Process 'expand.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput 'NUL' -ArgumentList "`"$cabDownloadPath\$($thisUniqueDriverPack.FileName)`"", '/f:*', "`"$cabExpansionPath\$($thisUniqueDriverPack.DriverPackID)`"").ExitCode
+                $expandExitCode = (Start-Process 'expand' -NoNewWindow -Wait -PassThru -RedirectStandardOutput 'NUL' -ArgumentList "`"$cabDownloadPath\$($thisUniqueDriverPack.FileName)`"", '/f:*', "`"$cabExpansionPath\$($thisUniqueDriverPack.DriverPackID)`"").ExitCode
                 
                 if ($expandExitCode -eq 0) {
                     $expandedCount ++

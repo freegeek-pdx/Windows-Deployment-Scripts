@@ -29,8 +29,8 @@ if (((-not (Test-Path '\Windows\System32\startnet.cmd')) -and (-not (Test-Path '
 
 Write-Output "`n  Initializing Windows Preinstallation Environment..."
 # WinPE Initialization Reference: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-mount-and-customize#highperformance
-Start-Process 'Wpeinit.exe' -NoNewWindow -Wait
-Start-Process 'powercfg.exe' -NoNewWindow -Wait -ArgumentList '/s', '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c'
+Start-Process 'Wpeinit' -NoNewWindow -Wait
+Start-Process 'powercfg' -NoNewWindow -Wait -ArgumentList '/s', '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c'
 
 $didDownloadInstallWindowsScript = $false
 
@@ -54,7 +54,7 @@ for ( ; ; ) {
 		} catch {
 			Write-Host "`n  ERROR LOADING WINDOWS INSTALLATION SCRIPT: $_" -ForegroundColor Red
 			Write-Host '  IMPORTANT: Internet Is Required During Installation Process' -ForegroundColor Red
-			
+
 			if ($downloadAttempt -lt 4) {
 				Write-Host "  Download Windows Installation Script Attempt $($downloadAttempt + 1) of 5 - TRYING AGAIN..." -ForegroundColor Yellow
 				Start-Sleep ($downloadAttempt + 1) # Sleep a little longer after each attempt.

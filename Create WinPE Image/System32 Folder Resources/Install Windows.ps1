@@ -19,7 +19,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2022.11.5-1
+# Version: 2023.3.24-1
 
 # PowerShell must be installed in WinPE to run this script (which will be taken care of automatically if WinPE is built with "Create WinPE Image.ps1"):
 # https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-adding-powershell-support-to-windows-pe
@@ -33,27 +33,26 @@ if (((-not (Test-Path '\Windows\System32\startnet.cmd')) -and (-not (Test-Path '
 }
 
 $focusWindowFunctionTypes = Add-Type -PassThru -Name FocusWindow -MemberDefinition @'
-	[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-	[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-	[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
-'@
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+[DllImport("user32.dll")] public static extern bool IsIconic(IntPtr hWnd);
+'@ # Based On: https://stackoverflow.com/a/58548853
 
 function FocusScriptWindow {
-	# Based On: https://stackoverflow.com/a/58548853
-	
 	$scriptWindowHandle = (Get-Process -Id $PID).MainWindowHandle
-	
+
 	if ($scriptWindowHandle) {
 		$focusWindowFunctionTypes::SetForegroundWindow($scriptWindowHandle) | Out-Null
 		if ($focusWindowFunctionTypes::IsIconic($scriptWindowHandle)) {
 			$focusWindowFunctionTypes::ShowWindow($scriptWindowHandle, 9) | Out-Null
 		}
 	}
-	
+
 	(New-Object -ComObject Wscript.Shell).AppActivate($Host.UI.RawUI.WindowTitle) | Out-Null # Also try "AppActivate" since "SetForegroundWindow" seems to maybe not work as well on Windows 11.
 }
 
-$testMode = (Test-Path '\Windows\System32\TESTING') # Use System32 folder so that test mode can be set dynamically by iPXE without needing separate WinPE images.
+$testMode = (Test-Path '\Windows\System32\fgFLAG-TEST') # Use System32 folder for flags so that modes can be set dynamically by iPXE/wimboot without needing separate WinPE images.
+$ipdtMode = (Test-Path '\Windows\System32\fgFLAG-IPDT') # This mode will launch auto-launch "Intel Processor Diagnostic Tool" instead of "QA Helper" in the installed OS (for Hardware Testing).
 
 FocusScriptWindow
 
@@ -66,20 +65,20 @@ try {
 
 	Remove-Item "$Env:TEMP\fgInstall-*.txt" -Force -ErrorAction SilentlyContinue
 
-	$wpeinitExitCode = (Start-Process 'Wpeinit.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-Wpeinit-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-Wpeinit-Error.txt" -ErrorAction Stop).ExitCode
+	$wpeinitExitCode = (Start-Process 'Wpeinit' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-Wpeinit-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-Wpeinit-Error.txt" -ErrorAction Stop).ExitCode
 	$wpeinitError = Get-Content -Raw "$Env:TEMP\fgInstall-Wpeinit-Error.txt"
 
 	if (($wpeinitExitCode -eq 0) -and ($null -eq $wpeinitError)) {
 		# IMPORTANT: Also manually import required modules first thing (rather than letting the load dynamically when their commands are called later) so that they are always loaded before any other GUI apps.
 		# If these modules are not loaded first, they may fail to load later since it seems that after loading GUI apps, resources can get used up (maybe scratch space) and cause modules (such as Dism) to fail to load when their commands are called.
 		# These failures would not tend to happen if only QA Helper was run, but were more likely to happen if other apps like Disk Check PE and/or Web Browser PE were also launched during testing.
-		
+
 		if ($testMode) {
 			Write-Host "`n    LOADED MODULES (SHOULD BE Microsoft.PowerShell.Management Microsoft.PowerShell.Utility):`n      $($(Get-Module).Name -Join "`n      ")" -ForegroundColor Yellow
 		}
 
 		$previousErrorActionPreference = $ErrorActionPreference
-		$ErrorActionPreference = 'SilentlyContinue' # Set default ErrorAction since "Import-LocalizedData" (sub-called by "Import-Module") will error when importing "Microsoft.PowerShell.Archive", but the module itself will import properly and we just want to hide that sub-error. 
+		$ErrorActionPreference = 'SilentlyContinue' # Set default ErrorAction since "Import-LocalizedData" (sub-called by "Import-Module") will error when importing "Microsoft.PowerShell.Archive", but the module itself will import properly and we just want to hide that sub-error.
 
 		foreach ($thisModuleToImport in $requiredModulesToPreImport) {
 			Import-Module $thisModuleToImport -ErrorAction Stop # Manually setting "-ErrorAction Stop" (even with "$ErrorActionPreference = 'SilentlyContinue'") means this will still throw an error if an module actually fails to import.
@@ -96,10 +95,10 @@ try {
 		if ($null -eq $wpeinitError) {
 			$wpeinitError = Get-Content -Raw "$Env:TEMP\fgInstall-Wpeinit-Output.txt"
 		}
-		
+
 		Write-Host "`n  ERROR RUNNING WPEINIT: $wpeinitError" -ForegroundColor Red
 		Write-Host "`n  ERROR: Failed to initialize Windows Preinstallation Environment (Wpeinit Exit Code = $wpeinitExitCode)." -ForegroundColor Red
-		
+
 		Write-Host "`n`n  !!! THIS SHOULD NOT HAVE HAPPENED !!!`n`n  If this issue continues, please inform Free Geek I.T.`n`n  Rebooting This Computer in 30 Seconds..." -ForegroundColor Red
 		Start-Sleep 30
 		exit 2
@@ -107,7 +106,7 @@ try {
 } catch {
 	Write-Host "`n  ERROR STARTING WPEINIT: $_" -ForegroundColor Red
 	Write-Host "`n  ERROR: Failed to initialize Windows Preinstallation Environment." -ForegroundColor Red
-	
+
 	Write-Host "`n`n  !!! THIS SHOULD NOT HAVE HAPPENED !!!`n`n  If this issue continues, please inform Free Geek I.T.`n`n  Rebooting This Computer in 30 Seconds..." -ForegroundColor Red
 	Start-Sleep 30
 	exit 3
@@ -120,27 +119,27 @@ try {
 	Remove-Item "$Env:TEMP\fgInstall-*.txt" -Force -ErrorAction SilentlyContinue
 
 	# "Get-CimInstance Win32_PowerPlan -Namespace ROOT\CIMV2\power" is not available in WinPE.
-	$powercfgGetactiveschemeExitCode = (Start-Process 'powercfg.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-powercfg-getactivescheme-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-powercfg-getactivescheme-Error.txt" -ArgumentList '/getactivescheme' -ErrorAction Stop).ExitCode
+	$powercfgGetactiveschemeExitCode = (Start-Process 'powercfg' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-powercfg-getactivescheme-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-powercfg-getactivescheme-Error.txt" -ArgumentList '/getactivescheme' -ErrorAction Stop).ExitCode
 	$powercfgGetactiveschemeOutput = Get-Content -Raw "$Env:TEMP\fgInstall-powercfg-getactivescheme-Output.txt"
 	$powercfgGetactiveschemeError = Get-Content -Raw "$Env:TEMP\fgInstall-powercfg-getactivescheme-Error.txt"
 
 	if (($powercfgGetactiveschemeExitCode -eq 0) -and ($null -eq $powercfgGetactiveschemeError) -and ($null -ne $powercfgGetactiveschemeOutput) -and (-not $powercfgGetactiveschemeOutput.Contains('8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c'))) {
 		Write-Output "`n`n  Setting High Performance Power Plan and Disabling Screen Sleep..."
 
-		$powercfgSetactiveExitCode = (Start-Process 'powercfg.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-powercfg-setactive-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-powercfg-setactive-Error.txt" -ArgumentList '/setactive', '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c' -ErrorAction Stop).ExitCode
+		$powercfgSetactiveExitCode = (Start-Process 'powercfg' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-powercfg-setactive-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-powercfg-setactive-Error.txt" -ArgumentList '/setactive', '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c' -ErrorAction Stop).ExitCode
 		$powercfgSetactiveError = Get-Content -Raw "$Env:TEMP\fgInstall-powercfg-setactive-Error.txt"
 
 		if (($powercfgSetactiveExitCode -eq 0) -and ($null -eq $powercfgSetactiveError)) {
-			$powercfgChangeAcExitCode = (Start-Process 'powercfg.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-powercfg-change-ac-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-powercfg-change-ac-Error.txt" -ArgumentList '/change', 'monitor-timeout-ac', '0' -ErrorAction Stop).ExitCode
+			$powercfgChangeAcExitCode = (Start-Process 'powercfg' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-powercfg-change-ac-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-powercfg-change-ac-Error.txt" -ArgumentList '/change', 'monitor-timeout-ac', '0' -ErrorAction Stop).ExitCode
 			$powercfgChangeAcError = Get-Content -Raw "$Env:TEMP\fgInstall-powercfg-change-ac-Error.txt"
 
 			if (($powercfgChangeAcExitCode -eq 0) -and ($null -eq $powercfgChangeAcError)) {
-				$powercfgChangeDcExitCode = (Start-Process 'powercfg.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-powercfg-change-dc-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-powercfg-change-dc-Error.txt" -ArgumentList '/change', 'monitor-timeout-dc', '0' -ErrorAction Stop).ExitCode
+				$powercfgChangeDcExitCode = (Start-Process 'powercfg' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-powercfg-change-dc-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-powercfg-change-dc-Error.txt" -ArgumentList '/change', 'monitor-timeout-dc', '0' -ErrorAction Stop).ExitCode
 				$powercfgChangeDcError = Get-Content -Raw "$Env:TEMP\fgInstall-powercfg-change-dc-Error.txt"
-			
+
 				if (($powercfgChangeDcExitCode -eq 0) -and ($null -eq $powercfgChangeDcError)) {
 					Write-Host "`n  Successfully Set High Performance Power Plan and Disabled Screen Sleep" -ForegroundColor Green
-					
+
 					$didSetPowerPlan = $true
 				} else {
 					if ($null -eq $powercfgChangeDcError) {
@@ -154,7 +153,7 @@ try {
 				if ($null -eq $powercfgChangeAcError) {
 					$powercfgChangeAcError = Get-Content -Raw "$Env:TEMP\fgInstall-powercfg-change-ac-Output.txt"
 				}
-				
+
 				Write-Host "`n  ERROR CHANGING AC POWERCFG: $powercfgChangeAcError" -ForegroundColor Red
 				Write-Host "`n  ERROR: Failed to disable screen sleep on AC power (powercfg Exit Code = $powercfgChangeAcExitCode)." -ForegroundColor Red
 			}
@@ -204,13 +203,13 @@ if ((Test-Path '\Install\Scripts\Wi-Fi Profiles\') -and (Test-Path '\sources\rec
 			}
 
 			Write-Host "    Adding Wi-Fi Network Profile: $thisWiFiProfileName..." -NoNewline
-			
+
 			Remove-Item "$Env:TEMP\fgInstall-*.txt" -Force -ErrorAction SilentlyContinue
-			
+
 			try {
-				$netshWlanAddProfileExitCode = (Start-Process 'netsh.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-netsh-wlan-add-profile-$thisWiFiProfileName-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-netsh-wlan-add-profile-$thisWiFiProfileName-Error.txt" -ArgumentList 'wlan', 'add', 'profile', "filename=`"$($thisWiFiProfileFile.FullName)`"" -ErrorAction Stop).ExitCode
+				$netshWlanAddProfileExitCode = (Start-Process 'netsh' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-netsh-wlan-add-profile-$thisWiFiProfileName-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-netsh-wlan-add-profile-$thisWiFiProfileName-Error.txt" -ArgumentList 'wlan', 'add', 'profile', "filename=`"$($thisWiFiProfileFile.FullName)`"" -ErrorAction Stop).ExitCode
 				$netshWlanAddProfileError = Get-Content -Raw "$Env:TEMP\fgInstall-netsh-wlan-add-profile-$thisWiFiProfileName-Error.txt"
-				
+
 				if (($netshWlanAddProfileExitCode -eq 0) -and ($null -eq $netshWlanAddProfileError)) {
 					Write-Host ' ADDED' -ForegroundColor Green
 				} else {
@@ -252,7 +251,7 @@ if (Test-Path '\Windows\System32\W32tm.exe') {
 
 		$w32tmResyncExitCode = (Start-Process 'W32tm' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-W32tm-resync-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-W32tm-resync-Error.txt" -ArgumentList '/resync', '/force' -ErrorAction Stop).ExitCode
 		$w32tmResyncError = Get-Content -Raw "$Env:TEMP\fgInstall-W32tm-resync-Error.txt"
-		
+
 		if (($w32tmResyncExitCode -eq 0) -and ($null -eq $w32tmResyncError)) {
 			Write-Host "`n  Successfully Synced System Time" -ForegroundColor Green
 
@@ -354,7 +353,7 @@ if (-not $didDetectExistingDPK) {
 				Start-Sleep 5
 				Stop-Computer
 				Start-Sleep 60 # Sleep for 1 minute after executing "Stop-Computer" because if the script exits before "Stop-Computer" shut's down, the computer will be rebooted instead.
-				
+
 				exit 4
 			} else {
 				$lastConfirmExistingWindowsError = "`n    ERROR: Did Not Confirm Canceling Windows Installation and Shutting Down This Computer - CHOOSE AGAIN`n"
@@ -370,7 +369,7 @@ if (-not $didDetectExistingDPK) {
 }
 
 if ($testMode) {
-	Start-Process 'cmd.exe' -WindowStyle Minimized -ErrorAction SilentlyContinue
+	Start-Process 'cmd' -WindowStyle Minimized -ErrorAction SilentlyContinue
 }
 
 $installDriveID = $null
@@ -401,7 +400,7 @@ for ( ; ; ) {
 		} catch {
 			Write-Host "`n  ERROR LOADING QA HELPER INSTALLER: $_" -ForegroundColor Red
 			Write-Host '  IMPORTANT: Internet Is Required to Load QA Helper' -ForegroundColor Red
-			
+
 			if ($downloadAttempt -lt 4) {
 				Write-Host "  Load Installer Attempt $($downloadAttempt + 1) of 5 - TRYING AGAIN..." -ForegroundColor Yellow
 				Start-Sleep ($downloadAttempt + 1) # Sleep a little longer after each attempt.
@@ -423,13 +422,13 @@ for ( ; ; ) {
 		# To be able to run Java in WinPE, a handful of missing DLLs must be added into WinPE.
 		# Create the WinPE image with the "SetupWinPE.ps1" script to deal with this automatically.
 		# See "SetupWinPE.ps1" source for info about using Process Explorer to find missing DLLs for an executable (such as javaw.exe).
-		
+
 		Start-Process $javaPath -NoNewWindow -ArgumentList '-jar', '"\Install\QA Helper\QA_Helper.jar"' -ErrorAction SilentlyContinue
 
 		# Don't use "-Wait" in Start-Process because there's like a 5 second or so lag before continuing after closing the QA Helper window.
 		# Instead, manually detect if the QA Helper window is visible and continue after it's closed for a quicker response time.
 
-		# Since QA Helper's Loading window may take a moment to appear, wait up to 60 seconds for the Loading window before continuing anyway.	
+		# Since QA Helper's Loading window may take a moment to appear, wait up to 60 seconds for the Loading window before continuing anyway.
 		for ($waitForWindowAttempt = 0; $waitForWindowAttempt -lt 60; $waitForWindowAttempt ++) {
 			if (Get-Process | Where-Object { $_.MainWindowTitle.Contains('QA Helper') }) {
 				Clear-Host
@@ -454,13 +453,13 @@ for ( ; ; ) {
 	for ( ; ; ) {
 		Clear-Host
 		Write-Output "`n  Choose Drive to Install Windows Onto (or Other Action)...`n"
-		
+
 		if ($lastChooseInstallDriveError -ne '') {
 			Write-Host $lastChooseInstallDriveError -ForegroundColor Red
 		}
 
 		$installDriveOptions = Get-PhysicalDisk | Where-Object { ($_.BusType -eq 'SATA') -or ($_.BusType -eq 'ATA') -or ($_.BusType -eq 'NVMe') -or ($_.BusType -eq 'RAID') } | Sort-Object -Property 'DeviceId'
-		
+
 		if ($installDriveOptions.DeviceId.Count -gt 0) {
 			$installDriveOptions | ForEach-Object {
 				$thisDriveMediaType = $_.MediaType
@@ -474,7 +473,7 @@ for ( ; ; ) {
 		} else {
 			Write-Host "`n    No Internal Drives Detected`n" -ForegroundColor Yellow
 		}
-		
+
 		Write-Host "`n    H: Re-Open QA Helper" -ForegroundColor Cyan
 		Write-Host "`n    C: Cancel Windows Installation and Reboot This Computer" -ForegroundColor Cyan
 		Write-Host "`n    X: Cancel Windows Installation and Shut Down This Computer" -ForegroundColor Cyan
@@ -510,26 +509,26 @@ for ( ; ; ) {
 				Start-Sleep 5
 				Stop-Computer
 				Start-Sleep 60 # Sleep for 1 minute after executing "Stop-Computer" because if the script exits before "Stop-Computer" shut's down, the computer will be rebooted instead.
-						
+
 				exit 6
 			} else {
 				$lastChooseInstallDriveError = "`n    ERROR: Did Not Confirm Canceling Windows Installation and Shutting Down This Computer - CHOOSE AGAIN`n"
 			}
 		} else {
 			$possibleInstallDriveID = $actionChoice -Replace '\D+', ''
-			
+
 			if ($possibleInstallDrive = $installDriveOptions | Where-Object DeviceId -eq $possibleInstallDriveID) {
 				$possibleInstallDriveName = "$([math]::Round($possibleInstallDrive.Size / 1000 / 1000 / 1000)) GB $($possibleInstallDrive.BusType) $($possibleInstallDrive.MediaType) `"$($possibleInstallDrive.Model)`""
-				
+
 				FocusScriptWindow
 				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 				$confirmDriveID = Read-Host "`n  Enter `"$possibleInstallDriveID`" Again to Confirm COMPLETELY ERASING and INSTALLING Windows`n  Onto $possibleInstallDriveName"
 				$confirmDriveID = $confirmDriveID -Replace '\D+', ''
-				
+
 				if ($possibleInstallDriveID -eq $confirmDriveID) {
 					$installDriveID = $possibleInstallDriveID
 					$installDriveName = $possibleInstallDriveName
-					
+
 					break
 				} else {
 					$lastChooseInstallDriveError = "`n    ERROR: Did Not Confirm Drive ID `"$possibleInstallDriveID`" - CHOOSE AGAIN`n"
@@ -554,9 +553,10 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 	Write-Host "`n  ERROR: No Install Drive Selected`n`n  !!! THIS SHOULD NOT HAVE HAPPENED !!!`n`n  Rebooting This Computer in 15 Seconds..." -ForegroundColor Red
 	Start-Sleep 15
 } else {
+	$isSnapInstall = $false
 	$isBaseInstall = $false
 
-	if ($testMode) {
+	if (-not $ipdtMode) { # Do not bother prompting to install SNAP apps when in IPDT mode.
 		$lastChooseInstallTypeError = ''
 
 		for ( ; ; ) {
@@ -567,8 +567,13 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 				Write-Host $lastChooseInstallTypeError -ForegroundColor Red
 			}
 
-			Write-Host "`n    S: Standard Install with Apps and Testing (Boot Into Audit Mode After Install)" -ForegroundColor Cyan
-			Write-Host "`n    B: Base Install With NO Apps and NO Testing (Boot Into Windows Setup After Install)" -ForegroundColor Cyan
+			Write-Host "`n    R: Regular Install with Standard Apps" -ForegroundColor Cyan
+			Write-Host "`n    S: SNAP Install with Extra Apps" -ForegroundColor Cyan
+
+			if ($testMode) {
+				Write-Host "`n    B: Base Install With NO Apps and NO Testing (Boot Into Windows Setup After Install)" -ForegroundColor Cyan
+			}
+
 			Write-Host "`n    C: Cancel Windows Installation and Reboot This Computer" -ForegroundColor Cyan
 			Write-Host "`n    X: Cancel Windows Installation and Shut Down This Computer" -ForegroundColor Cyan
 
@@ -576,12 +581,19 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 			$installationTypeChoice = Read-Host "`n`n  Enter the Letter for Desired Windows Installation Type"
 
-			if ($installationTypeChoice.ToUpper() -eq 'S') {
-				Write-Host "`n  Standard Windows Installation Will Be Performed..." -ForegroundColor Green
-				
+			if ($installationTypeChoice.ToUpper() -eq 'R') {
+				Write-Host "`n  Regular Windows Installation Will Be Performed..." -ForegroundColor Green
+
 				Start-Sleep 2
 				break
-			} elseif ($installationTypeChoice.ToUpper() -eq 'B') {
+			} elseif ($installationTypeChoice.ToUpper() -eq 'S') {
+				Write-Host "`n  SNAP Windows Installation Will Be Performed..." -ForegroundColor Green
+
+				$isSnapInstall = $true
+
+				Start-Sleep 2
+				break
+			} elseif ($testMode -and ($installationTypeChoice.ToUpper() -eq 'B')) {
 				FocusScriptWindow
 				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 				$confirmBaseInstall = Read-Host "`n  Enter `"B`" Again to Confirm Performing Base Windows Installation With NO Apps and NO Testing"
@@ -614,7 +626,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 				FocusScriptWindow
 				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 				$confirmShutDown = Read-Host "`n  Enter `"X`" Again to Confirm Canceling Windows Installation and Shutting Down This Computer"
-	
+
 				if ($confirmShutDown.ToUpper() -eq 'X') {
 					Clear-Host
 					Write-Host "`n  CANCELED WINDOWS INSTALLATION`n`n  Shutting Down This Computer in 5 Seconds..." -ForegroundColor Yellow
@@ -639,7 +651,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 	# SMB Shares in WinPE Notes:
 	# To connect to a guest/anonymous SMB Share in WinPE, a dummy username and password must be supplied or the connection will always fail. This is only an issue in WinPE, not in a full Windows installation.
 	# Although, even with a dummy username and password, WinPE seemed to fail more often when connecting to a guest/anonymous SMB Share, so using a password protected SMB Share in WinPE is recommended.
-	
+
 	[xml]$smbCredentialsXML = $null
 
 	try {
@@ -681,24 +693,24 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 	$smbWdsShare = "\\$smbWdsServerIP\$($smbCredentialsXML.smbCredentials.driversReadOnlyShare.shareName)"
 	$smbWdsUsername = "user\$($smbCredentialsXML.smbCredentials.driversReadOnlyShare.username)" # (This is the user that can READ ONLY) For some strange reason, in WinPE the username must be prefixed, but with anything EXCEPT the server name.
 	$smbWdsPassword = $smbCredentialsXML.smbCredentials.driversReadOnlyShare.password
-	
+
 	$driversCacheBasePath = "$smbWdsShare\Drivers\Cache"
 	$driverPacksBasePath = "$smbWdsShare\Drivers\Packs"
-	
+
 	$osImagesSMBbasePath = "$smbShare\windows-resources\os-images"
 	$setupResourcesSMBbasePath = "$smbShare\windows-resources\setup-resources"
-	
+
 	$osImagesPath = "$osImagesSMBbasePath\production"
 	$setupResourcesPath = "$setupResourcesSMBbasePath\production"
-	
+
 	# When in test mode (and is not USB install), $osImagesSMBtestingPath will be checked first and $setupResourcesPath will be fallen back on if no test image is found.
-	# This way, we do not need to always store 2 duplicate os image files when no test image is needed. 
+	# This way, we do not need to always store 2 duplicate os image files when no test image is needed.
 	$osImagesSMBtestingPath = "$osImagesSMBbasePath\testing"
 
 	# When in test mode (and is not USB install), all $setupResourcesPath files will be installed first and then anything in $setupResourcesSMBtestingPath will add to or overwrite those file.
 	# This way, only modified or added files need to exist in $setupResourcesSMBtestingPath rather than a full duplicate of all required files.
 	$setupResourcesSMBtestingPath = "$setupResourcesSMBbasePath\testing"
-	
+
 	$didInstallWindowsImage = $false # Keep track of if Windows Image was successfully installed in a previous loop to know whether the drive needs to be reformatted and the install re-attempted.
 	$didInstallDrivers = $false # Keep track of if drivers were successfully installed in a previous loop to not unnecessarily reinstall them.
 
@@ -764,7 +776,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 		if ($lastTaskSucceeded -and (-not $isUSBinstall)) {
 			Write-Host "`n`n  Mounting SMB Share for Windows Installation Image - PLEASE WAIT, THIS MAY TAKE A MOMENT..." -NoNewline
-			
+
 			# Try to connect to SMB Share 5 times before stopping to show error to user because sometimes it takes a few attempts, or it sometimes just fails and takes more manual reattempts before it finally works.
 			# These failures seemed to happen more often when using a guest/anonymous SMS Share in WinPE. I think WinPE just has issues with guest/anonymous SMB Shares, so we're using a password protected one instead.
 			for ($smbMountAttempt = 0; $smbMountAttempt -lt 5; $smbMountAttempt ++) {
@@ -772,7 +784,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					# If we don't get the New-SmbMapping return value it seems to be asynchronous, which results in messages being show out of order result and also result in a failure not being detected.
 					$smbMappingStatus = (New-SmbMapping -RemotePath $smbShare -UserName $smbUsername -Password $smbPassword -Persistent $false -ErrorAction Stop).Status
 					$smbWdsMappingStatus = (New-SmbMapping -RemotePath $smbWdsShare -UserName $smbWdsUsername -Password $smbWdsPassword -Persistent $false -ErrorAction Stop).Status
-					
+
 					if (($smbMappingStatus -eq 0) -and ($smbWdsMappingStatus -eq 0)) {
 						Write-Host "`n`n  Successfully Mounted SMB Share for Windows Installation Image" -ForegroundColor Green
 					} else {
@@ -787,7 +799,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					} else {
 						Write-Host "`n`n  ERROR MOUNTING SMB SHARE: $_" -ForegroundColor Red
 						Write-Host "`n  ERROR: Failed to connect to local Free Geek SMB share `"$smbShare`" or `"$smbWdsShare`"." -ForegroundColor Red
-						
+
 						$lastTaskSucceeded = $false
 					}
 				}
@@ -798,7 +810,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 			Write-Host "`n`n  IMPORTANT: Make sure Ethernet cable is plugged securely and try again." -ForegroundColor Red
 			Write-Host "`n  ALSO IMPORTANT: If you are doing a USB install, unplug and re-plug the USB drive and try again." -ForegroundColor Yellow
 		}
-		
+
 		if (-not $didInstallWindowsImage) {
 			$latestWimPath = $null
 			$latestWimDisplayName = $null
@@ -814,7 +826,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 				if ($null -eq $latestWin10wim) {
 					$latestWin10wim = Get-ChildItem "$osImagesPath\*" -Include 'Windows-10-*.wim', 'Windows-10-*+1.swm' | Sort-Object -Property 'LastWriteTime' | Select-Object -Last 1
-					
+
 					if (($null -ne $latestWin10wim) -and $testMode -and (-not $isUSBinstall)) {
 						Write-Host '    NO WIM IN TESTING OS IMAGES - USING WIM IN PRODUCTION OS IMAGES' -ForegroundColor Yellow
 					}
@@ -825,7 +837,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 				if ($null -ne $latestWin10wim) {
 					$latestWimPath = $latestWin10wim.FullName
 					$latestWimDisplayName = $latestWin10wim.BaseName
-					
+
 					if ($latestWimDisplayName.EndsWith('+1')) {
 						$latestWimDisplayName = $latestWin10wim.Name.Replace('+1.swm', ' (Split Image)')
 					}
@@ -854,7 +866,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 				if ($null -eq $latestWin11wim) {
 					$latestWin11wim = Get-ChildItem "$osImagesPath\*" -Include 'Windows-11-*.wim', 'Windows-11-*+1.swm' | Sort-Object -Property 'LastWriteTime' | Select-Object -Last 1
-					
+
 					if (($null -ne $latestWin11wim) -and $testMode -and (-not $isUSBinstall)) {
 						Write-Host '    NO WIM IN TESTING OS IMAGES - USING WIM IN PRODUCTION OS IMAGES' -ForegroundColor Yellow
 					}
@@ -865,7 +877,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 				if ($null -ne $latestWin11wim) {
 					$latestWin11wimPath = $latestWin11wim.FullName
 					$latestWin11WimDisplayName = $latestWin11wim.BaseName
-					
+
 					if ($latestWin11WimDisplayName.EndsWith('+1')) {
 						$latestWin11WimDisplayName = $latestWin11wim.Name.Replace('+1.swm', ' (Split Image)')
 					}
@@ -880,39 +892,39 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 			if ($lastTaskSucceeded) {
 				Write-Output "`n`n  Detecting Whether This Computer Is Booted in Legacy BIOS or UEFI Mode..."
-				
+
 				try {
 					# Windows Deployment Reference: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/windows-deployment-sample-scripts-sxs#-applyimagebat
-					
+
 					Remove-Item "$Env:TEMP\fgInstall-*.txt" -Force -ErrorAction SilentlyContinue
 
 					# Run "Wpeutil UpdateBootInfo" before checking PEFirmwareType (seems unnecessary in testing, but sample code does it and doesn't hurt).
-					Start-Process 'Wpeutil.exe' -NoNewWindow -Wait -RedirectStandardOutput "$Env:TEMP\fgInstall-Wpeutil-UpdateBootInfo-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-Wpeutil-UpdateBootInfo-Error.txt" -ArgumentList 'UpdateBootInfo' -ErrorAction Stop # RedirectStandardOutput just so it doesn't show in window. 
+					Start-Process 'Wpeutil' -NoNewWindow -Wait -RedirectStandardOutput "$Env:TEMP\fgInstall-Wpeutil-UpdateBootInfo-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-Wpeutil-UpdateBootInfo-Error.txt" -ArgumentList 'UpdateBootInfo' -ErrorAction Stop # RedirectStandardOutput just so it doesn't show in window.
 					$wpeutilUpdateBootInfoError = Get-Content -Raw "$Env:TEMP\fgInstall-Wpeutil-UpdateBootInfo-Error.txt"
-					
+
 					$peFirmwareType = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control').PEFirmwareType
 					if ($peFirmwareType -eq 1) {
 						$biosOrUEFI = 'Legacy BIOS'
 					} elseif ($peFirmwareType -eq 2) {
 						$biosOrUEFI = 'UEFI'
 					}
-					
+
 					if (($null -ne $biosOrUEFI) -and ($null -eq $wpeutilUpdateBootInfoError)) {
 						Write-Host "`n  This Computer Is Booted in $biosOrUEFI Mode" -ForegroundColor Green
 					} else {
 						if ($null -eq $wpeutilUpdateBootInfoError) {
 							$wpeutilUpdateBootInfoError = Get-Content -Raw "$Env:TEMP\fgInstall-Wpeutil-UpdateBootInfo-Output.txt"
 						}
-						
+
 						Write-Host "`n  ERROR LOADING BOOT INFO: $wpeutilUpdateBootInfoError" -ForegroundColor Red
 						Write-Host "`n  ERROR: Failed to detect whether this computer is booted in Legacy BIOS or UEFI mode (PEFirmwareType = $peFirmwareType)." -ForegroundColor Red
-						
+
 						$lastTaskSucceeded = $false
 					}
 				} catch {
 					Write-Host "`n  ERROR STARTING WPEUTIL FOR BOOT INFO: $_" -ForegroundColor Red
 					Write-Host "`n  ERROR: Failed to detect whether this computer is booted in Legacy BIOS or UEFI mode." -ForegroundColor Red
-					
+
 					$lastTaskSucceeded = $false
 				}
 			}
@@ -921,7 +933,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 				Start-Sleep 3 # Sleep for a few seconds to be able to see last results before clearing screen.
 
 				$lastChooseWindowsVersionError = ''
-				
+
 				$shouldQuit = $false
 				$shouldShutDown = $false
 
@@ -929,9 +941,9 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					Clear-Host
 					Write-Output "`n  Detecting If This Computer Supports Windows 11...`n" # https://www.microsoft.com/en-us/windows/windows-11-specifications
 
-					$tpmSpecVersionString = (Get-CimInstance Win32_TPM -Namespace 'ROOT\CIMV2\Security\MicrosoftTPM' -ErrorAction SilentlyContinue).SpecVersion
+					$tpmSpecVersionString = (Get-CimInstance 'Win32_TPM' -Namespace 'ROOT\CIMV2\Security\MicrosoftTPM' -ErrorAction SilentlyContinue).SpecVersion
 					$win11compatibleTPM = $false
-					
+
 					if ($null -ne $tpmSpecVersionString) {
 						$tpmSpecVersionString = $tpmSpecVersionString.Split(',')[0] # Use the first value in the "SpecVersion" comma separated string instead of "PhysicalPresenseVersionInfo" since the latter can be inaccurate when the former is correct.
 						$win11compatibleTPM = ((($tpmSpecVersionString -Replace '[^0-9.]', '') -as [double]) -ge 2.0)
@@ -1064,7 +1076,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						}
 
 						if (($null -ne $latestWin11wimPath) -and (Test-Path $latestWin11wimPath)) {
-							Write-Host "`n  This Computer Is Compatible With Window 11" -ForegroundColor Green	
+							Write-Host "`n  This Computer Is Compatible With Window 11" -ForegroundColor Green
 
 							Write-Output "`n`n  Choose Windows Version for $installDriveName...`n"
 
@@ -1088,7 +1100,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 								if ($confirmWin11 -eq '1') {
 									Write-Host "`n  Windows 11 Will Be Installed..." -ForegroundColor Green
-								
+
 									$latestWimPath = $latestWin11wimPath
 									$latestWimDisplayName = $latestWin11WimDisplayName
 
@@ -1125,7 +1137,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 								FocusScriptWindow
 								$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 								$confirmShutDown = Read-Host "`n  Enter `"X`" Again to Confirm Canceling Windows Installation and Shutting Down This Computer"
-					
+
 								if ($confirmShutDown.ToUpper() -eq 'X') {
 									$shouldShutDown = $true
 									break
@@ -1184,7 +1196,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 							FocusScriptWindow
 							$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 							$confirmShutDown = Read-Host "`n  Enter `"X`" Again to Confirm Canceling Windows Installation and Shutting Down This Computer"
-				
+
 							if ($confirmShutDown.ToUpper() -eq 'X') {
 								$shouldShutDown = $true
 								break
@@ -1227,22 +1239,22 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 			if ($lastTaskSucceeded) {
 				Clear-Host
 				Write-Output "`n  Formatting $installDriveName for Windows in $biosOrUEFI Mode...`n`n`n`n`n`n`n`n`n" # Add empty lines for PowerShell progress UI
-				
+
 				try {
 					# Disk formatting commands based on:
 					# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/windows-deployment-sample-scripts-sxs#-createpartitions-uefitxt
 					# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/windows-deployment-sample-scripts-sxs#-createpartitions-biostxt
 					# As well as observations from using the Windows 10 21H1 (and previous versions) ISO installer via USB.
-					
+
 					# Reference for replacing DiskPart commands with PowerShell:
 					# Initialize-DiskPartition function in https://www.powershellgallery.com/packages/WindowsImageTools/1.9.19.0/Content/WindowsImageTools.psm1
-					
+
 					if ((Get-Disk $installDriveID -ErrorAction Stop).PartitionStyle -ne 'RAW') { # Clear-Disk will fail if drive is not initialized, so only clear if needed.
 						Write-Host '    Erasing Drive...' -NoNewline
-						
+
 						try {
 							Clear-Disk $installDriveID -RemoveData -RemoveOEM -Confirm:$false -ErrorAction Stop
-							
+
 							Write-Host ' ERASED' -ForegroundColor Green
 						} catch {
 							Write-Host ' FAILED' -ForegroundColor Red
@@ -1252,15 +1264,15 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 					try {
 						Write-Host '    Initializing Drive...' -NoNewline
-						
+
 						$partitionStyle = 'MBR'
-						
+
 						if ($biosOrUEFI -eq 'UEFI') {
 							$partitionStyle = 'GPT'
 						}
 
 						Initialize-Disk $installDriveID -PartitionStyle $partitionStyle -ErrorAction Stop
-						
+
 						Write-Host ' INITIALIZED' -ForegroundColor Green
 					} catch {
 						Write-Host ' FAILED' -ForegroundColor Red
@@ -1271,7 +1283,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						$systemPartition = $null
 
 						$systemPartitionFilesystem = 'NTFS'
-						
+
 						if ($biosOrUEFI -eq 'UEFI') {
 							Write-Host '    Creating EFI System Partition...' -NoNewline
 
@@ -1281,20 +1293,20 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 							$systemPartition = New-Partition $installDriveID -GptType '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}' -Size 100MB -DriveLetter 'S' -ErrorAction Stop
 						} else {
 							Write-Host '    Creating BIOS System Partition...' -NoNewline
-							
+
 							# Only set System partition as Active in BIOS mode.
 							# Windows 10 21H1 (and previous versions) ISO Installer made BIOS System Partion 50 MB
 							$systemPartition = New-Partition $installDriveID -MbrType 'IFS' -IsActive -Size 50MB -DriveLetter 'S' -ErrorAction Stop
 						}
 
 						Format-Volume -Partition $systemPartition -FileSystem $systemPartitionFilesystem -NewFileSystemLabel 'System' -ErrorAction Stop | Out-Null
-						
+
 						Write-Host ' CREATED' -ForegroundColor Green
 					} catch {
 						Write-Host ' FAILED' -ForegroundColor Red
 						throw $_
 					}
-					
+
 					if ($biosOrUEFI -eq 'UEFI') { # Only create MSR partition in UEFI mode.
 						Write-Host '    Creating Microsoft Reserved Partition...' -NoNewline
 
@@ -1307,14 +1319,14 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 							throw $_
 						}
 					}
-					
+
 					try {
 						Write-Host '    Creating Windows Partition...' -NoNewline
-						
+
 						$windowsPartition = $null
 
 						$windowsPartitionSize = (Get-Disk $installDriveID -ErrorAction Stop).LargestFreeExtent
-						
+
 						if ($biosOrUEFI -eq 'UEFI') {
 							$windowsPartition = New-Partition $installDriveID -GptType '{ebd0a0a2-b9e5-4433-87c0-68b6b72699c7}' -Size $windowsPartitionSize -DriveLetter 'W' -ErrorAction Stop
 						} else {
@@ -1322,7 +1334,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						}
 
 						Format-Volume -Partition $windowsPartition -FileSystem 'NTFS' -NewFileSystemLabel 'Windows' -ErrorAction Stop | Out-Null
-						
+
 						Write-Host ' CREATED' -ForegroundColor Green
 					} catch {
 						Write-Host ' FAILED' -ForegroundColor Red
@@ -1332,7 +1344,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					# Recovery partition is created after Windows installation so that we can check the WinRE size and dynamically resize the Windows partition and create a properly sized Recovery partition.
 				} catch {
 					Write-Host "`n  ERROR FORMATTING DRIVE: $_" -ForegroundColor Red
-					
+
 					$lastTaskSucceeded = $false
 				}
 
@@ -1356,12 +1368,12 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						}
 
 						$diskpartGetPartitionDetailsCommands += 'exit'
-						
+
 						Remove-Item "$Env:TEMP\fgInstall-*.txt" -Force -ErrorAction SilentlyContinue
 
 						Set-Content -Path "$Env:TEMP\fgInstall-diskpart-GetPartitionDetails-Commands.txt" -Value $diskpartGetPartitionDetailsCommands -Force -ErrorAction Stop
-						
-						$diskpartGetPartitionDetailsExitCode = (Start-Process 'diskpart.exe' -NoNewWindow -Wait -PassThru -ArgumentList '/s', "$Env:TEMP\fgInstall-diskpart-GetPartitionDetails-Commands.txt" -ErrorAction Stop).ExitCode # Do NOT RedirectStandardOutput OR RedirectStandardError because we want everything outputted in window.
+
+						$diskpartGetPartitionDetailsExitCode = (Start-Process 'diskpart' -NoNewWindow -Wait -PassThru -ArgumentList '/s', "$Env:TEMP\fgInstall-diskpart-GetPartitionDetails-Commands.txt" -ErrorAction Stop).ExitCode # Do NOT RedirectStandardOutput OR RedirectStandardError because we want everything outputted in window.
 
 						if ($diskpartGetPartitionDetailsExitCode -ne 0) {
 							throw "DiskPart Exit Code = $diskpartGetPartitionDetailsExitCode"
@@ -1388,12 +1400,12 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					Write-Host "`n  ERROR: Failed to format $installDriveName." -ForegroundColor Red
 				}
 			}
-			
+
 			if ($lastTaskSucceeded) {
 				Start-Sleep 3 # Sleep for a few seconds to be able to see last results before clearing screen.
 				Clear-Host
 				Write-Output "`n  Installing Windows Onto $installDriveName...`n`n`n`n`n`n  Windows Version: $latestWimDisplayName" # Add empty lines for PowerShell progress UI
-				
+
 				try {
 					# Would like to use Expand-WindowsImage's "-CheckIntegrity" parameter, but it generally takes too long.
 
@@ -1411,7 +1423,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 				} catch {
 					# If Expand-WindowsImage fails, the progress bar doesn't complete itself and the incomplete progress will still show above the next progress bar during the next re-attempt.
 					# I tried calling "Write-Progress -Activity 'Operation' -Status 'Running' -Completed" manually to clear it, but that doesn't work. Not sure what to do about that issue.
-					
+
 					$dismLogContents = Get-Content -Raw "$Env:WINDIR\Logs\DISM\dism.log" -ErrorAction SilentlyContinue
 					if (($null -eq $dismLogContents) -or ($dismLogContents -eq '')) {
 						$dismLogContents = ' N/A'
@@ -1422,7 +1434,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					Write-Host "`n  DISM LOG:$dismLogContents" -ForegroundColor Red
 					Write-Host "`n  ERROR INSTALLING WIM: $_" -ForegroundColor Red
 					Write-Host "`n  ERROR: Failed to install Windows onto $installDriveName." -ForegroundColor Red
-					
+
 					$lastTaskSucceeded = $false
 				}
 			}
@@ -1434,7 +1446,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 				Add-Content '\Install\Windows Install Log.txt' "Driver Installation Not Available During USB Install - $(Get-Date)" -ErrorAction SilentlyContinue
 			} else {
 				Write-Output "`n`n  Locating Drivers for This Computer Model..."
-				
+
 				$driversModelPath = $null
 				$isInstallingDriverPack = $false
 
@@ -1459,7 +1471,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 							if (Test-Path $driversCacheModelPathUniqueDriversPointerFilePath) {
 								$driversCacheModelPathUniqueDriversPointerFileContents = Get-Content -Raw $driversCacheModelPathUniqueDriversPointerFilePath -ErrorAction SilentlyContinue
-								
+
 								if (($null -ne $driversCacheModelPathUniqueDriversPointerFileContents) -and ($driversCacheModelPathUniqueDriversPointerFileContents -ne '')) {
 									$driversModelPath = $driversCacheModelPathUniqueDriversPointerFilePath
 								}
@@ -1467,15 +1479,15 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						}
 					}
 				}
-				
+
 				$driversSource = 'Cached'
 
 				if ($null -eq $driversModelPath) {
 					# If no Cached Drivers exists, check for Driver Pack in $driverPacksBasePath
-					
+
 					$manufacturerForDriverPacks = $null
 					$possibleModelsForDriverPacks = @()
-					
+
 					try {
 						$computerSystemProductVendorVersionName = (Get-CimInstance 'Win32_ComputerSystemProduct' -Property 'Vendor', 'Version', 'Name')
 						$manufacturerForDriverPacks = $computerSystemProductVendorVersionName.Vendor.ToLower()
@@ -1483,7 +1495,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						# Dell Driver Packs (http://downloads.dell.com/catalog/DriverPackCatalog.cab) are available on the server (as of January 2021).
 						# HP Driver Packs (http://ftp.hp.com/pub/caps-softpaq/cmit/HPClientDriverPackCatalog.cab) are available on the server (as of January 2021).
 						# Lenovo Driver Packs (https://download.lenovo.com/cdrt/td/catalogv2.xml & https://download.lenovo.com/cdrt/td/catalog.xml) are available on the server (as of January 2021).
-						
+
 						if ($manufacturerForDriverPacks.Contains('dell')) {
 							$manufacturerForDriverPacks = 'Dell'
 						} elseif ($manufacturerForDriverPacks.Contains('hp') -or $manufacturerForDriverPacks.Contains('hewlett-packard')) {
@@ -1497,10 +1509,10 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						# The actual computer model can be stored in a variety of places, so check them all and use the first match.
 						# The Classes and Properties being used for manufacturer and model names are from the thoroughly tested code in QA Helper,
 						# except for some specifics for Dell and HP, which came from: https://github.com/MSEndpointMgr/ModernDriverManagement/blob/4c71b08c890f96f953849b6845e04ed2808c67f7/Invoke-CMApplyDriverPackage.ps1#L1109
-						
+
 						$possibleModelsForDriverPacks += $computerSystemProductVendorVersionName.Version
 						$possibleModelsForDriverPacks += $computerSystemProductVendorVersionName.Name
-						
+
 						$computerSystemSystemSKUNumberAndOEMStringArray = (Get-CimInstance 'Win32_ComputerSystem' -Property 'SystemSKUNumber', 'OEMStringArray')
 						$possibleModelsForDriverPacks += $computerSystemSystemSKUNumberAndOEMStringArray.SystemSKUNumber
 
@@ -1561,10 +1573,10 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 								if ((($thisPossibleModelForDriverPacks.length -eq 4) -and ($thisPossibleModelForDriverPacks -match '^[a-z0-9]+$')) -or ($null -eq $fallbackDriversModelPath)) {
 									$driverPackPointerFilePath = "$driverPacksBasePath\$manufacturerForDriverPacks\$($thisPossibleModelForDriverPacks).txt"
-									
+
 									if (Test-Path $driverPackPointerFilePath) {
 										$driverPackPointerFileContents = Get-Content $driverPackPointerFilePath -First 1
-										
+
 										if (($null -ne $driverPackPointerFileContents) -and $driverPackPointerFileContents.Contains('\')) {
 											$possibleDriversModelPath = "$driverPacksBasePath\$manufacturerForDriverPacks\$driverPackPointerFileContents"
 
@@ -1579,11 +1591,11 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 													$driversModelPath = $possibleDriversModelPath
 													$isInstallingDriverPack = $true
 													$driversSource = $manufacturerForDriverPacks
-													
+
 													break
 												} elseif ($null -eq $fallbackDriversModelPath) {
 													# If matched a Model Name instead of the Type/System ID, keep checking for a Type/System ID and only use the Model Name as a fallback.
-													
+
 													if ($testMode) {
 														Write-Host "`n    LOCATED FALLBACK DRIVER PACK:`n      $manufacturerForDriverPacks\$thisPossibleModelForDriverPacks`n      $driverPackPointerFileContents" -ForegroundColor Yellow
 													}
@@ -1613,14 +1625,14 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 				if (($null -ne $driversModelPath) -and (Test-Path $driversModelPath)) {
 					$allAvailableDriverInfPathsForModel = @()
-					
+
 					if ($isInstallingDriverPack) {
 						# Retrieve all .inf files recursively instead of using "Add-WindowsDriver -Recurse" to be able to show installation progess.
 						# Also, Driver Packs can contain TONS of drivers which may not actually be necessary for the specified model, so confirm compatibility for each driver and only install compatible drivers.
 
 						# It appears that Drivers and Driver Packs generally list their supported Windows version based on what Windows version was current at the time the drivers were released rather than what version of Windows they could actually support (essentially any Windows 7 or newer driver *should* work).
 						# Therefore, my Driver Pack download code will download be the most currently released driver pack for the latest version of Windows (7 or newer), sometimes this is a Windows 7, 8, or 8.1 Driver Pack.
-						
+
 						$allAvailableDriverInfPathsForModel = (Get-ChildItem $driversModelPath -Recurse -File -Include '*.inf').FullName
 					} elseif ($driversModelPath.EndsWith('.txt')) {
 						# Initially chose to not install all drivers in $driversModelPath recursively (using "Add-WindowsDriver -Recurse") because of the possible multiple .inf issue mentioned here:
@@ -1634,15 +1646,15 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						# This kind of thing could also not be done when using "Add-WindowsDriver -Recurse".
 
 						# Folders in "$driversCacheBasePath\Unique Drivers" should be named like "heci.inf_amd64_f8de8314845ca592" (as the are when copied from "C:\Windows\System32\DriverStore\FileRepository\").
-						
+
 						$driversCacheModelPathUniqueDriversPointerFileLines = Get-Content $driversModelPath -ErrorAction SilentlyContinue
-						
+
 						foreach ($thisCachedUniqueDriverName in $driversCacheModelPathUniqueDriversPointerFileLines) {
 							if ($thisCachedUniqueDriverName.Contains('.inf_amd64_')) {
 								$thisCachedUniqueDriverInfPath = "$driversCacheBasePath\Unique Drivers\$thisCachedUniqueDriverName\$($thisCachedUniqueDriverName.Substring(0, $thisCachedUniqueDriverName.IndexOf('.'))).inf"
-							
+
 								if (Test-Path $thisCachedUniqueDriverInfPath) {
-									$allAvailableDriverInfPathsForModel += $thisCachedUniqueDriverInfPath 
+									$allAvailableDriverInfPathsForModel += $thisCachedUniqueDriverInfPath
 								}
 							}
 						}
@@ -1651,19 +1663,19 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					# Parse each .inf to confirm compatibility with current hardware and only install compatible drivers.
 					# Tried using "Get-WindowsDriver -Path 'W:\' -Driver $thisDriverInfPath" to get compatibility details and driver name instead parsing the .inf myself, but it was TOO SLOW (2-3 seconds per driver VS 0.01-0.6 seconds per driver when parsing manually).
 					# ALSO, I would still had to parse some of the .inf manually anyway to get the Compatible Software ID matching that is done below since that is not included in the output of "Get-WindowsDriver -Path 'W:\' -Driver $thisDriverInfPath".
-					
+
 					if ($testMode) {
 						Write-Host "`n    CHECKING $($allAvailableDriverInfPathsForModel.Count) $($driversSource.ToUpper()) DRIVERS FOR COMPATIBILITY..." -ForegroundColor Yellow
 					}
-					
+
 					Add-Content '\Install\Windows Install Log.txt' "Located $($allAvailableDriverInfPathsForModel.Count) $driversSource Drivers in `"$($driversModelPath.Replace("$driversCacheBasePath\", '').Replace('.txt', '').Replace("$driverPacksBasePath\", ''))`" - $(Get-Date)" -ErrorAction SilentlyContinue
 
 					$driverDetailsForCompatibleInfs = @{}
 
 					if ($allAvailableDriverInfPathsForModel.Count -gt 0) {
-						$pnpEntityCompatibleAndHardwareIDs = (Get-CimInstance Win32_PnPEntity -Property 'HardwareID', 'CompatibleID')
+						$pnpEntityCompatibleAndHardwareIDs = (Get-CimInstance 'Win32_PnPEntity' -Property 'HardwareID', 'CompatibleID')
 						$compatibleDeviceIDsForDrivers = (($pnpEntityCompatibleAndHardwareIDs.HardwareID + $pnpEntityCompatibleAndHardwareIDs.CompatibleID) | Where-Object { ($null -ne $_) } | Sort-Object -Unique).ToUpper()
-						
+
 						# Some drivers only list Software Compatible IDs "SWC\..." as compatible Device IDs. I believe these drivers will only list "SWC\..." Device IDs in their models sections,
 						# but I set this code up to continue checking for any compatible Device IDs and only collect the "SWC\..." IDs to be matched with another compatible driver if no other compatibility was detected.
 						# These "software" drivers are associated with other "hardware" drivers and can be matched and installed along with their "hardware" driver counterparts
@@ -1687,12 +1699,12 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 							$isInfModelsSection = $false
 							$softwareComponentIDsFromModelsSectionsOfThisDriver = @{}
 							$softwareComponentIDsFromComponentsSectionsOfThisDriver = @()
-							
+
 							$isInfStringsSection = $false
 							$stringVariablesForDriver = @{}
 
 							$thisDriverInfContents = Get-Content $thisDriverInfPath
-							
+
 							foreach ($thisDriverInfLine in $thisDriverInfContents) {
 								if (($lineCommentIndex = $thisDriverInfLine.IndexOf(';')) -gt -1) { # Remove .inf comments from each line before any parsing to avoid matching any text within comments.
 									$thisDriverInfLine = $thisDriverInfLine.Substring(0, $lineCommentIndex)
@@ -1710,7 +1722,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 										# https://docs.microsoft.com/en-us/windows-hardware/drivers/install/inf-manufacturer-section
 										$wasInfManufacturerSection = $isInfManufacturerSection
 										$isInfManufacturerSection = ($thisDriverInfLineUPPER -eq '[MANUFACTURER]')
-										
+
 										if ($wasInfManufacturerSection -and (-not $isInfManufacturerSection) -and ($compatibleModelSectionIDs.Count -eq 0)) {
 											# If passed Manufacturer sections and didn't get any compatible Model Section IDs, this is not a 64-bit driver and we can stop reading lines.
 											if ($testMode) {
@@ -1737,7 +1749,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 												}
 											} elseif (($thisDriverVersion -eq 'UNKNOWN Version') -and $thisDriverInfLineUPPER.Contains('DRIVERVER')) {
 												$thisDriverVersion = $thisDriverInfLine.Substring($lineEqualsIndex + 1).Split(',').Trim() | Where-Object { ($null -ne $_) -and ($_ -ne '') } | Select-Object -Last 1
-												
+
 												if ($thisDriverVersion -eq '') {
 													$thisDriverVersion = 'UNKNOWN Version'
 												}
@@ -1757,7 +1769,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 											# A Hardware ID and mutliple Compatible IDs could exist on a single line seperated by commas, so check them all.
 											$theseDriverCompatibleDeviceID = $thisDriverInfLineUPPER.Substring($lineEqualsIndex + 1).Replace('"', '').Split(',') # Seen situations where some .inf Device IDs were quoted so remove all quotes and also seen "Vid_" and "Pid_" instead of "VID_" and "PID_" so always compare UPPER Device IDs.
 											$theseDriverCompatibleDeviceID = $theseDriverCompatibleDeviceID[1..($theseDriverCompatibleDeviceID.length - 1)].Trim() # BUT, the first element will be the "install-section-name" and not a Device ID, so get rid of that one.
-											
+
 											foreach ($thisDriverCompatibleDeviceID in $theseDriverCompatibleDeviceID) {
 												if ($thisDriverCompatibleDeviceID.StartsWith('SWC\') -or ((-not $driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()]) -and ($compatibleDeviceIDsForDrivers.Contains($thisDriverCompatibleDeviceID) -or ((-not $isInstallingDriverPack) -and $thisDriverCompatibleDeviceID.StartsWith('MONITOR\'))))) {
 													$thisDriverName = $thisDriverInfLine.Substring(0, $lineEqualsIndex).Replace('"', '').Trim() # This value will be translated using the strings variables.
@@ -1768,12 +1780,12 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 													if ($thisDriverName -eq '') {
 														$thisDriverName = 'UNKNOWN Name'
 													}
-													
+
 													if ($thisDriverCompatibleDeviceID.StartsWith('SWC\')) {
 														if ($testMode) {
 															Write-Host "`n      ADDING DRIVER SOFTWARE COMPONENT ID TO CHECK AGAINST COMPATIBLE DRIVERS '$thisDriverCompatibleDeviceID':`n        $($thisDriverInfPath.Replace("$driversModelPath\", ''))" -ForegroundColor Yellow
 														}
-														
+
 														$softwareComponentIDsFromModelsSectionsOfThisDriver[$thisDriverCompatibleDeviceID] = @{
 															InfPath = $thisDriverInfPath
 															DriverName = $thisDriverName
@@ -1827,7 +1839,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 									}
 								}
 							}
-							
+
 							if ($driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()]) {
 								$driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()].DriverClass = $thisDriverClass
 								$driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()].DriverVersion = $thisDriverVersion
@@ -1848,7 +1860,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 											Write-Host "        TRANSLATED SOFTWARE COMPONENT ID: $thisSoftwareComponentID" -ForegroundColor Yellow
 										}
 									}
-									
+
 									$softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers += $thisSoftwareComponentID
 								}
 							} else {
@@ -1867,11 +1879,11 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 									if (($null -ne $translatedDriverName) -and ($null -ne $stringVariablesForDriver[$translatedDriverName.ToUpper()])) {
 										$translatedDriverName = $stringVariablesForDriver[$translatedDriverName.ToUpper()]
 									}
-									
+
 									if ($thisDriverClass.ToUpper() -ne 'SOFTWARECOMPONENT') {
 										$thisDriverClass += ' SWC' # Some Software Component drivers do not have the class of "SoftwareComponent", so add " SWC" to any that don't to identify them.
 									}
-									
+
 									if (-not $softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers[$thisSoftwareComponentID]) {
 										$softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers[$thisSoftwareComponentID] = @()
 									}
@@ -1915,7 +1927,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 								}
 							}
 						}
-						
+
 						if ($testMode) {
 							#$driverDetailsForCompatibleInfs.Values | Format-Table -AutoSize -HideTableHeaders
 							Write-Host "`n    $($driverDetailsForCompatibleInfs.Count) COMPATIBLE $($driversSource.ToUpper()) DRIVERS (OF $($allAvailableDriverInfPathsForModel.Count) AVAILABLE DRIVERS)" -ForegroundColor Yellow
@@ -1925,9 +1937,9 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					if ($driverDetailsForCompatibleInfs.Count -gt 0) {
 						Write-Host "`n  Successfully Located $($driverDetailsForCompatibleInfs.Count) $driversSource Drivers for This Computer Model" -ForegroundColor Green
 						Add-Content '\Install\Windows Install Log.txt' "Confirmed Compatibility for $($driverDetailsForCompatibleInfs.Count) $driversSource Drivers - $(Get-Date)" -ErrorAction SilentlyContinue
-						
+
 						Write-Output "`n`n  Installing $($driverDetailsForCompatibleInfs.Count) $driversSource Drivers for This Computer Model`n  Onto $installDriveName`n  PLEASE WAIT, THIS MAY TAKE A FEW MINUTES..."
-						
+
 						$skipInstallDrivers = $false
 
 						if ($testMode) {
@@ -1952,12 +1964,12 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 								$thisDriverIndex ++
 
 								$thisDriverInfPath = $thisDriverDetails.InfPath
-								
+
 								if (($null -ne $thisDriverInfPath) -and (Test-Path $thisDriverInfPath)) {
 									$thisDriverInfBaseName = (Split-Path $thisDriverInfPath -Leaf).Split('.')[0]
-									
+
 									Write-Host "`n    Installing $driversSource Driver $thisDriverIndex of $($driverDetailsForCompatibleInfs.Count): `"$thisDriverInfBaseName`" Version $($thisDriverDetails.DriverVersion)`n      $($thisDriverDetails.DriverClass) - $($thisDriverDetails.DriverName)"
-									
+
 									try {
 										Add-WindowsDriver -Path 'W:\' -Driver $thisDriverInfPath -ErrorAction Stop | Out-Null
 
@@ -1971,7 +1983,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 									Write-Host "`n    INF NOT FOUND for $driversSource Driver $thisDriverIndex of $($driverDetailsForCompatibleInfs.Count):`n      $($thisDriverInfPath.Replace("$driversCacheBasePath\", '').Replace('.txt', '').Replace("$driverPacksBasePath\", ''))`n      CONTINUING ANYWAY..." -ForegroundColor Yellow
 								}
 							}
-							
+
 							if ($installedDriversCount -eq 0) {
 								$dismLogContents = Get-Content -Raw "$Env:WINDIR\Logs\DISM\dism.log" -ErrorAction SilentlyContinue
 								if (($null -eq $dismLogContents) -or ($dismLogContents -eq '')) {
@@ -1979,11 +1991,11 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 								} else {
 									$dismLogContents = "`n$dismLogContents"
 								}
-								
+
 								Write-Host "`n  DISM LOG:$dismLogContents" -ForegroundColor Red
 								Write-Host "`n  ERROR: Failed to install $driversSource Drivers from `"$($driversModelPath.Replace("$driversCacheBasePath\", '').Replace('.txt', '').Replace("$driverPacksBasePath\", ''))`"." -ForegroundColor Red
 								Add-Content '\Install\Windows Install Log.txt' "Failed to Install $driversSource Drivers - $(Get-Date)" -ErrorAction SilentlyContinue
-								
+
 								$lastTaskSucceeded = $false
 							} else {
 								Write-Host "`n  Successfully Installed $installedDriversCount $driversSource Drivers Onto $installDriveName" -ForegroundColor Green
@@ -2002,10 +2014,10 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 				}
 			}
 		}
-		
+
 		if ($lastTaskSucceeded -and (-not $isBaseInstall) -and (-not $didCreateRecoveryPartition)) {
 			Write-Output "`n`n  Copying Setup Resources Onto $installDriveName..."
-			
+
 			try {
 				# Copy UnattendAudit.xml to Installed OS to enter Audit mode and run "Setup Windows.ps1" (references are within XML file).
 				# Install "Unattend.xml" into "W:\Windows\System32\Sysprep" instead of "W:\Windows\Panther" so that it's processed after every reboot until it's deleted manually.
@@ -2024,7 +2036,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 				# Copy entire \Install folder to Installed OS for QA Helper, etc.
 				Copy-Item 'X:\Install' 'W:\' -Recurse -Force -ErrorAction Stop
-				
+
 				# Copy all files and folders within "setup-resources" of SMB share into "\Install" except for "UnattendAudit.xml".
 				Get-ChildItem $setupResourcesPath -Exclude 'UnattendAudit.xml' -ErrorAction Stop | ForEach-Object {
 					Copy-Item $_ 'W:\Install' -Recurse -Force -ErrorAction Stop
@@ -2033,7 +2045,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						Write-Host "    COPIED PRODUCTION RESOURCE: $($_.Name)" -ForegroundColor Yellow
 					}
 				}
-				
+
 				if ($testMode -and (-not $isUSBinstall)) {
 					# When in test mode (and is not USB install), copy production resources first and then add or overwrite with testing resources.
 					Get-ChildItem $setupResourcesSMBtestingPath -Exclude 'UnattendAudit.xml' -ErrorAction Stop | ForEach-Object {
@@ -2043,13 +2055,24 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					}
 				}
 
-				if ($testMode -and (-not (Test-Path 'W:\Install\TESTING'))) {
-					# Make sure test mode is set in OS if it's set during installation.
-					New-Item -ItemType 'File' -Path 'W:\Install\TESTING' | Out-Null
-					
+				if ($testMode -and (-not (Test-Path 'W:\Install\fgFLAG-TEST'))) { # Make sure test mode is set in OS if it's set during installation.
+					New-Item -ItemType 'File' -Path 'W:\Install\fgFLAG-TEST' | Out-Null
+
 					Write-Host '    SET TEST MODE FOR INSTALLED OS SINCE INSTALLATION WAS IN TEST MODE' -ForegroundColor Yellow
 				}
-				
+
+				if ($isSnapInstall -and (-not (Test-Path 'W:\Install\fgFLAG-SNAP'))) { # If technician chose "SNAP" install mode, create flag so that "Setup Windows" in installed OS will auto-install extra SNAP apps.
+					New-Item -ItemType 'File' -Path 'W:\Install\fgFLAG-SNAP' | Out-Null
+
+					Write-Host '    SET SNAP MODE FOR INSTALLED OS TO AUTO-INSTALL EXTRA SNAP APPS' -ForegroundColor Yellow
+				}
+
+				if ($ipdtMode -and (-not (Test-Path 'W:\Install\fgFLAG-IPDT'))) { # Create the "IPDT" flag in the installed OS to auto-launch "Intel Processor Diagnostic Tool" instead of "QA Helper" (for Hardware Testing).
+					New-Item -ItemType 'File' -Path 'W:\Install\fgFLAG-IPDT' | Out-Null
+
+					Write-Host '    CREATED "IPDT" (Intel Processor Diagnostic Tool) FLAG IN INSTALLED OS SINCE "IPDT" FLAG EXISTS IN WINPE' -ForegroundColor Yellow
+				}
+
 				Write-Host "`n  Successfully Copied Setup Resources Onto $installDriveName" -ForegroundColor Green
 			} catch {
 				Write-Host "`n  ERROR COPYING SETUP RESOURCES: $_" -ForegroundColor Red
@@ -2073,7 +2096,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 					try {
 						# Recovery Parition Sizing Research and Notes:
-						
+
 						# Windows 10 1903 (v1) ISO Installer made Recovery partition 529 MB for 365 MB WinRE, which is 164 MB over WinRE size.
 						# Windows 10 1903 (v2) ISO Installer made Recovery partition 529 MB for 409 MB WinRE, which is 120 MB over WinRE size.
 						# Windows 10 1909 ISO Installer made Recovery partition 529 MB for 418 MB WinRE, which is 111 MB over WinRE size.
@@ -2103,7 +2126,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						# Based on the recommendation in this same documentation (https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/configure-uefigpt-based-hard-drive-partitions#recovery-tools-partition),
 						# we will create a Recovery partition that is least 250 MB larger than the WinRE size (and rounded up to the nearest 50 MB for clean and round Recovery partition sizes).
 						# This will result in a larger Recovery partition than the Windows ISO Installer creates, but still a drop in the bucket (less than 1 GB) for hard drive capacities and better to have extra space for safety.
-						
+
 						# The Recovery partition size is being calculated dynamically like this since Cumulative updates are pre-installed into WinRE which will make it larger than the WinRE sizes shown above from the original ISOs.
 						# And, since the WinRE size will be slightly different after each time Cumulative updates are pre-installed, I don't want to have to check and change a hardcoded Recovery partition size if it becomes too small.
 
@@ -2127,34 +2150,34 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 						try {
 							Write-Host "    Creating $($recoveryPartitionSizeBytes / 1MB) MB Recovery Partition for $([math]::Round($winreSizeBytes / 1MB)) MB WinRE..." -NoNewline
-							
+
 							# Recovery partition is created as last partition using leftover space unused by previous partitions.
 							# $windowsPartitionSize was resized by subtracting $recoveryPartitionSizeBytes for this reason.
 
 							$recoveryPartition = $null
-							
+
 							if ($biosOrUEFI -eq 'UEFI') {
 								$recoveryPartition = New-Partition $installDriveID -GptType '{de94bba4-06d1-4d40-a16a-bfd50179d6ac}' -UseMaximumSize -DriveLetter 'R' -ErrorAction Stop
 
 								# The Recovery partition in UEFI mode must have GPT Attributes of 0x8000000000000001.
 								# There seems to be no way to set GPT Attributes in PowerShell (specifically GPT_ATTRIBUTE_PLATFORM_REQUIRED), so DiskPart must be used for this to properly set up the Recovery partition in UEFI mode.
 								# For more info: https://social.technet.microsoft.com/Forums/en-US/4f04df47-8bd6-4fff-bd79-8d3b45c23f8a/last-pieces-of-the-puzzle-converting-diskpart-script-to-powershell-storage-cmdlets
-								
+
 								$diskpartSetGptAttributesCommands = @(
 									"select disk $installDriveID",
 									"select partition $($recoveryPartition.PartitionNumber)",
 									'gpt attributes=0x8000000000000001',
 									'exit'
 								)
-								
+
 								Remove-Item "$Env:TEMP\fgInstall-*.txt" -Force -ErrorAction SilentlyContinue
 
 								Set-Content -Path "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Commands.txt" -Value $diskpartSetGptAttributesCommands -Force -ErrorAction Stop
-								
-								$diskpartSetGptAttributesExitCode = (Start-Process 'diskpart.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Error.txt" -ArgumentList '/s', "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Commands.txt" -ErrorAction Stop).ExitCode
+
+								$diskpartSetGptAttributesExitCode = (Start-Process 'diskpart' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Error.txt" -ArgumentList '/s', "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Commands.txt" -ErrorAction Stop).ExitCode
 								$diskpartSetGptAttributesOutput = Get-Content -Raw "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Output.txt"
 								$diskpartSetGptAttributesError = Get-Content -Raw "$Env:TEMP\fgInstall-diskpart-SetGptAttributes-Error.txt"
-								
+
 								if (($diskpartSetGptAttributesExitCode -ne 0) -or ($null -ne $diskpartSetGptAttributesError) -or ($null -eq $diskpartSetGptAttributesOutput) -or (-not $diskpartSetGptAttributesOutput.Contains('DiskPart successfully assigned the attributes to the selected GPT partition.'))) {
 									if ($null -eq $diskpartSetGptAttributesOutput) {
 										$diskpartSetGptAttributesOutput = 'N/A'
@@ -2169,7 +2192,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 							} else {
 								$recoveryPartition = New-Partition $installDriveID -MbrType 'IFS' -UseMaximumSize -DriveLetter 'R' -ErrorAction Stop
 							}
-							
+
 							Format-Volume -Partition $recoveryPartition -FileSystem 'NTFS' -NewFileSystemLabel 'Recovery' -ErrorAction Stop | Out-Null
 
 							if ($biosOrUEFI -eq 'Legacy BIOS') {
@@ -2182,7 +2205,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 								$recoveryPartition | Set-Partition -MbrType 39 -ErrorAction Stop
 							}
-							
+
 							Write-Host ' CREATED' -ForegroundColor Green
 						} catch {
 							Write-Host ' FAILED' -ForegroundColor Red
@@ -2190,7 +2213,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						}
 					} catch {
 						Write-Host "`n  ERROR CREATING RECOVERY PARTITION: $_" -ForegroundColor Red
-						
+
 						$lastTaskSucceeded = $false
 					}
 
@@ -2214,12 +2237,12 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 							}
 
 							$diskpartGetPartitionDetailsCommands += 'exit'
-							
+
 							Remove-Item "$Env:TEMP\fgInstall-*.txt" -Force -ErrorAction SilentlyContinue
 
 							Set-Content -Path "$Env:TEMP\fgInstall-diskpart-GetPartitionDetails-Commands.txt" -Value $diskpartGetPartitionDetailsCommands -Force -ErrorAction Stop
-							
-							$diskpartGetPartitionDetailsExitCode = (Start-Process 'diskpart.exe' -NoNewWindow -Wait -PassThru -ArgumentList '/s', "$Env:TEMP\fgInstall-diskpart-GetPartitionDetails-Commands.txt" -ErrorAction Stop).ExitCode # Do NOT RedirectStandardOutput OR RedirectStandardError because we want everything outputted in window.
+
+							$diskpartGetPartitionDetailsExitCode = (Start-Process 'diskpart' -NoNewWindow -Wait -PassThru -ArgumentList '/s', "$Env:TEMP\fgInstall-diskpart-GetPartitionDetails-Commands.txt" -ErrorAction Stop).ExitCode # Do NOT RedirectStandardOutput OR RedirectStandardError because we want everything outputted in window.
 
 							if ($diskpartGetPartitionDetailsExitCode -ne 0) {
 								throw "DiskPart Exit Code = $diskpartGetPartitionDetailsExitCode"
@@ -2251,23 +2274,23 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 				if ($lastTaskSucceeded -and (-not $didSetUpRecovery)) {
 					Write-Output "`n`n  Setting Up Recovery Environment for $installDriveName..."
-					
+
 					# Setup Recovery Environment Reference: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/windows-deployment-sample-scripts-sxs#applyrecoverybat
-					
+
 					try {
 						New-Item -ItemType 'Directory' -Force -Path 'R:\Recovery\WindowsRE' -ErrorAction Stop | Out-Null
-						
+
 						try {
 							Copy-Item 'W:\Windows\System32\Recovery\Winre.wim' 'R:\Recovery\WindowsRE' -Force -ErrorAction Stop
-							
+
 							Remove-Item "$Env:TEMP\fgInstall-*.txt" -Force -ErrorAction SilentlyContinue
-							
+
 							# REAgentC.exe must be run from the installed OS because the executable doesn't exist in WinPE.
 							# Although, running REAgentC actually seems unnecessary, running "REAgentC /info" in the installed OS shows that the Recovery Environment is properly enabled even without running "REAgentC /setreimage" here first.
 							# But, do it anyway because sample code does it and it doesn't hurt anything.
 							$reAgentcSetreimageExitCode = (Start-Process 'W:\Windows\System32\REAgentC.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-REAgentC-setreimage-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-REAgentC-setreimage-Error.txt" -ArgumentList '/setreimage', '/path', 'R:\Recovery\WindowsRE', '/target', 'W:\Windows' -ErrorAction Stop).ExitCode # RedirectStandardOutput just so it doesn't show in window.
 							$reAgentcSetreimageError = Get-Content -Raw "$Env:TEMP\fgInstall-REAgentC-setreimage-Error.txt"
-							
+
 							if (($reAgentcSetreimageExitCode -eq 0) -and ($null -eq $reAgentcSetreimageError)) {
 								Write-Host "`n  Successfully Set Up Recovery Environment for $installDriveName" -ForegroundColor Green
 
@@ -2276,9 +2299,9 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 								if ($null -eq $reAgentcSetreimageError) {
 									$reAgentcSetreimageError = Get-Content -Raw "$Env:TEMP\fgInstall-REAgentC-setreimage-Output.txt"
 								}
-								
+
 								Write-Host "`n  ERROR SETTING RECOVERY IMAGE: $reAgentcSetreimageError" -ForegroundColor Red
-								
+
 								# Output Recovery Environment Configuration if REAgentC failed, sample code states that "Windows RE status may appear as Disabled, this is OK."
 								Start-Process 'W:\Windows\System32\REAgentC.exe' -NoNewWindow -Wait -RedirectStandardOutput "$Env:TEMP\fgInstall-REAgentC-info-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-REAgentC-info-Error.txt" -ArgumentList '/info', '/target', 'W:\Windows' -ErrorAction Stop
 								$reAgentcInfoError = Get-Content -Raw "$Env:TEMP\fgInstall-REAgentC-info-Error.txt"
@@ -2291,7 +2314,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 									Write-Host "`n  ERROR GETTING RECOVERY INFO: $reAgentcInfoError" -ForegroundColor Red
 								}
-								
+
 								Write-Host "`n  ERROR: Failed to register `"R:\Recovery\WindowsRE`" as Recovery location (REAgentC Exit Code = $reAgentcSetreimageExitCode)." -ForegroundColor Red
 
 								$lastTaskSucceeded = $false
@@ -2315,13 +2338,13 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 				$lastTaskSucceeded = $false
 			}
 		}
-		
+
 		if ($lastTaskSucceeded) {
 			Write-Output "`n`n  Setting $installDriveName as Bootable..."
-			
+
 			try {
 				# IMPORTANT: Set drive as bootable LAST (unlike the sample code) so that user can't boot into an incomplete installation (ie. no recovery) if anything went wrong.
-				
+
 				Remove-Item "$Env:TEMP\fgInstall-*.txt" -Force -ErrorAction SilentlyContinue
 
 				# bcdboot.exe exists in WinPE but sample code shows running it from the installed OS.
@@ -2335,7 +2358,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					if ($null -eq $bcdBootError) {
 						$bcdBootError = $bcdBootOutput
 					}
-					
+
 					Write-Host "`n  ERROR SETTING $installDriveName AS BOOTABLE: $bcdBootError" -ForegroundColor Red
 					Write-Host "`n  ERROR: Failed to set $installDriveName as bootable (bcdboot Exit Code = $bcdBootExitCode)." -ForegroundColor Red
 
@@ -2352,41 +2375,41 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 		if ($lastTaskSucceeded) {
 			if ($testMode) {
 				Write-Host "`n`n  LOADED MODULES (SHOULD BE $requiredModulesToPreImport):`n    $($(Get-Module).Name -Join "`n    ")" -ForegroundColor Yellow
-				
+
 				Write-Host "`n`n  AUTOMATIC REBOOT DISABLED IN TEST MODE`n" -ForegroundColor Yellow
 				FocusScriptWindow
 				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 				Read-Host '  Press ENTER to Reboot to Finish the Windows Setup Process' | Out-Null
 			} else {
 				$rebootTimeout = 30
-				
+
 				Write-Output "`n`n  This Computer Will Reboot in $rebootTimeout Seconds to Finish the Windows Setup Process..."
 				Write-Host "`n  Or Press Any Key to Reboot Now" -ForegroundColor Cyan
-				
+
 				FocusScriptWindow
 				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 				for ($secondsWaited = 0; $secondsWaited -lt $rebootTimeout; $secondsWaited ++) {
 					if ($Host.UI.RawUI.KeyAvailable) {
 						break
 					}
-					
+
 					Start-Sleep 1
 				}
 			}
-			
+
 			break
 		}
 
 		Write-Host "`n`n  If this issue continues, please inform Free Geek I.T." -ForegroundColor Red
 		Write-Host "`n`n  Press Any Key to Try Again or Press `"Control + C`" (or Close This Window) to Cancel and Reboot" -ForegroundColor Cyan
-		
+
 		FocusScriptWindow
 		$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 		for ( ; ; ) {
 			if ($Host.UI.RawUI.KeyAvailable) {
 				break
 			}
-			
+
 			Start-Sleep 1
 		}
 	}

@@ -20,7 +20,7 @@ UNUSED-*
 Install\ Folder\ Resources/
 
 # Ignore specific folders within "Setup Resources":
-PerformanceTest/
+Diagnostic\ Tools/
 
 # INCLUDE specific XML file within "Setup Resources":
 !UnattendAudit.xml
