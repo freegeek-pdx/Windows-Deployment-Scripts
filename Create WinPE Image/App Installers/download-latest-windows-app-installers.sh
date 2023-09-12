@@ -231,7 +231,7 @@ fi
 
 echo '----------'
 
-latest_teamviewer_version="$(curl -m 5 -sfL 'https://www.teamviewer.com/en/download/windows/' | awk -F '>|: |<' '($3 == "Current version") { print $4; exit }')"
+latest_teamviewer_version="$(curl -m 5 -sfL 'https://www.teamviewer.com/en/download/windows/' | awk -F ': |>|<' '($1 == "Current version") { print $4; exit }')"
 downloaded_teamviewer_version='N/A'
 if [[ -f 'TeamViewer_Installer-Version.txt' ]]; then
 	downloaded_teamviewer_version="$(< 'TeamViewer_Installer-Version.txt')"

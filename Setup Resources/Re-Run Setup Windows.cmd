@@ -19,4 +19,4 @@
 :: Delete QA Helper shortcut on Desktop to trigger App Installations and Windows Updates to re-run.
 DEL /F "%USERPROFILE%\Desktop\QA Helper.lnk"
 
-START /MAX powershell.exe -NoLogo -NoProfile -WindowStyle Maximized -ExecutionPolicy Unrestricted -File "\Install\Scripts\Setup Windows.ps1"
+START /MAX powershell -NoLogo -NoProfile -WindowStyle Maximized -ExecutionPolicy Unrestricted -File "\Install\Scripts\Setup Windows.ps1"

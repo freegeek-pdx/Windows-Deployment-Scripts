@@ -18,7 +18,7 @@
 				<RunAsynchronousCommand wcm:action="add">
 					<Description>Setup Windows</Description>
 					<Order>1</Order>
-					<Path>powershell.exe -NoLogo -NoProfile -WindowStyle Maximized -ExecutionPolicy Unrestricted -File "\Install\Scripts\Setup Windows.ps1"</Path>
+					<Path>powershell -NoLogo -NoProfile -WindowStyle Maximized -ExecutionPolicy Unrestricted -File "\Install\Scripts\Setup Windows.ps1"</Path>
 				</RunAsynchronousCommand>
 			</RunAsynchronous>
 		</component>

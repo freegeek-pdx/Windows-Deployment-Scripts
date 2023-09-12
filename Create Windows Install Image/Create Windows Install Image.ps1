@@ -37,7 +37,7 @@ if (Test-Path "$HOME\Documents\Free Geek.lnk") {
 
 $windowsMajorVersions = @('10', '11')
 
-$promptCaption = "  Which Windows version do you want to create/update?"
+$promptCaption = '  Which Windows version do you want to create/update?'
 $promptChoices = 'Windows 1&0', 'Windows 1&1', '&Both', '&Exit'
 
 $promptResponse = $Host.UI.PromptForChoice($promptCaption, "`n", $promptChoices, 2)
@@ -56,12 +56,14 @@ Write-Output "`n  Starting at $startDate..."
 foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 	$thisStartDate = Get-Date
 
-	$windowsFeatureVersion = '22H2'
+	$windowsFeatureVersion = '22H2' # 22H2 is the FINAL feature update for Windows 10: https://techcommunity.microsoft.com/t5/windows-it-pro-blog/windows-client-roadmap-update/ba-p/3805227
 	$sourceISOname = "Win$($thisWindowsMajorVersion)_$($windowsFeatureVersion)_English_x64.iso" # This is the default ISO name when downloaded directly, but when the using with the Media Creation Tool (instead of direct ISO download) the default name is "Windows.iso" when exporting an ISO.
 
-	if ($thisWindowsMajorVersion -eq '11') {
+	if ($thisWindowsMajorVersion -eq '10') {
+		$sourceISOname = "Win$($thisWindowsMajorVersion)_$($windowsFeatureVersion)_English_x64v1.iso" # This is the default ISO name when downloaded directly as of early September 2023.
+	} elseif ($thisWindowsMajorVersion -eq '11') {
 		$windowsFeatureVersion = '22H2'
-		$sourceISOname = "Win$($thisWindowsMajorVersion)_$($windowsFeatureVersion)_English_x64v1.iso" # This is the default ISO name when downloaded directly.
+		$sourceISOname = "Win$($thisWindowsMajorVersion)_$($windowsFeatureVersion)_English_x64v2.iso" # This is the default ISO name when downloaded directly as of early September 2023.
 	}
 
 	$sourceISOpath = "$basePath\$sourceISOname"
@@ -239,12 +241,12 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 	# To find the latest updates to be pre-installed, I just run a Windows installation and take note of any KB#'s that get installed by Windows Update during setup process and pre-install them into an updated WIM using this script instead of leaving Windows Update to do them (to save install/setup time).
 	# There is at least one monthly Cumulative update that will be time consuming during the setup process, so that should be pre-installed monthly or so into an updated WIM created by this script for the installation process to use instead of needing to rely on Windows Update during setup.
 
-	# Search the Microsoft Update Catalog (https://www.catalog.update.microsoft.com/Home.aspx) for the update files like this: KB5023696 "Windows 10 Version 22H2 for x64" - Explanation: KB5023696 (the specific ID of the update you want) + "Windows 10 Version 22H2 for x64" in quotes to match only the exact windows version and architecture we want.
-	# Link to the previous example search: https://www.catalog.update.microsoft.com/Search.aspx?q=KB5023696%20%22Windows%2010%20Version%2022H2%20for%20x64%22
+	# Search the Microsoft Update Catalog (https://www.catalog.update.microsoft.com/Home.aspx) for the update files like this: KB5030211 "Windows 10 Version 22H2 for x64" - Explanation: KB5030211 (the specific ID of the update you want) + "Windows 10 Version 22H2 for x64" in quotes to match only the exact windows version and architecture we want.
+	# Link to the previous example search: https://www.catalog.update.microsoft.com/Search.aspx?q=KB5030211%20%22Windows%2010%20Version%2022H2%20for%20x64%22
 
-	# ALSO, if you don't know the KB IDs, you can at least find the latest Cumulative Updates (for Windows and .NET including Cumulative Preview updates) by searching: "2023-03" Cumulative "Windows 10 Version 22H2 for x64" - Explanation: Same as above except filtering for only "Cumulative" Updates for the specified year and month *in quotes* like "YYYY-MM" to only match that exact update (obviously, set the year and month to the current or previous month for the latest updates).
-	# Link to the previous example search: https://www.catalog.update.microsoft.com/Search.aspx?q=%222023-03%22%20Cumulative%20%22Windows%2010%20Version%2022H2%20for%20x64%22
-	# And for Windows 11: "2023-03" Cumulative "Windows 11 Version 22H2 for x64": https://www.catalog.update.microsoft.com/Search.aspx?q=%222023-03%22%20Cumulative%20%22Windows%2011%20Version%2022H2%20for%20x64%22
+	# ALSO, if you don't know the KB IDs, you can at least find the latest Cumulative Updates (for Windows and .NET including Cumulative Preview updates) by searching: "2023-09" Cumulative "Windows 10 Version 22H2 for x64" - Explanation: Same as above except filtering for only "Cumulative" Updates for the specified year and month *in quotes* like "YYYY-MM" to only match that exact update (obviously, set the year and month to the current or previous month for the latest updates).
+	# Link to the previous example search: https://www.catalog.update.microsoft.com/Search.aspx?q=%222023-09%22%20Cumulative%20%22Windows%2010%20Version%2022H2%20for%20x64%22
+	# And for Windows 11: "2023-09" Cumulative "Windows 11 Version 22H2 for x64": https://www.catalog.update.microsoft.com/Search.aspx?q=%222023-09%22%20Cumulative%20%22Windows%2011%20Version%2022H2%20for%20x64%22
 
 	# IMPORTANT NOTE: Only ".msu" and ".cab" files can be pre-installed into the WIM. Any ".exe" updates (such as anti-virus updates) will have to be done by Windows Update after installation, which is fine because they are usually very small and quick and also get updated frequently.
 
@@ -480,12 +482,21 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 			$sourceWinReWimContentPaths = Get-WindowsImageContent -ImagePath "$systemTempDir\mountOS\Windows\System32\Recovery\Winre.wim" -Index 1 | Select-String $excludedCompareWinReWimContentPaths -SimpleMatch -NotMatch # Exclude paths from the source lists since it's more efficient than letting them be compared and ignoring them from the results.
 			$updatedWinReWimContentPaths = Get-WindowsImageContent -ImagePath "$wimOutputPath\$winREwimName.wim" -Index 1 | Select-String $excludedCompareWinReWimContentPaths -SimpleMatch -NotMatch
 			$filePathsMissingFromUpdatedWinReWIM = (Compare-Object -ReferenceObject $sourceWinReWimContentPaths -DifferenceObject $updatedWinReWimContentPaths | Where-Object SideIndicator -eq '<=').InputObject # Comparing text lists of paths from within the WIMs is MUCH faster than comparing mounted files via "Get-ChildItem -Recurse".
+			$verifyingEndDate = Get-Date
+
 			if ($filePathsMissingFromUpdatedWinReWIM.Count -gt 0) {
-				Write-Host "`n  ERROR: THE FOLLOWING FILES ARE MISSING FROM UPDATED WINRE WIM (THIS SHOULD NOT HAVE HAPPENED)`n    $($filePathsMissingFromUpdatedWinReWIM -Join "`n    ")" -ForegroundColor Red
-				break
+				Write-Host "`n  ERROR: THE FOLLOWING $($filePathsMissingFromUpdatedWinReWIM.Count) FILES ARE MISSING FROM UPDATED WINRE WIM`n    $($filePathsMissingFromUpdatedWinReWIM -Join "`n    ")" -ForegroundColor Red
+
+				$filePathsMissingFromUpdatedWinReWimPromptCaption = '    Continue anyway?'
+				$filePathsMissingFromUpdatedWinReWimPromptChoices = '&No', '&Yes'
+				$filePathsMissingFromUpdatedWinReWimPromptResponse = $Host.UI.PromptForChoice($filePathsMissingFromUpdatedWinReWimPromptCaption, "`n", $filePathsMissingFromUpdatedWinReWimPromptChoices, 1)
+				if ($filePathsMissingFromUpdatedWinReWimPromptResponse -eq 0) {
+					break
+				} else {
+					Write-Output ''
+				}
 			}
 
-			$verifyingEndDate = Get-Date
 			Write-Output "    Finished Verifying Exported Updated WinRE $thisWindowsMajorVersion Image at $verifyingEndDate ($([math]::Round(($verifyingEndDate - $verifyingStartDate).TotalMinutes, 2)) Minutes)"
 
 			Write-Output "`n  Replacing Original WinRE with Updated WinRE in Windows $thisWindowsMajorVersion Install Image..."
@@ -594,32 +605,47 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 				break
 			}
 
-			$excludedCompareWinIntallWimContentPaths = @('\Windows\servicing\', '\Windows\System32\CatRoot\', '\Windows\System32\DriverStore\FileRepository\', '\Windows\WinSxS\') # Exclude these paths from the differnce comparison because these are the paths we expect to be different.
+			$excludedCompareWinInstallWimContentPaths = @('\Windows\servicing\', '\Windows\System32\CatRoot\', '\Windows\System32\DriverStore\FileRepository\', '\Windows\WinSxS\') # Exclude these paths from the differnce comparison because these are the paths we expect to be different.
 
 			# The following files outside of the previously excluded paths will also be removed from the updated Windows 10/11 images, so don't error when they don't exist.
 			if ($windowsFeatureVersion -eq '22H2') { # NOTE: The following added exclusions are only relevant to each feature version since a new feature version will not contain stuff remove in previous cumulative updates to the prior feature version.
 				if ($thisWindowsMajorVersion -eq '10') {
-					$excludedCompareWinIntallWimContentPaths += @(
-						'\Windows\System32\AzureCheck.dll' # Removed in 2023-03 Cumulative Update.
+					$excludedCompareWinInstallWimContentPaths += @(
+						'\Windows\SystemApps\Microsoft.Windows.Search_cw5n1h2txyewy\cache\Local\Desktop\26.css' # Removed in 2023-06 Cumulative Update.
+						'\Windows\System32\ClipDLS.exe', # Removed in 2023-08 Cumulative Preview Update (or earlier).
+						'\Windows\System32\WindowsPowerShell\v1.0\Modules\LAPS\GetLapsAADPassword.ps1', # Removed in 2023-08 Cumulative Preview Update (or earlier).
+						'\Windows\System32\WindowsPowerShell\v1.0\Modules\LAPS\GetLapsDiagnostics.ps1', # Removed in 2023-08 Cumulative Preview Update (or earlier).
+						'\Windows\SystemApps\Microsoft.Windows.CloudExperienceHost_cw5n1h2txyewy\MicrosoftAccount.TokenProvider.Core.dll' # Removed in 2023-08 Cumulative Preview Update (or earlier).
 					)
 				} elseif ($thisWindowsMajorVersion -eq '11') {
-					$excludedCompareWinIntallWimContentPaths += @(
-						'\Windows\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\Public\wsxpacks\Account\assets\assets\images\warning-badge.svg', # Removed in 2022-11 Cumulative Update.
-						'\Windows\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\webapps\scoobe\media\m365Lottie.json', # Removed in 2023-01 Cumulative Update.
-						'\Windows\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\webapps\scoobe\media\msaLottie.json' # Removed in 2023-01 Cumulative Update.
+					$excludedCompareWinInstallWimContentPaths += @(
+						'\Windows\System32\WindowsPowerShell\v1.0\Modules\LAPS\GetLapsAADPassword.ps1', # Removed in 2023-08 Cumulative Preview Update (or earlier).
+						'\Windows\System32\WindowsPowerShell\v1.0\Modules\LAPS\GetLapsDiagnostics.ps1', # Removed in 2023-08 Cumulative Preview Update (or earlier).
+						'\Windows\SystemApps\Microsoft.Windows.Search_cw5n1h2txyewy\', # Removed in 2023-08 Cumulative Preview Update (or earlier).
+						'\Windows\SystemApps\Microsoft.Windows.SecureAssessmentBrowser_cw5n1h2txyewy\WebView2Standalone.dll', # Removed in 2023-08 Cumulative Preview Update (or earlier).
+						'\Windows\SystemApps\MicrosoftWindows.Client.CBS_cw5n1h2txyewy\Cortana.UI\cache\SVLocal\Desktop\26.css' # Removed in 2023-08 Cumulative Preview Update (or earlier).
 					)
 				}
 			}
 
-			$sourceWinInstallWimContentPaths = Get-WindowsImageContent -ImagePath "$wimOutputPath\Windows-$thisWindowsMajorVersion-Pro-$windowsFeatureVersion-ISO-Source.wim" -Index 1 | Select-String $excludedCompareWinIntallWimContentPaths -SimpleMatch -NotMatch # Exclude paths from the source lists since it's more efficient than letting them be compared and ignoring them from the results.
-			$updatedWinInstallWimContentPaths = Get-WindowsImageContent -ImagePath "$wimOutputPath\$wimName.wim" -Index 1 | Select-String $excludedCompareWinIntallWimContentPaths -SimpleMatch -NotMatch
+			$sourceWinInstallWimContentPaths = Get-WindowsImageContent -ImagePath "$wimOutputPath\Windows-$thisWindowsMajorVersion-Pro-$windowsFeatureVersion-ISO-Source.wim" -Index 1 | Select-String $excludedCompareWinInstallWimContentPaths -SimpleMatch -NotMatch # Exclude paths from the source lists since it's more efficient than letting them be compared and ignoring them from the results.
+			$updatedWinInstallWimContentPaths = Get-WindowsImageContent -ImagePath "$wimOutputPath\$wimName.wim" -Index 1 | Select-String $excludedCompareWinInstallWimContentPaths -SimpleMatch -NotMatch
 			$filePathsMissingFromUpdatedWinInstallWIM = (Compare-Object -ReferenceObject $sourceWinInstallWimContentPaths -DifferenceObject $updatedWinInstallWimContentPaths | Where-Object SideIndicator -eq '<=').InputObject # Comparing text lists of paths from within the WIMs is MUCH faster than comparing mounted files via "Get-ChildItem -Recurse".
+			$verifyingEndDate = Get-Date
+
 			if ($filePathsMissingFromUpdatedWinInstallWIM.Count -gt 0) {
-				Write-Host "`n  ERROR: THE FOLLOWING FILES ARE MISSING FROM UPDATED WINDOWS INSTALL WIM (THIS SHOULD NOT HAVE HAPPENED)`n    $($filePathsMissingFromUpdatedWinInstallWIM -Join "`n    ")" -ForegroundColor Red
-				break
+				Write-Host "`n  ERROR: THE FOLLOWING $($filePathsMissingFromUpdatedWinInstallWIM.Count) FILES ARE MISSING FROM UPDATED WINDOWS INSTALL WIM`n    $($filePathsMissingFromUpdatedWinInstallWIM -Join "`n    ")" -ForegroundColor Red
+
+				$filePathsMissingFromUpdatedWinInstallWimPromptCaption = '    Continue anyway?'
+				$filePathsMissingFromUpdatedWinInstallWimPromptChoices = '&No', '&Yes'
+				$filePathsMissingFromUpdatedWinInstallWimPromptResponse = $Host.UI.PromptForChoice($filePathsMissingFromUpdatedWinInstallWimPromptCaption, "`n", $filePathsMissingFromUpdatedWinInstallWimPromptChoices, 1)
+				if ($filePathsMissingFromUpdatedWinInstallWimPromptResponse -eq 0) {
+					break
+				} else {
+					Write-Output ''
+				}
 			}
 
-			$verifyingEndDate = Get-Date
 			Write-Output "    Finished Verifying Exported Updated Windows $thisWindowsMajorVersion Install Image at $verifyingEndDate ($([math]::Round(($verifyingEndDate - $verifyingStartDate).TotalMinutes, 2)) Minutes)"
 		} else {
 			Write-Host "`n  ERROR: FAILED TO DISM CLEANUP FOR OS - EXIT CODE: $dismCleanupExitCode" -ForegroundColor Red

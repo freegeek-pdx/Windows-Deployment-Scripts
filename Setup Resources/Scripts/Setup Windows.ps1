@@ -27,7 +27,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2023.3.24-1
+# Version: 2023.4.6-1
 
 param(
 	[Parameter(Position = 0)]
@@ -1160,35 +1160,50 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path "$Env:PROGRAMDATA\Microsoft\Windows\Start Menu\Programs\Intel Processor Diagnostic Tool 64bit.lnk")) {
+		if ($lastTaskSucceeded -and (Test-Path '\Program Files\Intel Corporation\Intel Processor Diagnostic Tool 64bit\Win-IPDT64.exe')) {
 			try {
-				if (Test-Path "$Env:PUBLIC\Desktop\Intel Processor Diagnostic Tool 64bit.lnk") { # Remove default IPDT shortcut from Public folder Desktop since it will be copied into the Diagnostic Tools folders on the Desktop and within the Install folder.
-					Remove-Item "$Env:PUBLIC\Desktop\Intel Processor Diagnostic Tool 64bit.lnk" -Force -ErrorAction Stop
-				}
+				$ipdtGuiConfigPath = '\Program Files\Intel Corporation\Intel Processor Diagnostic Tool 64bit\ipdt_gui_config.xml'
+				[xml]$ipdtGuiConfigXML = Get-Content $ipdtGuiConfigPath -ErrorAction Stop
+				$ipdtGuiConfigXML.ipdt_gui.IPDTAutoUpdate = 'NO'
+				$ipdtGuiConfigXML.Save($ipdtGuiConfigPath)
 
-				if (Test-Path '\Install\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk') {
-					Remove-Item '\Install\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk' -Force -ErrorAction Stop
-				}
-
-				if (Test-Path "$desktopPath\Intel Processor Diagnostic Tool.lnk") {
-					Remove-Item "$desktopPath\Intel Processor Diagnostic Tool.lnk" -Force -ErrorAction Stop
-				}
-
-				Copy-Item "$Env:PROGRAMDATA\Microsoft\Windows\Start Menu\Programs\Intel Processor Diagnostic Tool 64bit.lnk" '\Install\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk' -Force -ErrorAction Stop
-				Copy-Item "$Env:PROGRAMDATA\Microsoft\Windows\Start Menu\Programs\Intel Processor Diagnostic Tool 64bit.lnk" "$desktopPath\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk" -Force -ErrorAction Stop
-
-				if ($ipdtMode) {
-					# If in "ipdtMode" (which will launch IPDT instead of "QA Helper" when this script is finished, and on each boot), also copy the IPDT Shortcut onto
-					# the user Desktop (and rename it to be a bit cleaner than the default shortcut that was in the Public folder Destkop) for easy re-launch if needed.
-					Copy-Item "$Env:PROGRAMDATA\Microsoft\Windows\Start Menu\Programs\Intel Processor Diagnostic Tool 64bit.lnk" "$desktopPath\Intel Processor Diagnostic Tool.lnk" -Force -ErrorAction Stop
-
-				}
-
-				Add-Content '\Install\Windows Setup Log.txt' "Created Intel Processor Diagnostic Tool Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content '\Install\Windows Setup Log.txt' "Set Intel Processor Diagnostic Tool to Not Check for Updates - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
-				Write-Host "`n  ERROR MOVING INTEL PROCESSOR DIAGNOSTIC TOOL SHORTCUT INTO DIAGNOSTIC TOOLS FOLDER ON DESKTOP: $_" -ForegroundColor Red
+				Write-Host "`n  ERROR SETTING INTEL PROCESSOR DIAGNOSTIC TOOL TO NOT CHECK FOR UPDATES: $_" -ForegroundColor Red
 
 				$lastTaskSucceeded = $false
+			}
+
+			if ($lastTaskSucceeded -and (Test-Path "$Env:PROGRAMDATA\Microsoft\Windows\Start Menu\Programs\Intel Processor Diagnostic Tool 64bit.lnk")) {
+				try {
+					if (Test-Path "$Env:PUBLIC\Desktop\Intel Processor Diagnostic Tool 64bit.lnk") { # Remove default IPDT shortcut from Public folder Desktop since it will be copied into the Diagnostic Tools folders on the Desktop and within the Install folder.
+						Remove-Item "$Env:PUBLIC\Desktop\Intel Processor Diagnostic Tool 64bit.lnk" -Force -ErrorAction Stop
+					}
+
+					if (Test-Path '\Install\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk') {
+						Remove-Item '\Install\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk' -Force -ErrorAction Stop
+					}
+
+					if (Test-Path "$desktopPath\Intel Processor Diagnostic Tool.lnk") {
+						Remove-Item "$desktopPath\Intel Processor Diagnostic Tool.lnk" -Force -ErrorAction Stop
+					}
+
+					Copy-Item "$Env:PROGRAMDATA\Microsoft\Windows\Start Menu\Programs\Intel Processor Diagnostic Tool 64bit.lnk" '\Install\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk' -Force -ErrorAction Stop
+					Copy-Item "$Env:PROGRAMDATA\Microsoft\Windows\Start Menu\Programs\Intel Processor Diagnostic Tool 64bit.lnk" "$desktopPath\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk" -Force -ErrorAction Stop
+
+					if ($ipdtMode) {
+						# If in "ipdtMode" (which will launch IPDT instead of "QA Helper" when this script is finished, and on each boot), also copy the IPDT Shortcut onto
+						# the user Desktop (and rename it to be a bit cleaner than the default shortcut that was in the Public folder Destkop) for easy re-launch if needed.
+						Copy-Item "$Env:PROGRAMDATA\Microsoft\Windows\Start Menu\Programs\Intel Processor Diagnostic Tool 64bit.lnk" "$desktopPath\Intel Processor Diagnostic Tool.lnk" -Force -ErrorAction Stop
+
+					}
+
+					Add-Content '\Install\Windows Setup Log.txt' "Created Intel Processor Diagnostic Tool Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+				} catch {
+					Write-Host "`n  ERROR MOVING INTEL PROCESSOR DIAGNOSTIC TOOL SHORTCUT INTO DIAGNOSTIC TOOLS FOLDER ON DESKTOP: $_" -ForegroundColor Red
+
+					$lastTaskSucceeded = $false
+				}
 			}
 		}
 
@@ -1215,7 +1230,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 					Add-Content '\Install\Windows Setup Log.txt' "Set GPU-Z to Not Check for Updates - $(Get-Date)" -ErrorAction SilentlyContinue
 				}
 			} catch {
-				Write-Host "`n  ERROR SETTING GPU-Z TO STANDALONE MODE: $_" -ForegroundColor Red
+				Write-Host "`n  ERROR SETTING GPU-Z TO STANDALONE MODE OR TO NOT CHECK FOR UPDATES: $_" -ForegroundColor Red
 
 				$lastTaskSucceeded = $false
 			}

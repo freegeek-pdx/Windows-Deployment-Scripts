@@ -21,7 +21,7 @@
 :: To use this script, you must download the latest JDK version and extract the folder on the Desktop.
 
 :: Set the version of the JDK (in the folder name "jdk-#") below:
-SET JDK_VERSION=17.0.6+10
+SET JDK_VERSION=17.0.8.1+1
 
 ECHO.
 ECHO   Creating JLink JRE %JDK_VERSION:_=+%...

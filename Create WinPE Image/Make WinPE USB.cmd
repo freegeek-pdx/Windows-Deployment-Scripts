@@ -19,7 +19,7 @@
 :: Make sure this script is running as Administrator (and relaunch as Administrator if not) so that MakeWinPEMedia command can run.
 :: Check "NET SESSION" error level since it will error if not running as Administrator.
 NET SESSION 1>NUL 2>NUL
-IF %ERRORLEVEL% NEQ 0 powershell.exe -NoLogo -NoProfile -Command "Start-Process '%0' -Verb RunAs" & EXIT /B 1
+IF %ERRORLEVEL% NEQ 0 powershell -NoLogo -NoProfile -Command "Start-Process '%0' -Verb RunAs" & EXIT /B 1
 
 SET WIN_PE_NAME=WinPE 11 22H2
 

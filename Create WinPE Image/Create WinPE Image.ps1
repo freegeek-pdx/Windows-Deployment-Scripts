@@ -27,7 +27,7 @@
 
 # IMPORTANT: "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat" must be run from within the CMD launcher file first for "copype" to work.
 
-$windows10featureVersion = '22H2'
+$windows10featureVersion = '22H2' # 22H2 is the FINAL feature update for Windows 10: https://techcommunity.microsoft.com/t5/windows-it-pro-blog/windows-client-roadmap-update/ba-p/3805227
 $windows11featureVersion = $windows10featureVersion
 
 $winPEmajorVersion = '11' # It is fine to use WinPE/WinRE from Windows 11 even when Windows 10 will be installed.
@@ -181,7 +181,7 @@ if ($didJustRunCopyPE) {
 	foreach ($thisWinPEpackageToInstall in $winPEpackagesToInstall) {
 		if ($winPEoptionalFeatures -notcontains "WinPE-$thisWinPEpackageToInstall") { # Some of these will already be installed if we are starting with a WinRE image...
 			$packageStartDate = Get-Date
-			Write-Output "    Installing $thisWinPEpackageToInstall Package Into $wimImageBaseName Image at $updateStartDate..."
+			Write-Output "    Installing $thisWinPEpackageToInstall Package Into $wimImageBaseName Image at $packageStartDate..."
 			# Dism /Add-Package /Image:"C:\WinPE_amd64_PS\mount" /PackagePath:"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-PACKAGENAME.cab"
 			Add-WindowsPackage -Path "$systemTempDir\mountPE" -PackagePath "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-$thisWinPEpackageToInstall.cab" -WarningAction Stop -ErrorAction Stop | Out-Null
 			# Dism /Add-Package /Image:"C:\WinPE_amd64_PS\mount" /PackagePath:"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\en-us\WinPE-PACKAGENAME_en-us.cab"
@@ -259,6 +259,7 @@ if ($regUnloadExitCode -ne 0) {
 	Write-Output "    !!! FAILED TO UNLOAD $wimImageBaseName SYSTEM REGISTRY !!!"
 }
 
+$liveWin11osDrive = 'D:' # NOTE: This is only necessary to pull EXEs and DLLs from an Windows 11 installation if not currently running on Windows 11. Can be set to an empty string if running on Windows 11.
 
 if (Test-Path "$PSScriptRoot\Process Explorer Exports for Missing DLLs") {
 	$processExplorerExportsToParse = Get-ChildItem "$PSScriptRoot\Process Explorer Exports for Missing DLLs\*" -Include '*.exe.txt', '*.dll.txt'
@@ -288,7 +289,7 @@ if (Test-Path "$PSScriptRoot\Process Explorer Exports for Missing DLLs") {
 
 			foreach ($thisProcessExplorerLogLine in (Get-Content $_.FullName)) {
 				if ($thisProcessExplorerLogLine.Contains('\Windows\System32\') -and (-not ($thisProcessExplorerLogLine.Contains('\DriverStore\FileRepository\'))) -and (-not ($thisProcessExplorerLogLine.EndsWith('.exe')))) {
-					$thisDLLPathInOS = $thisProcessExplorerLogLine -Replace '^[^:\\]*:\\', '\'
+					$thisDLLPathInOS = $thisProcessExplorerLogLine -Replace '^[^:\\]*:\\', "$liveWin11osDrive\"
 					$thisDLLPathInWinPE = $thisProcessExplorerLogLine -Replace '^[^:\\]*:\\', "$systemTempDir\mountPE\"
 
 					if (-not (Test-Path $thisDLLPathInWinPE)) {
@@ -317,14 +318,14 @@ if (-not (Test-Path "$systemTempDir\mountPE\Windows\System32\W32tm.exe")) {
 	Write-Output "`n  Copying `"W32tm.exe`" Into $wimImageBaseName Image..."
 
 	# Install W32tm.exe into WinPE so we can sync time in WinPE to be sure QA Helper can be installed since if time is far off HTTPS will fail.
-	Copy-Item '\Windows\System32\W32tm.exe' "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
+	Copy-Item "$liveWin11osDrive\Windows\System32\W32tm.exe" "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
 }
 
 if (-not (Test-Path "$systemTempDir\mountPE\Windows\System32\taskkill.exe")) {
 	Write-Output "`n  Copying `"taskkill.exe`" Into $wimImageBaseName Image for QA Helper to Use..."
 
 	# Install taskkill.exe into WinPE so we can call it from QA Helper for convenience of not having to rely on killing with PowerShell (which is slower to load).
-	Copy-Item '\Windows\System32\taskkill.exe' "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
+	Copy-Item "$liveWin11osDrive\Windows\System32\taskkill.exe" "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
 }
 
 if ($winPEoptionalFeatures -contains 'Microsoft-Windows-WinPE-AudioDrivers-Package') {
@@ -333,7 +334,7 @@ if ($winPEoptionalFeatures -contains 'Microsoft-Windows-WinPE-AudioDrivers-Packa
 	if (-not (Test-Path "$systemTempDir\mountPE\Windows\System32\SndVol.exe")) {
 		Write-Output "`n  Copying `"SndVol.exe`" Into $wimImageBaseName Image for QA Helper Audio Test..."
 
-		Copy-Item '\Windows\System32\SndVol.exe' "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
+		Copy-Item "$liveWin11osDrive\Windows\System32\SndVol.exe" "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
 	}
 
 	if (-not (Test-Path "$systemTempDir\mountPE\Windows\Media")) {
@@ -341,8 +342,8 @@ if ($winPEoptionalFeatures -contains 'Microsoft-Windows-WinPE-AudioDrivers-Packa
 
 		New-Item -ItemType 'Directory' -Path "$systemTempDir\mountPE\Windows\Media" -ErrorAction Stop | Out-Null
 
-		Copy-Item '\Windows\Media\Windows Foreground.wav' "$systemTempDir\mountPE\Windows\Media" -Force -ErrorAction Stop
-		Copy-Item '\Windows\Media\Windows Exclamation.wav' "$systemTempDir\mountPE\Windows\Media" -Force -ErrorAction Stop
+		Copy-Item "$liveWin11osDrive\Windows\Media\Windows Foreground.wav" "$systemTempDir\mountPE\Windows\Media" -Force -ErrorAction Stop
+		Copy-Item "$liveWin11osDrive\Windows\Media\Windows Exclamation.wav" "$systemTempDir\mountPE\Windows\Media" -Force -ErrorAction Stop
 	}
 }
 
@@ -468,7 +469,7 @@ if ($dismCleanupExitCode -eq 0) {
 	$updatedWinPeWimContentPaths = Get-WindowsImageContent -ImagePath "$winPEoutputPath\$winPEname.wim" -Index 1 | Select-String $excludedCompareWinPeWimContentPaths -SimpleMatch -NotMatch
 	$filePathsMissingFromUpdatedWinPeWIM = (Compare-Object -ReferenceObject $sourceWinPeWimContentPaths -DifferenceObject $updatedWinPeWimContentPaths | Where-Object SideIndicator -eq '<=').InputObject # Comparing text lists of paths from within the WIMs is MUCH faster than comparing mounted files via "Get-ChildItem -Recurse".
 	if ($filePathsMissingFromUpdatedWinPeWIM.Count -gt 0) {
-		Write-Host "`n  ERROR: THE FOLLOWING FILES ARE MISSING FROM UPDATED WINPE WIM (THIS SHOULD NOT HAVE HAPPENED)`n    $($filePathsMissingFromUpdatedWinPeWIM -Join "`n    ")" -ForegroundColor Red
+		Write-Host "`n  ERROR: THE FOLLOWING $($filePathsMissingFromUpdatedWinPeWIM.Count) FILES ARE MISSING FROM UPDATED WINPE WIM (THIS SHOULD NOT HAVE HAPPENED)`n    $($filePathsMissingFromUpdatedWinPeWIM -Join "`n    ")" -ForegroundColor Red
 		exit 1
 	}
 
@@ -568,8 +569,16 @@ if ($didJustRunCopyPE -and ($winPEoptionalFeatures -contains 'WinPE-WiFi') -and 
 		$updatedWinPeWimContentPaths = Get-WindowsImageContent -ImagePath "$winPEoutputPath\$winPEname-NetDriversForUSB.wim" -Index 1 | Select-String $excludedCompareWinPeWimContentPaths -SimpleMatch -NotMatch
 		$filePathsMissingFromUpdatedWinPeWIM = (Compare-Object -ReferenceObject $sourceWinPeWimContentPaths -DifferenceObject $updatedWinPeWimContentPaths | Where-Object SideIndicator -eq '<=').InputObject # Comparing text lists of paths from within the WIMs is MUCH faster than comparing mounted files via "Get-ChildItem -Recurse".
 		if ($filePathsMissingFromUpdatedWinPeWIM.Count -gt 0) {
-			Write-Host "`n  ERROR: THE FOLLOWING FILES ARE MISSING FROM UPDATED WINPE WIM (THIS SHOULD NOT HAVE HAPPENED)`n    $($filePathsMissingFromUpdatedWinPeWIM -Join "`n    ")" -ForegroundColor Red
-			exit 1
+			Write-Host "`n  ERROR: THE FOLLOWING $($filePathsMissingFromUpdatedWinPeWIM.Count) FILES ARE MISSING FROM UPDATED WINPE WIM`n    $($filePathsMissingFromUpdatedWinPeWIM -Join "`n    ")" -ForegroundColor Red
+
+			$filePathsMissingFromUpdatedWinPeWimPromptCaption = '    Continue anyway?'
+			$filePathsMissingFromUpdatedWinPeWimPromptChoices = '&No', '&Yes'
+			$filePathsMissingFromUpdatedWinPeWimPromptResponse = $Host.UI.PromptForChoice($filePathsMissingFromUpdatedWinPeWimPromptCaption, "`n", $filePathsMissingFromUpdatedWinPeWimPromptChoices, 1)
+			if ($filePathsMissingFromUpdatedWinPeWimPromptResponse -eq 0) {
+				exit 1
+			} else {
+				Write-Output ''
+			}
 		}
 
 		$verifyingEndDate = Get-Date
