@@ -1,7 +1,7 @@
 ::
 :: MIT License
 ::
-:: Copyright (c) 2021 Free Geek
+:: Copyright (c) 2024 Free Geek
 ::
 :: Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
 :: to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
@@ -16,7 +16,16 @@
 
 @ECHO OFF
 
-:: Delete QA Helper shortcut on Desktop to trigger App Installations and Windows Updates to re-run.
-DEL /F "%USERPROFILE%\Desktop\QA Helper.lnk"
+:: Make sure this script is running as Administrator (and relaunch as Administrator if not) so that Set-Disk commands can run in PowerShell script can run.
+:: Check "NET SESSION" error level since it will error if not running as Administrator.
+NET SESSION 1>NUL 2>NUL
+IF %ERRORLEVEL% NEQ 0 powershell -NoLogo -NoProfile -Command "Start-Process -WindowStyle Maximized '%0' -Verb RunAs" & EXIT /B 1
 
-START /MAX powershell -NoLogo -NoProfile -WindowStyle Maximized -ExecutionPolicy Unrestricted -File "\Install\Scripts\Setup Windows.ps1"
+powershell -NoLogo -NoProfile -ExecutionPolicy Unrestricted -File "%~dp0Update Windows on FG Install Drives.ps1"
+
+ECHO.
+ECHO   DONE ON %DATE% AT %TIME%
+ECHO.
+ECHO   Press Any Key to Close This Window
+
+PAUSE >NUL

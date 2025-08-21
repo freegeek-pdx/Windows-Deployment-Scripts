@@ -10,7 +10,8 @@
 # By Pico Mitchell for Free Geek
 # Originally written and tested in September 2020 for Windows 10, version 2004
 # Tested in November 2022 for Windows 10, version 22H2
-# AND Tested in November 2022 for Windows 11, version 22H2
+# AND Tested in November 2023 for Windows 11, version 23H2
+# AND Tested in October 2024 for Windows 11, version 24H2
 #
 # MIT License
 #
@@ -27,7 +28,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2023.4.6-1
+# Version: 2025.8.5-1
 
 param(
 	[Parameter(Position = 0)]
@@ -45,12 +46,14 @@ if ((-not (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\Stat
 
 $testMode = ((Test-Path '\Install\fgFLAG-TEST') -or (Test-Path '\Install\TESTING')) # Still check for old flag names (which are easier to create manually).
 $snapMode = ((Test-Path '\Install\fgFLAG-SNAP') -or (Test-Path '\Install\SNAP')) # If SNAP flag file/folder exists, auto-install extra apps for SNAP systems.
+$noAppsMode = ((Test-Path '\Install\fgFLAG-NOAPPS') -or (Test-Path '\Install\NOAPPS')) # If NOAPPS flag file/folder exists, do not install any apps.
 $ipdtMode = ((Test-Path '\Install\fgFLAG-IPDT') -or (Test-Path '\Install\IPDT')) # If IPDT flag file/folder exists, auto-launch "Intel Processor Diagnostic Tool" instead of auto-lauching "QA Helper" (which will still be installed). This is a special mode for Hardware Testing.
 
 $desktopPath = [Environment]::GetFolderPath('Desktop')
 
 $windowsVersionName = (Get-CimInstance 'Win32_OperatingSystem' -Property 'Caption' -ErrorAction SilentlyContinue).Caption
 $isWindows11 = ($windowsVersionName -and $windowsVersionName.ToUpper().Contains('WINDOWS 11'))
+$cpuInfo = (Get-CimInstance 'Win32_Processor' -Property 'Manufacturer', 'Name' -ErrorAction SilentlyContinue)
 
 if ($isWindows11) {
 	# When on Windows 11, use C# code to detect if the Start Menu is open on first boot. See "CloseStartMenuOnFirstBootOfWindows11" function below for more information.
@@ -174,7 +177,7 @@ if ($LastWindowsUpdatesCount -eq '') {
 			if ((Get-ItemProperty $networkLocationWizardRegistryPath).Show -ne 0) {
 				Write-Output "`n  Disabling Network Location Wizard..."
 
-				New-ItemProperty $networkLocationWizardRegistryPath -Name 'Show' -Value 0 -PropertyType 'DWord' -Force -ErrorAction Stop | Out-Null
+				Set-ItemProperty $networkLocationWizardRegistryPath -Name 'Show' -Value 0 -Type 'DWord' -Force -ErrorAction Stop | Out-Null
 
 				Write-Host "`n  Successfully Disabled Network Location Wizard`n" -ForegroundColor Green
 
@@ -183,6 +186,120 @@ if ($LastWindowsUpdatesCount -eq '') {
 		} catch {
 			Write-Host "`n  ERROR DISABLING NETWORK LOCATION WIZARD: $_`n" -ForegroundColor Red
 		}
+	} else {
+		try {
+			# On Windows 11 24H2, launching "powershell.exe" will now launch the newer Terminal app instead of the old PowerShell GUI app.
+			# Setting "HKCU:\Console\%%Startup\DelegationConsole" and "HKCU:\Console\%%Startup\DelegationTerminal" to "{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}" will force "powershell.exe" to still launch the PowerShell GUI app for consistency.
+			# https://support.microsoft.com/en-us/windows/command-prompt-and-windows-powershell-for-windows-11-6453ce98-da91-476f-8651-5c14d5777c20
+	
+			$consoleStartupRegistryPath = 'HKCU:\Console\%%Startup'
+
+			if (-not (Test-Path $consoleStartupRegistryPath)) {
+				New-Item $consoleStartupRegistryPath -Force -ErrorAction Stop | Out-Null
+			}
+
+			$windowsConsoleHostGUID = '{B23D10C0-E52E-411E-9D5B-C09FDF709C7D}'
+			if (((Get-ItemProperty $consoleStartupRegistryPath).DelegationConsole -ne $windowsConsoleHostGUID) -or ((Get-ItemProperty $consoleStartupRegistryPath).DelegationTerminal -ne $windowsConsoleHostGUID)) {
+				Write-Output "`n  Setting Host Console to Not Always Launch Terminal..."
+
+				if ((Get-ItemProperty $consoleStartupRegistryPath).DelegationConsole -ne $windowsConsoleHostGUID) {
+					Set-ItemProperty $consoleStartupRegistryPath -Name 'DelegationConsole' -Value $windowsConsoleHostGUID -Type 'String' -Force -ErrorAction Stop | Out-Null
+				}
+
+				if ((Get-ItemProperty $consoleStartupRegistryPath).DelegationTerminal -ne $windowsConsoleHostGUID) {
+					Set-ItemProperty $consoleStartupRegistryPath -Name 'DelegationTerminal' -Value $windowsConsoleHostGUID -Type 'String' -Force -ErrorAction Stop | Out-Null
+				}
+
+				Write-Host "`n  Successfully Set Host Console to Not Always Launch Terminal`n" -ForegroundColor Green
+
+				Add-Content '\Install\Windows Setup Log.txt' "Set Host Console to Not Always Launch Terminal - $(Get-Date)" -ErrorAction SilentlyContinue
+			}
+		} catch {
+			Write-Host "`n  ERROR SETTING HOST CONSOLE TO NOT ALWAYS LAUNCH TERMINAL: $_`n" -ForegroundColor Red
+		}
+	}
+
+	try {
+		# Setting "HKCU:\SOFTWARE\Policies\Microsoft\Edge\HideFirstRunExperience" to "1" will bypass the fullscreen first run screens for Edge.
+		# https://admx.help/?Category=EdgeChromium&Policy=Microsoft.Policies.Edge::HideFirstRunExperience
+
+		$edgePoliciesRegistryPath = 'HKCU:\SOFTWARE\Policies\Microsoft\Edge'
+
+		if (-not (Test-Path $edgePoliciesRegistryPath)) {
+			New-Item $edgePoliciesRegistryPath -Force -ErrorAction Stop | Out-Null
+		}
+
+		if ((Get-ItemProperty $edgePoliciesRegistryPath).HideFirstRunExperience -ne 1) {
+			Write-Output "`n  Disabling Edge First Run Screen..."
+
+			Set-ItemProperty $edgePoliciesRegistryPath -Name 'HideFirstRunExperience' -Value 1 -Type 'DWord' -Force -ErrorAction Stop | Out-Null
+
+			Write-Host "`n  Successfully Disabled Edge First Run Screen`n" -ForegroundColor Green
+
+			Add-Content '\Install\Windows Setup Log.txt' "Disabled Edge First Run Screen - $(Get-Date)" -ErrorAction SilentlyContinue
+		}
+	} catch {
+		Write-Host "`n  ERROR DISABLING EDGE FIRST RUN SCREEN: $_`n" -ForegroundColor Red
+	}
+
+	try {
+		# Setting "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Microsoft.SkyDrive.Desktop\Enabled" to "0" will turn off all
+		# OneDrive notifications which stops Windows from prompting to "Turn On Windows Backup" to OneDrive with a notification/prompt in the bottom right,
+		# which was enabled with the September 2023 Cumulative Updates for both Windows 10 and 11 (the notification seems to appear a few days after install, so wouldn't normally be seen by technicians anyways).
+		# https://learn.microsoft.com/en-us/answers/questions/1376997/turn-off-onedrive-backup-notification-via-gpo-or-s#answer-1326409
+
+		$oneDriveNotificationsRegistryPath = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Microsoft.SkyDrive.Desktop'
+
+		if (-not (Test-Path $oneDriveNotificationsRegistryPath)) {
+			New-Item $oneDriveNotificationsRegistryPath -Force -ErrorAction Stop | Out-Null
+		}
+
+		if ((Get-ItemProperty $oneDriveNotificationsRegistryPath).Enabled -ne 0) {
+			Write-Output "`n  Disabling OneDrive Notifications..."
+
+			Set-ItemProperty $oneDriveNotificationsRegistryPath -Name 'Enabled' -Value 0 -Type 'DWord' -Force -ErrorAction Stop | Out-Null
+
+			Write-Host "`n  Successfully Disabled OneDrive Notifications`n" -ForegroundColor Green
+
+			Add-Content '\Install\Windows Setup Log.txt' "Disabled OneDrive Notifications - $(Get-Date)" -ErrorAction SilentlyContinue
+		}
+	} catch {
+		Write-Host "`n  ERROR DISABLING ONEDRIVE NOTIFICATIONS: $_`n" -ForegroundColor Red
+	}
+
+	try {
+		# Setting "HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy\LetAppsAccessCamera" (and "LetAppsAccessMicrophone") to "1" will bypass
+		# Camera and Microphone permission prompts when launching the "Camera" app to perform the Camera test from QA Helper.
+		# https://admx.help/?Category=Windows_10_2016&Policy=Microsoft.Policies.AppPrivacy::LetAppsAccessCamera
+		# https://admx.help/?Category=Windows_10_2016&Policy=Microsoft.Policies.AppPrivacy::LetAppsAccessMicrophone
+
+		$appPrivacyRegistryPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy'
+
+		if (-not (Test-Path $appPrivacyRegistryPath)) {
+			New-Item $appPrivacyRegistryPath -Force -ErrorAction Stop | Out-Null
+		}
+
+		if ((Get-ItemProperty $appPrivacyRegistryPath).LetAppsAccessCamera -ne 1) {
+			Write-Output "`n  Allowing Camera Access for All Apps..."
+
+			Set-ItemProperty $appPrivacyRegistryPath -Name 'LetAppsAccessCamera' -Value 1 -Type 'DWord' -Force -ErrorAction Stop | Out-Null
+
+			Write-Host "`n  Successfully Allowed Camera Access for All Apps`n" -ForegroundColor Green
+
+			Add-Content '\Install\Windows Setup Log.txt' "Allowed Camera Access for All Apps - $(Get-Date)" -ErrorAction SilentlyContinue
+		}
+
+		if ((Get-ItemProperty $appPrivacyRegistryPath).LetAppsAccessMicrophone -ne 1) {
+			Write-Output "`n  Allowing Microphone Access for All Apps..."
+
+			Set-ItemProperty $appPrivacyRegistryPath -Name 'LetAppsAccessMicrophone' -Value 1 -Type 'DWord' -Force -ErrorAction Stop | Out-Null
+
+			Write-Host "`n  Successfully Allowed Microphone Access for All Apps`n" -ForegroundColor Green
+
+			Add-Content '\Install\Windows Setup Log.txt' "Allowed Microphone Access for All Apps - $(Get-Date)" -ErrorAction SilentlyContinue
+		}
+	} catch {
+		Write-Host "`n  ERROR ALLOWING CAMERA OR MICROPHONE ACCESS FOR ALL APPS: $_`n" -ForegroundColor Red
 	}
 
 
@@ -239,7 +356,7 @@ if ($LastWindowsUpdatesCount -eq '') {
 							if ($null -eq $powercfgHibernateOffError) {
 								$powercfgHibernateOffError = Get-Content -Raw "$Env:TEMP\fgSetup-powercfg-hibernate-off-Output.txt"
 							}
-			
+
 							Write-Host "`n  ERROR DISABLING HIBERNATION: $powercfgHibernateOffError" -ForegroundColor Red
 							Write-Host "`n  ERROR: Failed to disable hibernation (powercfg Exit Code = $powercfgHibernateOffExitCode)." -ForegroundColor Red
 						}
@@ -414,6 +531,7 @@ if ($LastWindowsUpdatesCount -eq '') {
 	} catch {
 		Write-Host "`n  ERROR CHECKING NETWORK PROFILES: $_" -ForegroundColor Red
 	}
+
 
 	try {
 		Write-Output "`n`n  Emptying Recycle Bin..."
@@ -612,7 +730,7 @@ function AdjustScreenScaling {
 			# If we wanted to always guarantee 100% scaling, we could just go down a large number steps or we could do the math to figure out how many steps down from $appliedDPI are needed.
 
 			(Get-ChildItem $customScreenScalingRegistryPath).PSPath | ForEach-Object {
-				New-ItemProperty $_ -Name 'DpiValue' -Value 4294967294 -PropertyType 'DWord' -Force -ErrorAction Stop | Out-Null
+				Set-ItemProperty $_ -Name 'DpiValue' -Value 4294967294 -Type 'DWord' -Force -ErrorAction Stop | Out-Null
 			}
 
 			# INFO ABOUT REBOOTING AFTER SETTING SCREEN SCALING: While the following code is a quick way to make the new screen scaling take effect (and is the same thing that is done when setting screen scaling from Settings app),
@@ -696,7 +814,7 @@ function Install-WindowsUpdates {
 
 			$windowsUpdates = $null
 
-			$windowsUpdates = Get-WindowsUpdate -ErrorAction Stop
+			$windowsUpdates = Get-WindowsUpdate -NotTitle 'Cumulative Update' -ErrorAction Stop
 
 			if ($windowsUpdates.Count -gt 0) {
 				Write-Host "`n  $($windowsUpdates.Count) Windows Updates Are Available" -ForegroundColor Green
@@ -708,6 +826,7 @@ function Install-WindowsUpdates {
 				foreach ($thisWindowsUpdate in $windowsUpdates) {
 					# PSWindowsUpdate's RebootRequired field only gets marked as true AFTER an update has been installed, so it's useless for checking if a reboot will be required in advance.
 					# Instead, check for any Cumulative updates manually to determine if reboot is required. Also, type 2 is Drivers which we should always reboot for so they all get enabled after installation.
+					# NOTE: Cumulative Updates are now excluded, but drivers still require a reboot.
 					if ($thisWindowsUpdate.Title.Contains('Cumulative') -or ($thisWindowsUpdate.Type -eq 2)) {
 						$rebootRequiredAfterWindowsUpdates = $true
 						Write-Host '  This Computer Will Reboot Itself After Windows Updates Are Installed' -ForegroundColor Yellow
@@ -720,12 +839,12 @@ function Install-WindowsUpdates {
 					Write-Host "  ONLY LISTING WINDOWS UPDATES (NOT INSTALLING) IN TEST MODE`n" -ForegroundColor Yellow
 				} else {
 					# For whatever reason, using the "Install-WindowsUpdate" alias does not work when imported from "\Install\Scripts\PSWindowsUpdate" rather than being installed.
-					Get-WindowsUpdate -Install -AcceptAll -IgnoreReboot -ErrorAction Stop | Format-Table -HideTableHeaders -Wrap @{ Label = '    Status'; Expression = {"    $($_.Result):"}},@{ Label = 'Update Type'; Expression = {"$($_.KB)$($_.DriverClass)"} },Size,Title
+					Get-WindowsUpdate -NotTitle 'Cumulative Update' -Install -AcceptAll -IgnoreReboot -ErrorAction Stop | Format-Table -HideTableHeaders -Wrap @{ Label = '    Status'; Expression = {"    $($_.Result):"}},@{ Label = 'Update Type'; Expression = {"$($_.KB)$($_.DriverClass)"} },Size,Title
 
 					Add-Content '\Install\Windows Update Log.txt' "$($windowsUpdates.Count) Installed - $(Get-Date)" -ErrorAction Stop # Log Windows Update finished time to track update cycles to be able to stop after maximumWindowsUpdateCycleCount.
 				}
 
-				# DO NOT run another pass of Windows Update HERE because if there was a Cumulative Update that just got installed it will show up again until it's been fully installing during a reboot.
+				# DO NOT run another pass of Windows Update HERE because if there was a Cumulative Update that just got installed it will show up again until it's been fully installing during a reboot (this couldn't actually happen anymore because Cumulative Updates are now being excluded to save time, but reboot anyways before running another cycle).
 				# Instead, Windows Update will keep running after reboots or new script instances until there are no more updates available.
 
 				if ((-not $rebootRequiredAfterWindowsUpdates) -and (Get-WURebootStatus -Silent)) {
@@ -851,8 +970,6 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 	$smbUsername = "$smbServerIP\$($smbCredentialsXML.smbCredentials.resourcesReadOnlyShare.username)" # Domain must be prefixed in any username.
 	$smbPassword = $smbCredentialsXML.smbCredentials.resourcesReadOnlyShare.password
 
-	$appInstallersPath = "$smbShare\windows-resources\app-installers"
-
 	$didInstallApps = $false # Keep track of if apps were successfully installed in a previous loop to not unnecessarily reinstall them.
 
 	Remove-Item '\Install\Windows Update Log.txt' -Force -ErrorAction SilentlyContinue # Delete Windows Update Log to start update cycle over if Setup is being manually re-run.
@@ -872,48 +989,51 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			Write-Output "`n  Preparing to Setup Windows..."
 		}
 
-		$usbAppInstallersPath = $null
-		# Check all removable drives for "windows-resources" folder (a better version of https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-identify-drive-letters)
+		$appInstallersUSBpath = $null
+		# Check all drives for "windows-resources" folder (a better version of https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-identify-drive-letters)
 		# Do these checks within the loop because it seems that sometimes the USB isn't mounted on boot and needs to be unplugged and replugged and the technician needs to be able to try again.
-		$removableDrives = Get-Volume | Where-Object DriveType -eq 'Removable'
-		foreach ($thisRemovableDrive in $removableDrives) {
-			$thisPossibleAppInstallersPath = "$($thisRemovableDrive.DriveLetter):\windows-resources\app-installers"
+		$allVolumes = Get-Volume # DO NOT USE " | Where-Object DriveType -eq 'Removable'" because NVMe M.2 enclosures mount as "Fixed" drives.
+		foreach ($thisVolume in $allVolumes) {
+			$thisPossibleAppInstallersUSBpath = "$($thisVolume.DriveLetter):\windows-resources\app-installers"
 
-			if (Test-Path $thisPossibleAppInstallersPath) {
-				$usbAppInstallersPath = $thisPossibleAppInstallersPath
+			if (Test-Path $thisPossibleAppInstallersUSBpath) {
+				$appInstallersUSBpath = $thisPossibleAppInstallersUSBpath
 
 				break
 			}
 		}
 
-		$isUSBinstall = $false # Will set to USB install mode if fails to connect to $smbServerIP AND both $usbOSimagesPath and $usbSetupResourcesPath are not null.
-
 		$lastTaskSucceeded = $true
 
-		$didConnectToServer = $false
+		$appInstallersPath = "$smbShare\windows-resources\app-installers"
+
+		$usbAppInstallersAccessible = $false
+
+		if ($null -ne $appInstallersUSBpath) {
+			Write-Host "`n  Setting Up Windows via USB" -ForegroundColor Green
+
+			$appInstallersPath = $appInstallersUSBpath
+
+			$usbAppInstallersAccessible = $true
+		}
+
+		$localServerResourcesAccessible = $false
 
 		try {
-			$didConnectToServer = (Test-Connection $smbServerIP -Count 1 -Quiet -ErrorAction Stop)
+			$localServerResourcesAccessible = (Test-Connection $smbServerIP -Count 1 -Quiet -ErrorAction Stop)
 		} catch {
 			Write-Host "`n  ERROR CONNECTING TO LOCAL FREE GEEK SERVER: $_" -ForegroundColor Red
 		}
 
-		if ($didConnectToServer) {
+		if ($localServerResourcesAccessible) {
 			Write-Host "`n  Successfully Connected to Local Free Geek Server" -ForegroundColor Green
-		} elseif ($null -ne $usbAppInstallersPath) {
-			Write-Host "`n  Setting Up Windows via USB" -NoNewline -ForegroundColor Green
-			Write-Host " (Local Free Geek Server Unavailable)" -ForegroundColor Yellow
-
-			$appInstallersPath = $usbAppInstallersPath
-
-			$isUSBinstall = $true
-		} else {
-			Write-Host "`n  ERROR: Failed to connect to local Free Geek server `"$smbServerIP`"." -ForegroundColor Red
+		} elseif (-not $usbAppInstallersAccessible) {
+			Write-Host "`n  ERROR: Failed to locate app installers on USB and failed connect to local Free Geek server." -ForegroundColor Red
 
 			$lastTaskSucceeded = $false
 		}
 
-		if ($lastTaskSucceeded -and (-not $isUSBinstall)) {
+		if ($lastTaskSucceeded -and $localServerResourcesAccessible) {
 			Write-Host "`n`n  Mounting SMB Share for App Installers - PLEASE WAIT, THIS MAY TAKE A MOMENT..." -NoNewline
 
 			# Try to connect to SMB Share 5 times before stopping to show error to user because sometimes it takes a few attempts, or it sometimes just fails and takes more manual reattempts before it finally works.
@@ -944,139 +1064,153 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 		}
 
 		if ($lastTaskSucceeded -and (-not $didInstallApps)) {
-			Write-Output "`n`n  Locating App Installer Files..."
+			if ($noAppsMode) {
+				$didInstallApps = $true
+			} else {
+				Write-Output "`n`n  Locating App Installer Files..."
 
-			$appInstallersPathForAll = "$appInstallersPath\All"
-			if (-not (Test-Path $appInstallersPathForAll)) {
-				$appInstallersPathForAll = $appInstallersPath
-			}
+				$appInstallersPathForAll = "$appInstallersPath\All"
+				if (-not (Test-Path $appInstallersPathForAll)) {
+					$appInstallersPathForAll = $appInstallersPath
+				}
 
-			$appInstallerFiles = Get-ChildItem "$appInstallersPathForAll\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
+				$appInstallerFiles = Get-ChildItem "$appInstallersPathForAll\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
 
-			if ($snapMode -and (Test-Path "$appInstallersPath\SNAP")) {
-				$appInstallerFiles += Get-ChildItem "$appInstallersPath\SNAP\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
-			}
+				if ($snapMode -and (Test-Path "$appInstallersPath\SNAP")) {
+					$appInstallerFiles += Get-ChildItem "$appInstallersPath\SNAP\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
+				}
 
-			$cpuBrand = (Get-CimInstance 'Win32_Processor' -Property 'Manufacturer' -ErrorAction SilentlyContinue).Manufacturer
-			if ($cpuBrand -and $cpuBrand.ToUpper().Contains('INTEL') -and (Test-Path "$appInstallersPath\Intel")) { # "Manufacturer" should be "GenuineIntel" for all Intel processors, but do a case-insenstive check anything that contains "INTEL" just to be safe.
-				# Always install "Intel Processor Diagnostic Tool" (IPDT) on any computers with Intel processors (which is the only app the "Intel" folder currently contains).
-				# This app is *installed* instead of included in "Diagnostic Tools" because even if the custom working directory is set correctly, the main app will launch and start,
-				# BUT the individual test exe's will fail with "could not load DetectUtils64.dll" which is in the working directory and it should be checking in, but seem to instead be checking for a hardcoded path within "Program Files".
-				# Also, IPDT will always be *uninstalled* in "Complete Windows" script if it was installed.
-				# NOTE: If in "ipdtMode", then IPDT will be launched instead of "QA Helper" when this script is finished (and on each boot).
+				$driversCacheModelNameFilePath = '\Install\Drivers Cache Model Name.txt' # This file is created by QA Helper in WinPE using its detailed model info. Use it here to check manufacturers since it will always be cleaned up and consistent.
+				if (-not (Test-Path $driversCacheModelNameFilePath)) {
+					$driversCacheModelNameFilePath = '\Install\Drivers Cache Model Path.txt' # This is the old filename from when paths were specified instead of a filename.
+				}
 
-				$appInstallerFiles += Get-ChildItem "$appInstallersPath\Intel\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
-			}
+				$manufacturerName = ''
+				if (Test-Path $driversCacheModelNameFilePath) {
+					$driversCacheModelNameFileContents = Get-Content $driversCacheModelNameFilePath -First 1
 
-			$driversCacheModelNameFilePath = '\Install\Drivers Cache Model Name.txt' # This file is created by QA Helper in WinPE using its detailed model info. Use it here to check manufacturers since it will always be cleaned up and consistent.
-			if (-not (Test-Path $driversCacheModelNameFilePath)) {
-				$driversCacheModelNameFilePath = '\Install\Drivers Cache Model Path.txt' # This is the old filename from when paths were specified instead of a filename.
-			}
+					if ($null -ne $driversCacheModelNameFileContents) {
+						if ($driversCacheModelNameFileContents.Contains('\')) {
+							# Drivers Cache used to store drivers for each model in their own folder with the path specified by "Drivers Cache Model Path.txt".
+							# Now, all drivers are stored in a "Unique Drivers" folder and each specific model is just a text file whose contents are a list of the drivers that were cached for that model.
+							# Therefore, if an old "Drivers Cache Model Path.txt" from an old "QA Helper" was read, we must replace backslashes with spaces to be used as a filename instead of a folder path.
+							$driversCacheModelNameFileContents = $driversCacheModelNameFileContents.Replace('\', ' ')
+						}
 
-			if (Test-Path $driversCacheModelNameFilePath) {
-				$driversCacheModelNameFileContents = Get-Content $driversCacheModelNameFilePath -First 1
+						if ($driversCacheModelNameFileContents.Contains(' ')) {
+							$manufacturerName = $driversCacheModelNameFileContents.Split(' ')[0]
+							$appInstallersPathForManufacturer = "$appInstallersPath\$manufacturerName"
 
-				if ($null -ne $driversCacheModelNameFileContents) {
-					if ($driversCacheModelNameFileContents.Contains('\')) {
-						# Drivers Cache used to store drivers for each model in their own folder with the path specified by "Drivers Cache Model Path.txt".
-						# Now, all drivers are stored in a "Unique Drivers" folder and each specific model is just a text file whose contents are a list of the drivers that were cached for that model.
-						# Therefore, if an old "Drivers Cache Model Path.txt" from an old "QA Helper" was read, we must replace backslashes with spaces to be used as a filename instead of a folder path.
-						$driversCacheModelNameFileContents = $driversCacheModelNameFileContents.Replace('\', ' ')
-					}
-
-					if ($driversCacheModelNameFileContents.Contains(' ')) {
-						# Check for and include manufacturer specific apps.
-						$appInstallersPathForManufacturer = "$appInstallersPath\$($driversCacheModelNameFileContents.Split(' ')[0])"
-
-						if (Test-Path $appInstallersPathForManufacturer) {
-							$appInstallerFiles += Get-ChildItem "$appInstallersPathForManufacturer\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
+							if (Test-Path $appInstallersPathForManufacturer) { # Check for and include manufacturer specific apps.
+								$appInstallerFiles += Get-ChildItem "$appInstallersPathForManufacturer\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
+							}
 						}
 					}
 				}
-			}
 
-			if ($null -ne $appInstallerFiles) {
-				if ($appInstallerFiles.Count -gt 0) {
-					Write-Host "`n  Successfully Located $($appInstallerFiles.Count) App Installer Files" -ForegroundColor Green
+				if ($cpuInfo.Manufacturer -and $cpuInfo.Manufacturer.ToUpper().Contains('INTEL') -and ($manufacturerName -ne 'Intel') -and (Test-Path "$appInstallersPath\Intel")) {
+					# "Manufacturer" should be "GenuineIntel" for all Intel processors, but do a case-insenstive check anything that contains "INTEL" just to be safe.
+					# Also, skip this if computer manufacturer/brand is "Intel" (such as for NUCs) since the "$appInstallersPath\Intel" folder would already have been added above.
+					# FUTURE NOTE: If there is ever an issue where different apps need to be installed for Intel brand systems vs any system with an Intel CPU this could be adjusted to be an "Intel CPU" folder instead of just and "Intel" folder which could be just for Intel brand systems.
+
+					# Always install "Intel Processor Diagnostic Tool" (IPDT) on any computers with Intel processors (which is the only app the "Intel" folder currently contains).
+					# This app is *installed* instead of included in "Diagnostic Tools" because even if the custom working directory is set correctly, the main app will launch and start,
+					# BUT the individual test exe's will fail with "could not load DetectUtils64.dll" which is in the working directory and it should be checking in, but seem to instead be checking for a hardcoded path within "Program Files".
+					# Also, IPDT will always be *uninstalled* in "Complete Windows" script if it was installed.
+					# NOTE: If in "ipdtMode", then IPDT will be launched instead of "QA Helper" when this script is finished (and on each boot).
+
+					$appInstallerFiles += Get-ChildItem "$appInstallersPath\Intel\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
+				}
+
+				if ($null -ne $appInstallerFiles) {
+					if ($appInstallerFiles.Count -gt 0) {
+						Write-Host "`n  Successfully Located $($appInstallerFiles.Count) App Installer Files" -ForegroundColor Green
+					} else {
+						$lastTaskSucceeded = $false
+					}
 				} else {
 					$lastTaskSucceeded = $false
 				}
-			} else {
-				$lastTaskSucceeded = $false
-			}
 
-			if ($lastTaskSucceeded -and ($null -ne $appInstallerFiles)) {
-				foreach ($thisAppInstallerFile in $appInstallerFiles) {
-					CloseStartMenuOnFirstBootOfWindows11 # Only close the Start menu (without FocusScriptWindow) before each installation (which opens automatically on first login on Windows 11) so that the installer window is visible since we don't know exactly when the Desktop will be loaded.
+				if ($lastTaskSucceeded -and ($null -ne $appInstallerFiles)) {
+					foreach ($thisAppInstallerFile in $appInstallerFiles) {
+						CloseStartMenuOnFirstBootOfWindows11 # Only close the Start menu (without FocusScriptWindow) before each installation (which opens automatically on first login on Windows 11) so that the installer window is visible since we don't know exactly when the Desktop will be loaded.
 
-					try {
-						$thisInstallerBaseName = $thisAppInstallerFile.BaseName
-						$thisAppVersion = ''
-						if (Test-Path "$($thisAppInstallerFile.DirectoryName)\$thisInstallerBaseName-Version.txt") {
-							$installerVersion = Get-Content "$($thisAppInstallerFile.DirectoryName)\$thisInstallerBaseName-Version.txt" -First 1
-							$thisAppVersion = " $installerVersion"
-						}
+						try {
+							$thisInstallerNameParts = $thisAppInstallerFile.BaseName.Split('_')
+							$thisAppName = $thisInstallerNameParts[0]
 
-						$thisAppName = $thisInstallerBaseName.Substring(0, $thisInstallerBaseName.IndexOf('_'))
-
-						Write-Output "`n`n  Installing $thisAppName$thisAppVersion..."
-
-						Remove-Item "$Env:TEMP\fgSetup-*.txt" -Force -ErrorAction SilentlyContinue
-
-						$appInstallExitCode = 9999
-						if ($thisAppInstallerFile.Extension -eq '.msi') {
-							$appInstallExitCode = (Start-Process 'msiexec' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgSetup-$thisAppName-installer-Output.txt" -RedirectStandardError "$Env:TEMP\fgSetup-$thisAppName-installer-Error.txt" -ArgumentList '/package', "`"$($thisAppInstallerFile.FullName)`"", '/passive' -ErrorAction Stop).ExitCode
-						} elseif ($thisAppInstallerFile.Extension -eq '.exe') {
-							$silentExeInstallationArgument = '/S'
-							if ($thisAppName -eq 'Dropbox') { # https://help.dropbox.com/installs/enterprise-installer
-								$silentExeInstallationArgument = '/NOLAUNCH'
-							} elseif ($thisAppName -eq 'LenovoSystemUpdate') {
-								$silentExeInstallationArgument = '/SILENT'
+							$thisAppVersion = ''
+							if (($thisInstallerNameParts.Count -gt 1) -and ($thisInstallerNameParts[1] -Match '^\d[.\d]*$')) {
+								$thisAppVersion = " $($thisInstallerNameParts[1])"
 							}
 
-							$appInstallExitCode = (Start-Process $thisAppInstallerFile -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgSetup-$thisAppName-installer-Output.txt" -RedirectStandardError "$Env:TEMP\fgSetup-$thisAppName-installer-Error.txt" -ArgumentList $silentExeInstallationArgument -ErrorAction Stop).ExitCode
-						}
-						$appInstallError = Get-Content -Raw "$Env:TEMP\fgSetup-$thisAppName-installer-Error.txt"
+							Write-Output "`n`n  Installing $thisAppName$thisAppVersion..."
 
-						if (($appInstallExitCode -eq 0) -and ($null -eq $appInstallError)) {
-							Write-Host "`n  Successfully Installed $thisAppName$thisAppVersion" -ForegroundColor Green
+							Remove-Item "$Env:TEMP\fgSetup-*.txt" -Force -ErrorAction SilentlyContinue
 
-							Add-Content '\Install\Windows Setup Log.txt' "Installed $thisAppName$thisAppVersion - $(Get-Date)" -ErrorAction SilentlyContinue
-						} else {
-							if ($null -eq $appInstallError) {
-								$appInstallError = Get-Content -Raw "$Env:TEMP\fgSetup-$thisAppName-installer-Output.txt"
+							$appInstallExitCode = 9999
+							if ($thisAppInstallerFile.Extension -eq '.msi') {
+								$appInstallExitCode = (Start-Process 'msiexec' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgSetup-$thisAppName-installer-Output.txt" -RedirectStandardError "$Env:TEMP\fgSetup-$thisAppName-installer-Error.txt" -ArgumentList '/package', "`"$($thisAppInstallerFile.FullName)`"", '/passive' -ErrorAction Stop).ExitCode
+							} elseif ($thisAppInstallerFile.Extension -eq '.exe') {
+								$silentExeInstallationArgument = '/S'
+								if ($thisAppName -eq 'Dropbox') { # https://help.dropbox.com/installs/enterprise-installer
+									$silentExeInstallationArgument = '/NOLAUNCH'
+								} elseif ($thisAppName -eq 'Lenovo System Update') {
+									$silentExeInstallationArgument = '/SILENT'
+								}
+
+								$appInstallExitCode = (Start-Process $thisAppInstallerFile -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgSetup-$thisAppName-installer-Output.txt" -RedirectStandardError "$Env:TEMP\fgSetup-$thisAppName-installer-Error.txt" -ArgumentList $silentExeInstallationArgument -ErrorAction Stop).ExitCode
 							}
+							$appInstallError = Get-Content -Raw "$Env:TEMP\fgSetup-$thisAppName-installer-Error.txt"
 
-							Write-Host "`n  ERROR INSTALLING APP: $appInstallError" -ForegroundColor Red
-							Write-Host "`n  ERROR: Failed to install $thisAppName$thisAppVersion (Installer Exit Code = $appInstallExitCode)." -ForegroundColor Red
+							if ((($appInstallExitCode -eq 0) -or ($appInstallExitCode -eq 1603)) -and ($null -eq $appInstallError)) {
+								if ($appInstallExitCode -eq 1603) { # https://learn.microsoft.com/en-us/troubleshoot/windows-server/application-management/msi-installation-error-1603
+									# This "error" seems to happen when re-install an MSI *if and only if* the filename is different from the MSI that was originally installed.
+									Write-Host "`n  Already Installed $thisAppName$thisAppVersion" -ForegroundColor Yellow
+
+									Add-Content '\Install\Windows Setup Log.txt' "Already Installed $thisAppName$thisAppVersion - $(Get-Date)" -ErrorAction SilentlyContinue
+								} else {
+									Write-Host "`n  Successfully Installed $thisAppName$thisAppVersion" -ForegroundColor Green
+
+									Add-Content '\Install\Windows Setup Log.txt' "Installed $thisAppName$thisAppVersion - $(Get-Date)" -ErrorAction SilentlyContinue
+								}
+							} else {
+								if ($null -eq $appInstallError) {
+									$appInstallError = Get-Content -Raw "$Env:TEMP\fgSetup-$thisAppName-installer-Output.txt"
+								}
+
+								Write-Host "`n  ERROR INSTALLING APP: $appInstallError" -ForegroundColor Red
+								Write-Host "`n  ERROR: Failed to install $thisAppName$thisAppVersion (Installer Exit Code = $appInstallExitCode)." -ForegroundColor Red
+
+								$lastTaskSucceeded = $false
+
+								break
+							}
+						} catch {
+							Write-Host "`n  ERROR STARTING APP INSTALLER: $_" -ForegroundColor Red
+							Write-Host "`n  ERROR: Failed to install $($thisAppInstallerFile.BaseName)." -ForegroundColor Red
 
 							$lastTaskSucceeded = $false
 
 							break
 						}
-					} catch {
-						Write-Host "`n  ERROR STARTING APP INSTALLER: $_" -ForegroundColor Red
-						Write-Host "`n  ERROR: Failed to install $($thisAppInstallerFile.BaseName)." -ForegroundColor Red
-
-						$lastTaskSucceeded = $false
-
-						break
 					}
+
+					FocusScriptWindow # Take focus after installations are complete to make sure script window is front since the installers took focus.
+
+					Remove-Item "$Env:TEMP\fgSetup-*.txt" -Force -ErrorAction SilentlyContinue
+				} else {
+					Write-Host "`n  ERROR: Failed to locate any App installation files within `"$appInstallersPath`"." -ForegroundColor Red
 				}
 
-				FocusScriptWindow # Take focus after installations are complete to make sure script window is front since the installers took focus.
-
-				Remove-Item "$Env:TEMP\fgSetup-*.txt" -Force -ErrorAction SilentlyContinue
-			} else {
-				Write-Host "`n  ERROR: Failed to locate any App installation files within `"$appInstallersPath`"." -ForegroundColor Red
-			}
-
-			if ($lastTaskSucceeded) {
-				$didInstallApps = $true
+				if ($lastTaskSucceeded) {
+					$didInstallApps = $true
+				}
 			}
 		}
 
-		if (-not $isUSBinstall) {
+		if ($localServerResourcesAccessible) {
 			Remove-SmbMapping -RemotePath $smbShare -Force -UpdateProfile -ErrorAction SilentlyContinue # Done with SMB Share now, so remove it.
 		}
 
@@ -1135,8 +1269,8 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 		}
 
 		if (-not $lastTaskSucceeded) {
-			Write-Host "`n`n  IMPORTANT: Make sure Ethernet cable is plugged securely and try again." -ForegroundColor Red
-			Write-Host "`n  ALSO IMPORTANT: If you are doing a USB install, unplug and re-plug the USB drive and try again." -ForegroundColor Yellow
+			Write-Host "`n`n  IMPORTANT: Unplug and re-plug the USB drive and try again. " -ForegroundColor Red
+			Write-Host "`n  ALSO IMPORTANT: Make sure Ethernet cable is plugged securely and try again." -ForegroundColor Yellow
 		}
 
 		if ($lastTaskSucceeded) {
@@ -1219,13 +1353,13 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 				}
 
 				if ((Get-ItemProperty $gpuzRegistryPath).Install_Dir -ne 'no') {
-					New-ItemProperty $gpuzRegistryPath -Name 'Install_Dir' -Value 'no' -PropertyType 'String' -Force -ErrorAction Stop | Out-Null
+					Set-ItemProperty $gpuzRegistryPath -Name 'Install_Dir' -Value 'no' -Type 'String' -Force -ErrorAction Stop | Out-Null
 
 					Add-Content '\Install\Windows Setup Log.txt' "Set GPU-Z to Standalone Mode - $(Get-Date)" -ErrorAction SilentlyContinue
 				}
 
 				if ((Get-ItemProperty $gpuzRegistryPath).CheckForUpdates -ne 0) {
-					New-ItemProperty $gpuzRegistryPath -Name 'CheckForUpdates' -Value 0 -PropertyType 'DWord' -Force -ErrorAction Stop | Out-Null
+					Set-ItemProperty $gpuzRegistryPath -Name 'CheckForUpdates' -Value 0 -Type 'DWord' -Force -ErrorAction Stop | Out-Null
 
 					Add-Content '\Install\Windows Setup Log.txt' "Set GPU-Z to Not Check for Updates - $(Get-Date)" -ErrorAction SilentlyContinue
 				}
@@ -1310,29 +1444,21 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 
 				$lastTaskSucceeded = $false
 			}
-		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\Disk Check (PE) x64.exe')) {
-			try {
-				$diskCheckShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut("$desktopPath\Diagnostic Tools\Disk Check.lnk")
-				$diskCheckShortcut.TargetPath = '\Install\Diagnostic Tools\Disk Check (PE) x64.exe'
-				$diskCheckShortcut.Save()
-
-				if (-not (Test-Path "$desktopPath\Diagnostic Tools\Disk Check.lnk")) {
-					throw "Shortcut Not Created: $desktopPath\Diagnostic Tools\Disk Check.lnk"
+			if (Test-Path '\Install\Scripts\Windows 11 Supported Processors Lists\SupportedProcessorsIntel.txt') {
+				$whyNotWin11LocalAppDataFolderPath = "$Env:LOCALAPPDATA\WhyNotWin11"
+				if (Test-Path $whyNotWin11LocalAppDataFolderPath) {
+					Remove-Item $whyNotWin11LocalAppDataFolderPath -Recurse -Force -ErrorAction Stop
 				}
 
-				if (Test-Path "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\Disk Check.lnk") {
-					Remove-Item "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\Disk Check.lnk" -Force -ErrorAction Stop
-				}
+				New-Item -ItemType 'Directory' -Path $whyNotWin11LocalAppDataFolderPath -ErrorAction Stop | Out-Null
 
-				Copy-Item "$desktopPath\Diagnostic Tools\Disk Check.lnk" "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\Disk Check.lnk" -Force -ErrorAction Stop
+				Copy-Item '\Install\Scripts\Windows 11 Supported Processors Lists\SupportedProcessors*.txt' $whyNotWin11LocalAppDataFolderPath -Force -ErrorAction Stop
 
-				Add-Content '\Install\Windows Setup Log.txt' "Created Disk Check Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
-			} catch {
-				Write-Host "`n  ERROR CREATING DISK CHECK SHORTCUT: $_" -ForegroundColor Red
+				New-Item -ItemType 'Directory' -Path "$whyNotWin11LocalAppDataFolderPath\Langs" -ErrorAction Stop | Out-Null # If the "Langs" folder doesn't exist, WhyNotWin11 will overwrite the supported processor lists with its older embedded lists.
+				Set-Content "$whyNotWin11LocalAppDataFolderPath\Langs\version" '0' # The language version file must exist for WhyNotWin11 to copy in the language files. Setting the value to "0" so it will be a version that will always be outdated so WhyNotWin11 will update the language files.
 
-				$lastTaskSucceeded = $false
+				Add-Content '\Install\Windows Setup Log.txt' "Updated Windows 11 Supported Processors Lists for WhyNotWin11 - $(Get-Date)" -ErrorAction SilentlyContinue
 			}
 		}
 
@@ -1500,31 +1626,31 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\GpuTest\GpuTest_GUI.exe')) {
+		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\FurMark\FurMark_GUI.exe')) {
 			try {
-				if (Test-Path '\Install\Diagnostic Tools\GpuTest.lnk') {
-					Remove-Item '\Install\Diagnostic Tools\GpuTest.lnk' -Force -ErrorAction Stop
+				if (Test-Path '\Install\Diagnostic Tools\FurMark.lnk') {
+					Remove-Item '\Install\Diagnostic Tools\FurMark.lnk' -Force -ErrorAction Stop
 				}
 
-				$gpuTestShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut('\Install\Diagnostic Tools\GpuTest.lnk')
-				$gpuTestShortcut.TargetPath = '\Install\Diagnostic Tools\GpuTest\GpuTest_GUI.exe'
-				$gpuTestShortcut.WorkingDirectory = '\Install\Diagnostic Tools\GpuTest'
-				$gpuTestShortcut.Save()
+				$furMarkShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut('\Install\Diagnostic Tools\FurMark.lnk')
+				$furMarkShortcut.TargetPath = '\Install\Diagnostic Tools\FurMark\FurMark_GUI.exe'
+				$furMarkShortcut.WorkingDirectory = '\Install\Diagnostic Tools\FurMark'
+				$furMarkShortcut.Save()
 
-				if (-not (Test-Path '\Install\Diagnostic Tools\GpuTest.lnk')) {
-					throw 'Shortcut Not Created: \Install\Diagnostic Tools\GpuTest.lnk'
+				if (-not (Test-Path '\Install\Diagnostic Tools\FurMark.lnk')) {
+					throw 'Shortcut Not Created: \Install\Diagnostic Tools\FurMark.lnk'
 				}
 
-				if (Test-Path "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\GpuTest.lnk") {
-					Remove-Item "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\GpuTest.lnk" -Force -ErrorAction Stop
+				if (Test-Path "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\FurMark.lnk") {
+					Remove-Item "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\FurMark.lnk" -Force -ErrorAction Stop
 				}
 
-				Copy-Item '\Install\Diagnostic Tools\GpuTest.lnk' "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\GpuTest.lnk" -Force -ErrorAction Stop
-				Copy-Item '\Install\Diagnostic Tools\GpuTest.lnk' "$desktopPath\Diagnostic Tools\GpuTest.lnk" -Force -ErrorAction Stop
+				Copy-Item '\Install\Diagnostic Tools\FurMark.lnk' "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\FurMark.lnk" -Force -ErrorAction Stop
+				Copy-Item '\Install\Diagnostic Tools\FurMark.lnk' "$desktopPath\Diagnostic Tools\FurMark.lnk" -Force -ErrorAction Stop
 
-				Add-Content '\Install\Windows Setup Log.txt' "Created GpuTest Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content '\Install\Windows Setup Log.txt' "Created FurMark Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
-				Write-Host "`n  ERROR CREATING GPUTEST SHORTCUT: $_" -ForegroundColor Red
+				Write-Host "`n  ERROR CREATING FURMARK SHORTCUT: $_" -ForegroundColor Red
 
 				$lastTaskSucceeded = $false
 			}
@@ -1556,6 +1682,36 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 				Add-Content '\Install\Windows Setup Log.txt' "Created PerformanceTest Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR CREATING PERFORMANCETEST SHORTCUT: $_" -ForegroundColor Red
+
+				$lastTaskSucceeded = $false
+			}
+		}
+
+		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\FanControl\FanControl.exe')) {
+			try {
+				if (Test-Path '\Install\Diagnostic Tools\FanControl.lnk') {
+					Remove-Item '\Install\Diagnostic Tools\FanControl.lnk' -Force -ErrorAction Stop
+				}
+
+				$fanControlShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut('\Install\Diagnostic Tools\FanControl.lnk')
+				$fanControlShortcut.TargetPath = '\Install\Diagnostic Tools\FanControl\FanControl.exe'
+				$fanControlShortcut.WorkingDirectory = '\Install\Diagnostic Tools\FanControl'
+				$fanControlShortcut.Save()
+
+				if (-not (Test-Path '\Install\Diagnostic Tools\FanControl.lnk')) {
+					throw 'Shortcut Not Created: \Install\Diagnostic Tools\FanControl.lnk'
+				}
+
+				if (Test-Path "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\FanControl.lnk") {
+					Remove-Item "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\FanControl.lnk" -Force -ErrorAction Stop
+				}
+
+				Copy-Item '\Install\Diagnostic Tools\FanControl.lnk' "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\FanControl.lnk" -Force -ErrorAction Stop
+				Copy-Item '\Install\Diagnostic Tools\FanControl.lnk' "$desktopPath\Diagnostic Tools\FanControl.lnk" -Force -ErrorAction Stop
+
+				Add-Content '\Install\Windows Setup Log.txt' "Created FanControl Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+			} catch {
+				Write-Host "`n  ERROR CREATING FANCONTROL SHORTCUT: $_" -ForegroundColor Red
 
 				$lastTaskSucceeded = $false
 			}
@@ -1718,21 +1874,43 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			$tpmSpecVersionString = 'UNKNOWN'
 		}
 
+		# Check for SSE4.2 support (even though it should be supported on every compatible CPU): https://www.tomshardware.com/software/windows/microsoft-updates-windows-11-24h2-requirements-cpu-must-support-sse42-or-the-os-will-not-boot
+		$processorFeatureFunctionTypes = Add-Type -PassThru -Name ProcessorFeature -MemberDefinition @'
+[DllImport("kernel32")]
+public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
+'@ # Based On: https://superuser.com/a/1861418
+
+		$win11compatibleSSE4dot2 = $processorFeatureFunctionTypes::IsProcessorFeaturePresent(38) # 38 = PF_SSE4_2_INSTRUCTIONS_AVAILABLE
+
+		$win11compatibleStorage = $false
+		if ((Get-Partition -DriveLetter (Get-CimInstance 'Win32_OperatingSystem' -Property 'SystemDrive' -ErrorAction SilentlyContinue).SystemDrive.Replace(':', '') -ErrorAction SilentlyContinue | Get-Disk -ErrorAction SilentlyContinue).Size -ge 55GB) {
+			# NOT using "Storage Available" from WhyNotWin11 below because it will get the VOLUME size which could be smaller after formatting and a Recovery Volume is partitioned rather than checking the WHOLE DISK size which I believe is the actual requirement.
+			# Allowing 55 GB or more since some drives marketed as 64 GB (the specified requirement) can be a few GB under (seen first hand a drive marketed as 64 GB actually be 58 GB, but give a little more leeway than that just to be sure all drives marketed as 64 GB are allowed).
+			$win11compatibleStorage = $true
+		}
+
+		$eleventhGenIntelCPUorNewer = $false
+		if ($cpuInfo.Manufacturer -and $cpuInfo.Name -and $cpuInfo.Manufacturer.ToUpper().Contains('INTEL') -and $cpuInfo.Name.ToUpper().Contains(' GEN ')) {
+			# "Manufacturer" should be "GenuineIntel" for all Intel processors, but do a case-insenstive check anything that contains "INTEL" just to be safe.
+			# Only 11th Gen Intel CPUs contain " Gen " in their model name strings, and they will always be compatible with Windows 11.
+			# This boolean will be used as a fallback to the "win11compatibleCPUmodel" check done by WhyNotWin11 below in case WhyNotWin11
+			# is not updated promptly and we run into a newer CPU that is not yet in the WhyNotWin11 list of compatible CPUs.
+			$eleventhGenIntelCPUorNewer = $true
+		}
+
 		if (Test-Path '\Install\Diagnostic Tools\WhyNotWin11.exe') { # Use WhyNotWin11 to help detect if the exact CPU model is compatible and more: https://github.com/rcmaehl/WhyNotWin11
 			Remove-Item '\Install\WhyNotWin11 Log.csv' -Force -ErrorAction SilentlyContinue
-			Start-Process '\Install\Diagnostic Tools\WhyNotWin11.exe' -NoNewWindow -Wait -ArgumentList '/export', 'CSV', '"C:\Install\WhyNotWin11 Log.csv"', '/silent', '/force' -ErrorAction SilentlyContinue
+			Start-Process '\Install\Diagnostic Tools\WhyNotWin11.exe' -NoNewWindow -Wait -ArgumentList '/export', 'CSV', '"C:\Install\WhyNotWin11 Log.csv"', '/skip', 'CPUFreq,Storage', '/silent', '/force' -ErrorAction SilentlyContinue
 		}
 
 		$win11compatibleArchitecture = $false
 		$win11compatibleBootMethod = $false
 		$win11compatibleCPUmodel = $false
 		$win11compatibleCPUcores = $false
-		$win11compatibleCPUspeed = $false
 		$win11compatibleGPU = $false
 		$win11compatiblePartitionType = $false
 		$win11compatibleRAM = $false
 		$win11compatibleSecureBoot = $false
-		$win11compatibleStorage = $false
 		$win11compatibleTPMfromWhyNotWin11 = $false
 		$checkedWithWhyNotWin11 = $false
 
@@ -1748,12 +1926,12 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 					$win11compatibleBootMethod = ($whyNotWin11LogValues[2] -eq 'True')
 					$win11compatibleCPUmodel = ($whyNotWin11LogValues[3] -eq 'True')
 					$win11compatibleCPUcores = ($whyNotWin11LogValues[4] -eq 'True')
-					$win11compatibleCPUspeed = ($whyNotWin11LogValues[5] -eq 'True')
+					# Index 5 is "CPU Frequency" which we are ignoring (and also SKIPPED with arguments in the command above) because sometimes the detected speed is inaccurate and under 1 Ghz which causes this check to fail even though the CPU is in the compatible list and is actually faster.
 					$win11compatibleGPU = ($whyNotWin11LogValues[6] -eq 'True')
 					$win11compatiblePartitionType = ($whyNotWin11LogValues[7] -eq 'True')
 					$win11compatibleRAM = ($whyNotWin11LogValues[8] -eq 'True')
 					$win11compatibleSecureBoot = ($whyNotWin11LogValues[9] -eq 'True')
-					$win11compatibleStorage = ($whyNotWin11LogValues[10] -eq 'True')
+					# Index 10 is "Storage Available" which we are ignoring (and also SKIPPED with arguments in the command above) and checking manually above since WhyNotWin11 will get the VOLUME size which could be smaller after formatting and a Recovery Volume is partitioned rather than checking the WHOLE DISK size which I believe is the actual requirement.
 					$win11compatibleTPMfromWhyNotWin11 = ($whyNotWin11LogValues[11] -eq 'True') # We already manually checked TPM version, but doesn't hurt to confirm that WinNotWin11 agrees.
 
 					$checkedWithWhyNotWin11 = $true
@@ -1762,15 +1940,20 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 		}
 
 		Write-Host '    CPU Compatible: ' -NoNewline
-		if (-not $win11compatibleCPUspeed) {
-			Write-Host 'NO (At Least 1 GHz Speed REQUIRED)' -ForegroundColor Red
+		if (-not $win11compatibleSSE4dot2) {
+			Write-Host 'NO (SSE 4.2 Support REQUIRED)' -ForegroundColor Red
 		} elseif (-not $win11compatibleCPUcores) {
 			Write-Host 'NO (At Least Dual-Core REQUIRED)' -ForegroundColor Red
 		} elseif (-not $win11compatibleArchitecture) {
 			# This incompatibility should never happen since we only refurbish 64-bit processors and only have 64-bit Windows installers.
 			Write-Host 'NO (64-bit REQUIRED)' -ForegroundColor Red
 		} elseif (-not $win11compatibleCPUmodel) {
-			Write-Host 'NO (Model NOT Supported)' -ForegroundColor Red
+			if ($eleventhGenIntelCPUorNewer) {
+				Write-Host 'YES' -NoNewline -ForegroundColor Green
+				Write-Host ' (Fallback Check Passed)' -ForegroundColor Yellow
+			} else {
+				Write-Host 'NO (Model NOT Supported)' -ForegroundColor Red
+			}
 		} else {
 			Write-Host 'YES' -ForegroundColor Green
 		}
@@ -1783,7 +1966,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 		}
 
 		Write-Host '    Storage 64 GB or More: ' -NoNewline
-		if ($win11compatibleStorage) {
+		if ($win11compatibleStorage) { 
 			Write-Host 'YES' -ForegroundColor Green
 		} else {
 			Write-Host 'NO (At Least 64 GB REQUIRED)' -ForegroundColor Red
@@ -1847,7 +2030,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 
 				exit 0 # Not sure if exit is necessary after Stop-Computer but doesn't hurt.
 			}
-		} elseif ($win11compatibleTPM -and $win11compatibleArchitecture -and $win11compatibleBootMethod -and $win11compatibleCPUmodel -and $win11compatibleCPUcores -and $win11compatibleCPUspeed -and $win11compatiblePartitionType -and $win11compatibleRAM -and $win11compatibleSecureBoot -and $win11compatibleStorage -and $win11compatibleTPMfromWhyNotWin11) {
+		} elseif ($win11compatibleTPM -and $win11compatibleArchitecture -and $win11compatibleBootMethod -and ($win11compatibleCPUmodel -or $eleventhGenIntelCPUorNewer) -and $win11compatibleCPUcores -and $win11compatibleSSE4dot2 -and $win11compatiblePartitionType -and $win11compatibleRAM -and $win11compatibleSecureBoot -and $win11compatibleStorage -and $win11compatibleTPMfromWhyNotWin11) {
 			Write-Host "`n  Successfully Verified Windows 11 Support" -ForegroundColor Green
 
 			Add-Content '\Install\Windows Setup Log.txt' "Verified Windows 11 Support - $(Get-Date)" -ErrorAction SilentlyContinue
@@ -1933,7 +2116,8 @@ EXIT
 		Start-Process '\Program Files\Intel Corporation\Intel Processor Diagnostic Tool 64bit\Win-IPDT64.exe' -NoNewWindow -WorkingDirectory '\Program Files\Intel Corporation\Intel Processor Diagnostic Tool 64bit' -ErrorAction SilentlyContinue # NOTE: Working directory MUST be set for the exe to be able to find the included DLLs to launch properly.
 
 		# Quit "explorer" to have a minimal interface only showing the IPDT window. (Must use "taskkill" to fully quit "explorer" since using "Stop-Process" will quit and relaunch it while "taskkill" will just quit it.)
-		Start-Process 'taskkill' -NoNewWindow -RedirectStandardOutput 'NUL' -ArgumentList '/f', '/im', 'explorer.exe' -ErrorAction SilentlyContinue
+		# NO LONGER QUIT EXPLORER BUT KEEP THIS COMMENTED OUT IN CASE FOR FUTURE USE:
+		# Start-Process 'taskkill' -NoNewWindow -RedirectStandardOutput 'NUL' -ArgumentList '/f', '/im', 'explorer.exe' -ErrorAction SilentlyContinue
 	} elseif ((Test-Path '\Install\QA Helper\java-jre\bin\javaw.exe') -and (Test-Path '\Install\QA Helper\QA_Helper.jar')) {
 		Write-Output "`n`n  Launching QA Helper..."
 

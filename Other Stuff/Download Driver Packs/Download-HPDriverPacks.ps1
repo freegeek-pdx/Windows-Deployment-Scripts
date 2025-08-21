@@ -34,7 +34,7 @@ if (($IsWindows -or ($null -eq $IsWindows)) -and (Test-Path "$PSScriptRoot\Drive
     $expandExitCode = (Start-Process 'expand' -NoNewWindow -Wait -PassThru -RedirectStandardOutput 'NUL' -ArgumentList "`"$PSScriptRoot\DriverPackCatalog-HP.cab`"", "`"$PSScriptRoot\DriverPackCatalog-HP-NEW.xml`"").ExitCode
            
     if ($expandExitCode -ne 0) {
-        Write-Output '>>> EXPANSION FAILED <<<'
+        Write-Output ">>> EXPANSION FAILED (EXIT CODE $expandExitCode) <<<"
     }
     
     if ((Test-Path "$PSScriptRoot\DriverPackCatalog-HP-NEW.xml") -and (Test-Path "$PSScriptRoot\DriverPackCatalog-HP.xml")) {
@@ -252,69 +252,70 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 
     if (($IsWindows -or ($null -eq $IsWindows)) -and (Test-Path $hpDriverPacksPath)) {
         $exeDownloadPath = "$hpDriverPacksPath\Unique Driver Pack EXEs"
+        $exeExpansionPath = "$hpDriverPacksPath\Unique Driver Packs"
         
         if (-not (Test-Path $exeDownloadPath)) {
             New-Item -ItemType 'Directory' -Force -Path $exeDownloadPath | Out-Null
         }
+        
+        if (-not (Test-Path $exeExpansionPath)) {
+            New-Item -ItemType 'Directory' -Force -Path $exeExpansionPath | Out-Null
+        }
 
-        if (-not (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)")) {
+        if (-not (Test-Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)")) {
+            if (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)") {
+                Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
+            }
+
             Write-Output 'DOWNLOADING...'
             Invoke-WebRequest -Uri $thisUniqueDriverPack.DownloadURL -OutFile "$exeDownloadPath\$($thisUniqueDriverPack.FileName)"
 
             if (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)") {
                 $downloadedCount ++
+
+                Write-Output 'VALIDATING EXE...'
+                if (($null -ne $thisUniqueDriverPack.HashSHA256) -and ($thisUniqueDriverPack.HashSHA256 -ne '')) {
+                    if ((Get-FileHash "$exeDownloadPath\$($thisUniqueDriverPack.FileName)").Hash -eq $thisUniqueDriverPack.HashSHA256) {
+                        $validatedExeCount ++
+                    } else {
+                        Write-Output '>>> INVALID - DELETING EXE <<<'
+                        Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
+                    }
+                } elseif (($null -ne $thisUniqueDriverPack.HashMD5) -and ($thisUniqueDriverPack.HashMD5 -ne '')) {
+                    Write-Output '!!! VALIDATING WITH MD5 FALLBACK !!!'
+                    if ((Get-FileHash "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Algorithm 'MD5').Hash -eq $thisUniqueDriverPack.HashMD5) {
+                        $validatedExeCount ++
+                    } else {
+                        Write-Output '>>> INVALID EXE - DELETING EXE <<<'
+                        Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
+                    }
+                } else {
+                    Write-Output '!!! NO HASH TO VALIDATE !!!'
+                }
+
+                if (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)") {
+                    Write-Output 'EXPANDING...'
+                    
+                    # The EXE expansion will make all necessary directories.
+                    $expandExitCode = (Start-Process "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -NoNewWindow -Wait -PassThru -ArgumentList '/s', '/e', "/f `"$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)`"").ExitCode
+
+                    Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
+
+                    if (($expandExitCode -eq 0) -or ($expandExitCode -eq 1168)) {
+                        # It appears that 1168 is the success exit code for newer driver packs, but older ones return 0 as success
+                        $expandedCount ++
+                    } else {
+                        Write-Output ">>> EXPANSION FAILED (EXIT CODE $expandExitCode) - DELETING FOLDER <<<"
+
+                        if (Test-Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)") {
+                            Remove-Item "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -Recurse -Force
+                        }
+                    }
+                }
             }
         } else {
-            Write-Output 'ALREADY DOWNLOADED'
-        }
-
-        if (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)") {
-            Write-Output 'VALIDATING EXE...'
-            if (($null -ne $thisUniqueDriverPack.HashSHA256) -and ($thisUniqueDriverPack.HashSHA256 -ne '')) {
-                if ((Get-FileHash "$exeDownloadPath\$($thisUniqueDriverPack.FileName)").Hash -eq $thisUniqueDriverPack.HashSHA256) {
-                    $validatedExeCount ++
-                } else {
-                    Write-Output '>>> INVALID - DELETING EXE <<<'
-                    Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
-                }
-            } elseif (($null -ne $thisUniqueDriverPack.HashMD5) -and ($thisUniqueDriverPack.HashMD5 -ne '')) {
-                Write-Output '!!! VALIDATING WITH MD5 FALLBACK !!!'
-                if ((Get-FileHash "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Algorithm 'MD5').Hash -eq $thisUniqueDriverPack.HashMD5) {
-                    $validatedExeCount ++
-                } else {
-                    Write-Output '>>> INVALID EXE - DELETING EXE <<<'
-                    Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
-                }
-            } else {
-                Write-Output '!!! NO HASH TO VALIDATE !!!'
-            }
-        }
-
-        $exeExpansionPath = "$hpDriverPacksPath\Unique Driver Packs"
-        
-        if (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)") {
-            if (-not (Test-Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)")) {
-                Write-Output 'EXPANDING...'
-                
-                # The EXE expansion will make all necessary directories.
-                $expandExitCode = (Start-Process "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -NoNewWindow -Wait -PassThru -ArgumentList '/s', '/e', "/f `"$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)`"").ExitCode
-                
-                if (($expandExitCode -eq 0) -or ($expandExitCode -eq 1168)) {
-                    # It appears that 1168 is the success exit code for newer driver backs, but older ones return 0 as success
-                    $expandedCount ++
-                } else {
-                    Write-Output '>>> EXPANSION FAILED - DELETING EXE & FOLDER <<<'
-                    Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
-                    Remove-Item "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -Recurse -Force
-                }
-            } else {
-                # TODO: Check for basic expected structure to validate expansion.
-                Write-Output 'ALREADY EXPANDED'
-            }
-        } elseif (Test-Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)") {
-            # Delete expanded folder if EXE does not exist
-            Write-Output '>>> NO EXE - DELETING FOLDER <<<'
-            Remove-Item "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -Recurse -Force
+            # TODO: Check for basic expected structure to validate expansion.
+            Write-Output 'ALREADY DOWNLOADED AND EXPANDED'
         }
 
         if (Test-Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)") {
@@ -337,34 +338,31 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 
 if (($IsWindows -or ($null -eq $IsWindows)) -and (Test-Path $hpDriverPacksPath)) {
     Write-Output '----------'
-    Write-Output 'CHECKING FOR STRAY SOFTPAQ EXEs AND FOLDERS...'
+    Write-Output 'CHECKING FOR STRAY DRIVER PACKS...'
     
-    $allReferencedSoftPaqs = @()
+    $allReferencedDriverPacks = @()
 
     Get-ChildItem "$hpDriverPacksPath\*" -File -Include '*.txt' | ForEach-Object {
-        $thisSoftPaq = ($_ | Get-Content -First 1)
+        $thisDriverPack = ($_ | Get-Content -First 1)
 
-        if (($null -ne $thisSoftPaq) -and $thisSoftPaq.Contains('\')) {
-            $thisSoftPaq = $thisSoftPaq.Split('\')[1]
+        if (($null -ne $thisDriverPack) -and $thisDriverPack.Contains('\')) {
+            $thisDriverPack = $thisDriverPack.Split('\')[1]
 
-            if (-not $allReferencedSoftPaqs.Contains($thisSoftPaq)) {
-                $allReferencedSoftPaqs += $thisSoftPaq
+            if (-not $allReferencedDriverPacks.Contains($thisDriverPack)) {
+                $allReferencedDriverPacks += $thisDriverPack
             }
         }
     }
 
-    Get-ChildItem "$hpDriverPacksPath\Unique Driver Pack EXEs" | ForEach-Object {
-        if (-not $allReferencedSoftPaqs.Contains($_.BaseName)) {
-            Write-Output "DELETING STRAY SOFTPAQ EXE: $($_.Name)"
-            Remove-Item $_.FullName -Force
+    Get-ChildItem "$hpDriverPacksPath\Unique Driver Packs" | ForEach-Object {
+        if (-not $allReferencedDriverPacks.Contains($_.Name)) {
+            Write-Output "DELETING STRAY DRIVER PACK: $($_.Name)"
+            Remove-Item $_.FullName -Recurse -Force
         }
     }
 
-    Get-ChildItem "$hpDriverPacksPath\Unique Driver Packs" | ForEach-Object {
-        if (-not $allReferencedSoftPaqs.Contains($_.Name)) {
-            Write-Output "DELETING STRAY SOFTPAQ FOLDER: $($_.Name)"
-            Remove-Item $_.FullName -Recurse -Force
-        }
+    if (Test-Path "$hpDriverPacksPath\Unique Driver Pack EXEs") {
+        Remove-Item "$hpDriverPacksPath\Unique Driver Pack EXEs" -Recurse -Force
     }
 }
 

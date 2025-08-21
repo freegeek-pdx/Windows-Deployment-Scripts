@@ -21,7 +21,7 @@
 :: To use this script, you must download the latest JDK version and extract the folder on the Desktop.
 
 :: Set the version of the JDK (in the folder name "jdk-#") below:
-SET JDK_VERSION=17.0.8.1+1
+SET JDK_VERSION=21.0.8+9
 
 ECHO.
 ECHO   Creating JLink JRE %JDK_VERSION:_=+%...
@@ -34,7 +34,7 @@ SET JDK_PATH=%DESKTOP_PATH%\jdk-%JDK_VERSION:_=+%
 IF NOT EXIST "%JDK_PATH%" ECHO   ERROR: %JDK_PATH% DOES NOT EXIST!
 
 IF EXIST "%DESKTOP_PATH%\java-jre" RMDIR /S /Q "%DESKTOP_PATH%\java-jre"
-IF EXIST "%JDK_PATH%" %JDK_PATH%\bin\jlink.exe --add-modules "java.base,java.desktop,java.logging" --strip-debug --no-man-pages --no-header-files --compress "2" --output "%DESKTOP_PATH%\java-jre"
+IF EXIST "%JDK_PATH%" %JDK_PATH%\bin\jlink.exe --add-modules "java.base,java.desktop,java.logging" --strip-debug --no-man-pages --no-header-files --compress "zip-9" --output "%DESKTOP_PATH%\java-jre"
 :: java.datatransfer, java.prefs, and java.xml are included automatically with java.desktop
 
 IF EXIST "%DESKTOP_PATH%\jlink-jre-%JDK_VERSION:+=_%_windows-x64.zip" DEL /F "%DESKTOP_PATH%\jlink-jre-%JDK_VERSION:+=_%_windows-x64.zip"

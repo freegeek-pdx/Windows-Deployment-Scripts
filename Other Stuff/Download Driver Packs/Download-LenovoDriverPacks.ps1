@@ -404,90 +404,92 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 
     if (($IsWindows -or ($null -eq $IsWindows)) -and (Test-Path $lenovoDriverPacksPath)) {
         $exeDownloadPath = "$lenovoDriverPacksPath\Unique Driver Pack EXEs"
+        $exeExpansionPath = "$lenovoDriverPacksPath\Unique Driver Packs"
         
         if (-not (Test-Path $exeDownloadPath)) {
             New-Item -ItemType 'Directory' -Force -Path $exeDownloadPath | Out-Null
         }
+        
+        if (-not (Test-Path $exeExpansionPath)) {
+            New-Item -ItemType 'Directory' -Force -Path $exeExpansionPath | Out-Null
+        }
 
-        if (-not (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)")) {
+        if (-not (Test-Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)")) {
+            if (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)") {
+                Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
+            }
+
             Write-Output 'DOWNLOADING...'
             Invoke-WebRequest -Uri $thisUniqueDriverPack.DownloadURL -OutFile "$exeDownloadPath\$($thisUniqueDriverPack.FileName)"
 
             if (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)") {
                 $downloadedCount ++
-            }
-        } else {
-            Write-Output 'ALREADY DOWNLOADED'
-        }
 
-        if (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)") {
-            Write-Output 'VALIDATING EXE...'
-            if (($null -ne $hashSHA256) -and ($hashSHA256 -ne '')) {
-                if ((Get-FileHash "$exeDownloadPath\$($thisUniqueDriverPack.FileName)").Hash -eq $hashSHA256) {
-                    $validatedExeCount ++
+                Write-Output 'VALIDATING EXE...'
+                if (($null -ne $hashSHA256) -and ($hashSHA256 -ne '')) {
+                    if ((Get-FileHash "$exeDownloadPath\$($thisUniqueDriverPack.FileName)").Hash -eq $hashSHA256) {
+                        $validatedExeCount ++
+                    } else {
+                        Write-Output '>>> INVALID - DELETING EXE <<<'
+                        Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
+                    }
                 } else {
-                    Write-Output '>>> INVALID - DELETING EXE <<<'
-                    Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
-                }
-            } else {
-                Write-Output '!!! NO HASH TO VALIDATE !!!'
-            }
-        }
-
-        $exeExpansionPath = "$lenovoDriverPacksPath\Unique Driver Packs"
-        
-        if (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)") {
-            if (-not (Test-Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)")) {
-                Write-Output 'EXPANDING...'
-                
-                if (Test-Path 'C:\DRIVERS') {
-                    Remove-Item 'C:\DRIVERS' -Recurse -Force
+                    Write-Output '!!! NO HASH TO VALIDATE !!!'
                 }
 
-                # COMMAND LINE ARGS: https://jrsoftware.org/ishelp/index.php?topic=setupcmdline
-                # Extract in default location (which should be within "C:\DRIVERS") instead of intended location using "/DIR=" because some
-                # driver packs prompt with a "You have changed the extraction locaion..." alert that stops the process until manually clicking OK.
-                $expandExitCode = (Start-Process "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -NoNewWindow -Wait -PassThru -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES').ExitCode
-                
-                if ($expandExitCode -eq 0) {
+                if (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)") {
+                    Write-Output 'EXPANDING...'
+                    
                     if (Test-Path 'C:\DRIVERS') {
-                        $thisExpansionFoldersToMove = Get-ChildItem 'C:\DRIVERS'
-                        while ($thisExpansionFoldersToMove.Count -eq 1) {
-                            $thisExpansionFoldersToMove = $thisExpansionFoldersToMove | Get-ChildItem
+                        Remove-Item 'C:\DRIVERS' -Recurse -Force
+                    }
+        
+                    # COMMAND LINE ARGS: https://jrsoftware.org/ishelp/index.php?topic=setupcmdline
+                    # Extract in default location (which should be within "C:\DRIVERS") instead of intended location using "/DIR=" because some
+                    # driver packs prompt with a "You have changed the extraction locaion..." alert that stops the process until manually clicking OK.
+                    $expandExitCode = (Start-Process "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -NoNewWindow -Wait -PassThru -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES').ExitCode
+
+                    Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
+
+                    if ($expandExitCode -eq 0) {
+                        if (Test-Path 'C:\DRIVERS') {
+                            $thisExpansionFoldersToMove = Get-ChildItem 'C:\DRIVERS'
+                            while ($thisExpansionFoldersToMove.Count -eq 1) {
+                                $thisExpansionFoldersToMove = $thisExpansionFoldersToMove | Get-ChildItem
+                            }
+        
+                            try {
+                                Write-Output 'MOVING EXPANDED FOLDER...'
+        
+                                New-Item -ItemType 'Directory' -Force -Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -ErrorAction Stop | Out-Null
+                                Move-Item $thisExpansionFoldersToMove.FullName "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -ErrorAction Stop
+        
+                                $expandedCount ++
+                            } catch {
+                                Write-Output ">>> ERROR MOVING EXPANDED FOLDER - DELETING FOLDERS ($_) <<<"
+                                Remove-Item "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -Recurse -Force
+                            }
+        
+                            Remove-Item 'C:\DRIVERS' -Recurse -Force
+                        } else {
+                            Write-Output '>>> EXPANSION FOLDER NOT FOUND AT "\DRIVERS" <<<'
                         }
+                    } else {
+                        Write-Output ">>> EXPANSION FAILED (EXIT CODE $expandExitCode) - DELETING FOLDERS <<<"
 
-                        try {
-                            Write-Output 'MOVING EXPANDED FOLDER...'
-
-                            New-Item -ItemType 'Directory' -Force -Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -ErrorAction Stop | Out-Null
-                            Move-Item $thisExpansionFoldersToMove.FullName "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -ErrorAction Stop
-
-                            $expandedCount ++
-                        } catch {
-                            Write-Output ">>> ERROR MOVING EXPANDED FOLDER - DELETING FOLDERS ($_) <<<"
+                        if (Test-Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)") {
                             Remove-Item "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -Recurse -Force
                         }
 
-                        Remove-Item "C:\DRIVERS" -Recurse -Force
-                    } else {
-                        Write-Output '>>> EXPANSION FOLDER NOT FOUND AT "\DRIVERS" <<<'
+                        if (Test-Path 'C:\DRIVERS') {
+                            Remove-Item 'C:\DRIVERS' -Recurse -Force
+                        }
                     }
-                } else {
-                    Write-Output '>>> EXPANSION FAILED - DELETING EXE AND FOLDERS <<<'
-                    
-                    Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
-                    Remove-Item "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -Recurse -Force
-                    Remove-Item "C:\DRIVERS" -Recurse -Force
                 }
-            } else {
-                Write-Output 'ALREADY EXPANDED'
-
-                # TODO: Check for basic expected structure to validate expansion.
             }
-        } elseif (Test-Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)") {
-            # Delete expanded folder if EXE does not exist
-            Write-Output '>>> NO EXE - DELETING FOLDER <<<'
-            Remove-Item "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -Recurse -Force
+        } else {
+            # TODO: Check for basic expected structure to validate expansion.
+            Write-Output 'ALREADY DOWNLOADED AND EXPANDED'
         }
 
         if (Test-Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)") {
@@ -506,36 +508,33 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 
 if (($IsWindows -or ($null -eq $IsWindows)) -and (Test-Path $lenovoDriverPacksPath)) {
     Write-Output '----------'
-    Write-Output 'CHECKING FOR STRAY DRIVER EXEs AND FOLDERS...'
+    Write-Output 'CHECKING FOR STRAY DRIVER PACKS...'
     
-    $allReferencedDriverEXEs = @()
+    $allReferencedDriverPacks = @()
 
     Get-ChildItem "$lenovoDriverPacksPath\*" -File -Include '*.txt' | ForEach-Object {
-        $thisDriverEXE = ($_ | Get-Content -First 1)
+        $thisDriverPack = ($_ | Get-Content -First 1)
 
-        if (($null -ne $thisDriverEXE) -and $thisDriverEXE.Contains('\')) {
-            $thisDriverEXE = $thisDriverEXE.Split('\')[1]
+        if (($null -ne $thisDriverPack) -and $thisDriverPack.Contains('\')) {
+            $thisDriverPack = $thisDriverPack.Split('\')[1]
 
             # TODO: Doubly confirm that NO Model paths contain references to Type-specific Driver Packs (to catch any mistakes from above).
 
-            if (-not $allReferencedDriverEXEs.Contains($thisDriverEXE)) {
-                $allReferencedDriverEXEs += $thisDriverEXE
+            if (-not $allReferencedDriverPacks.Contains($thisDriverPack)) {
+                $allReferencedDriverPacks += $thisDriverPack
             }
         }
     }
 
-    Get-ChildItem "$lenovoDriverPacksPath\Unique Driver Pack EXEs" | ForEach-Object {
-        if (-not $allReferencedDriverEXEs.Contains($_.BaseName)) {
-            Write-Output "DELETING STRAY DRIVER EXE: $($_.Name)"
-            Remove-Item $_.FullName -Force
+    Get-ChildItem "$lenovoDriverPacksPath\Unique Driver Packs" | ForEach-Object {
+        if (-not $allReferencedDriverPacks.Contains($_.Name)) {
+            Write-Output "DELETING STRAY DRIVER PACK: $($_.Name)"
+            Remove-Item $_.FullName -Recurse -Force
         }
     }
 
-    Get-ChildItem "$lenovoDriverPacksPath\Unique Driver Packs" | ForEach-Object {
-        if (-not $allReferencedDriverEXEs.Contains($_.Name)) {
-            Write-Output "DELETING STRAY DRIVER FOLDER: $($_.Name)"
-            Remove-Item $_.FullName -Recurse -Force
-        }
+    if (Test-Path "$lenovoDriverPacksPath\Unique Driver Pack EXEs") {
+        Remove-Item "$lenovoDriverPacksPath\Unique Driver Pack EXEs" -Recurse -Force
     }
 }
 

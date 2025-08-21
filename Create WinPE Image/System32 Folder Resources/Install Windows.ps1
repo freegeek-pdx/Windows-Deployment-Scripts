@@ -2,7 +2,8 @@
 # By Pico Mitchell for Free Geek
 # Originally written and tested in September 2020 for Windows 10, version 2004
 # Tested in November 2022 for Windows 10, version 22H2
-# AND Tested in November 2022 for Windows 11, version 22H2
+# AND Tested in November 2023 for Windows 11, version 23H2
+# AND Tested in October 2024 for Windows 11, version 24H2
 #
 # MIT License
 #
@@ -19,7 +20,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2023.3.24-1
+# Version: 2025.8.21-1
 
 # PowerShell must be installed in WinPE to run this script (which will be taken care of automatically if WinPE is built with "Create WinPE Image.ps1"):
 # https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-adding-powershell-support-to-windows-pe
@@ -55,6 +56,17 @@ $testMode = (Test-Path '\Windows\System32\fgFLAG-TEST') # Use System32 folder fo
 $ipdtMode = (Test-Path '\Windows\System32\fgFLAG-IPDT') # This mode will launch auto-launch "Intel Processor Diagnostic Tool" instead of "QA Helper" in the installed OS (for Hardware Testing).
 
 FocusScriptWindow
+
+$getKeyStateFunctionTypes = Add-Type -PassThru -Name GetKeyState -MemberDefinition @'
+[DllImport("user32.dll")] public static extern short GetAsyncKeyState(int virtualKeyCode); 
+'@ # Based On: https://superuser.com/a/1578611
+
+if ((-not $testMode) -and ($getKeyStateFunctionTypes::GetAsyncKeyState([Byte][Char]'T') -eq -32767) -and ($getKeyStateFunctionTypes::GetAsyncKeyState('0x11') -eq -32767)) { # 0x11 = Control Key ("-32767" explanation: https://stackoverflow.com/a/60797678)
+	Write-Host "`n  TEST MODE ENABLED (Control+T Held)" -ForegroundColor Yellow
+	$testMode = $true # Set test mode if Control+T is held to also be able to get into test mode dynamically if flag doesn't exist on boot.
+} elseif ($testMode) {
+	Write-Host "`n  TEST MODE ENABLED (Flag File Exists)" -ForegroundColor Yellow
+}
 
 # WinPE Initialization Reference: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-mount-and-customize#highperformance
 
@@ -276,6 +288,26 @@ if (-not $didSyncSystemTime) {
 	Write-Host "`n  System Time May Be Incorrect - CONTINUING ANYWAY" -ForegroundColor Yellow
 }
 
+
+if (Test-Path '\Install\Scripts\Windows 11 Supported Processors Lists\SupportedProcessorsIntel.txt') {
+	Write-Output "`n`n  Updating Windows 11 Supported Processors Lists for WhyNotWin11..."
+
+	$whyNotWin11LocalAppDataFolderPath = '\Windows\System32\config\systemprofile\AppData\Local\WhyNotWin11' # This path is what WhyNotWin11 will in WinPE/RE, but $Env:LOCALAPPDATA is empty in WinPE/RE so must set the path manually.
+	if (Test-Path $whyNotWin11LocalAppDataFolderPath) {
+		Remove-Item $whyNotWin11LocalAppDataFolderPath -Recurse -Force -ErrorAction Stop
+	}
+
+	New-Item -ItemType 'Directory' -Path $whyNotWin11LocalAppDataFolderPath -ErrorAction Stop | Out-Null
+
+	Copy-Item '\Install\Scripts\Windows 11 Supported Processors Lists\SupportedProcessors*.txt' $whyNotWin11LocalAppDataFolderPath -Force -ErrorAction Stop
+
+	New-Item -ItemType 'Directory' -Path "$whyNotWin11LocalAppDataFolderPath\Langs" -ErrorAction Stop | Out-Null # If the "Langs" folder doesn't exist, WhyNotWin11 will overwrite the supported processor lists with its older embedded lists.
+	Set-Content "$whyNotWin11LocalAppDataFolderPath\Langs\version" '0' # The language version file must exist for WhyNotWin11 to copy in the language files. Setting the value to "0" so it will be a version that will always be outdated so WhyNotWin11 will update the language files.
+
+	Write-Host "`n  Successfully Updated Windows 11 Supported Processors Lists" -ForegroundColor Green
+}
+
+
 $didDetectExistingDPK = $false
 
 Write-Output "`n`n  Checking for Existing Digital Product Key (DPK) in SMBIOS..."
@@ -314,7 +346,7 @@ if (Test-Path '\Install\DPK\oa3tool.exe') {
 }
 
 if (-not $didDetectExistingDPK) {
-	Write-Host "`n  Failed to Detect DPK in SMBIOS - CONTINUING ANYWAY - MUST MANUALLY CONFIRM COA OR GML" -ForegroundColor Yellow
+	Write-Host "`n  Failed to Detect DPK in SMBIOS - CONTINUING ANYWAY - MUST MANUALLY CONFIRM GML OR COA" -ForegroundColor Yellow
 }
 
 Start-Sleep 3
@@ -324,9 +356,9 @@ if (-not $didDetectExistingDPK) {
 
 	for ( ; ; ) {
 		Clear-Host
-		Write-Host "`n  Windows can only be installed and licensed with a Refurbished DPK on computers that originally shipped with Windows.`n  You must manually verify that a COA or GML sticker is on this computer since a DPK was not detected in SMBIOS." -ForegroundColor Yellow
+		Write-Host "`n  Windows can only be installed and licensed with a Refurbished DPK on computers that originally shipped with Windows.`n  You must manually verify that a GML or COA sticker is on this computer since a DPK was not detected in SMBIOS." -ForegroundColor Yellow
 
-		Write-Output "`n`n  Does this computer have a Certificate of Authenticity (COA) or Genuine Microsoft Label (GML) sticker`n  for any of the following Windows versions anywhere on its case?"
+		Write-Output "`n`n  Does this computer have a Genuine Microsoft Label (GML) or Certificate of Authenticity (COA) sticker`n  for any of the following Windows versions anywhere on its case?"
 		Write-Host "`n  Windows XP, Windows Vista, Windows 7 (Starter, Home Basic, Home Premium, Pro, or Ultimate),`n  Windows 8 or 8.1 (Home or Pro), Windows 10 (Home or Pro), or Windows 11 (Home or Pro)`n" -ForegroundColor Blue
 
 		if ($lastConfirmExistingWindowsError -ne '') {
@@ -367,6 +399,7 @@ if (-not $didDetectExistingDPK) {
 		}
 	}
 }
+
 
 if ($testMode) {
 	Start-Process 'cmd' -WindowStyle Minimized -ErrorAction SilentlyContinue
@@ -442,6 +475,19 @@ for ( ; ; ) {
 		while (Get-Process | Where-Object { $_.MainWindowTitle.Contains('QA Helper') }) {
 			Start-Sleep 1
 		}
+
+		if ((-not $testMode) -and (Test-Path '\Install\QA Helper Log.txt')) { # Also set installation to Test Mode if QA Helper was logged in Test Mode.
+			foreach ($thisQAhelperLogLine in (Get-Content '\Install\QA Helper Log.txt')) {
+				if ($thisQAhelperLogLine.StartsWith('ID: ')) {
+					$testMode = $thisQAhelperLogLine.Contains('(Test Mode)')
+					# Continue check entire QA Helper Log to be sure FINAL login was in Test Mode.
+				}
+			}
+
+			if ($testMode) {
+				Write-Host "`n  TEST MODE ENABLED (QA Helper in Test Mode)" -ForegroundColor Yellow
+			}
+		}
 	} else {
 		Write-Host "`n  ERROR: Failed to install QA Helper." -ForegroundColor Red
 		Write-Host "`n`n  CONTINUING TO CHOOSE DRIVE TO INSTALL WINDOWS ONTO IN 3 SECONDS..." -ForegroundColor Yellow
@@ -458,17 +504,25 @@ for ( ; ; ) {
 			Write-Host $lastChooseInstallDriveError -ForegroundColor Red
 		}
 
-		$installDriveOptions = Get-PhysicalDisk | Where-Object { ($_.BusType -eq 'SATA') -or ($_.BusType -eq 'ATA') -or ($_.BusType -eq 'NVMe') -or ($_.BusType -eq 'RAID') } | Sort-Object -Property 'DeviceId'
+		$installDriveOptions = Get-PhysicalDisk | Where-Object { ($_.BusType -eq 'SATA') -or ($_.BusType -eq 'ATA') -or ($_.BusType -eq 'NVMe') -or ($_.BusType -eq 'RAID') -or (($_.BusType -eq 'SD') -and ($_.PhysicalLocation -like 'Integrated*')) } | Sort-Object -Property 'DeviceId'
+		$ssdInstallDriveIsAvailable = $false
 
 		if ($installDriveOptions.DeviceId.Count -gt 0) {
-			$installDriveOptions | ForEach-Object {
-				$thisDriveMediaType = $_.MediaType
+			foreach ($thisInstallDriveOption in $installDriveOptions) {
+				$thisDriveMediaType = $thisInstallDriveOption.MediaType
 
 				if ($thisDriveMediaType -eq 'Unspecified') {
 					$thisDriveMediaType = 'HD' # Just show as "HD" (not "HDD" or "SSD") if MediaType is "Unspecified"
+				} elseif ($thisDriveMediaType -eq 'SSD') {
+					$ssdInstallDriveIsAvailable = $true
 				}
 
-				Write-Host "`n    $($_.DeviceId): ERASE and INSTALL Windows Onto $([math]::Round($_.Size / 1000 / 1000 / 1000)) GB $($_.BusType) $thisDriveMediaType `"$($_.Model)`"" -ForegroundColor Cyan
+				$thisInstallDriveDisplayBusType = $thisInstallDriveOption.BusType
+				if ($thisInstallDriveDisplayBusType -eq 'SD') {
+					$thisInstallDriveDisplayBusType = 'eMMC' # Only internal embedded MMC drives will be detected based on conditions above, so display them as "eMMC".
+				}
+
+				Write-Host "`n    $($thisInstallDriveOption.DeviceId): ERASE and INSTALL Windows Onto $([math]::Round($thisInstallDriveOption.Size / 1000 / 1000 / 1000)) GB $thisInstallDriveDisplayBusType $thisDriveMediaType `"$($thisInstallDriveOption.Model)`"" -ForegroundColor Cyan
 			}
 		} else {
 			Write-Host "`n    No Internal Drives Detected`n" -ForegroundColor Yellow
@@ -518,20 +572,29 @@ for ( ; ; ) {
 			$possibleInstallDriveID = $actionChoice -Replace '\D+', ''
 
 			if ($possibleInstallDrive = $installDriveOptions | Where-Object DeviceId -eq $possibleInstallDriveID) {
-				$possibleInstallDriveName = "$([math]::Round($possibleInstallDrive.Size / 1000 / 1000 / 1000)) GB $($possibleInstallDrive.BusType) $($possibleInstallDrive.MediaType) `"$($possibleInstallDrive.Model)`""
+				$possibleInstallDriveDisplayBusType = $possibleInstallDrive.BusType
+				if ($possibleInstallDriveDisplayBusType -eq 'SD') {
+					$possibleInstallDriveDisplayBusType = 'eMMC' # Only internal embedded MMC drives will be detected based on conditions above, so display them as "eMMC".
+				}
 
-				FocusScriptWindow
-				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-				$confirmDriveID = Read-Host "`n  Enter `"$possibleInstallDriveID`" Again to Confirm COMPLETELY ERASING and INSTALLING Windows`n  Onto $possibleInstallDriveName"
-				$confirmDriveID = $confirmDriveID -Replace '\D+', ''
+				$possibleInstallDriveName = "$([math]::Round($possibleInstallDrive.Size / 1000 / 1000 / 1000)) GB $possibleInstallDriveDisplayBusType $($possibleInstallDrive.MediaType) `"$($possibleInstallDrive.Model)`""
 
-				if ($possibleInstallDriveID -eq $confirmDriveID) {
-					$installDriveID = $possibleInstallDriveID
-					$installDriveName = $possibleInstallDriveName
-
-					break
+				if ($ssdInstallDriveIsAvailable -and ($possibleInstallDrive.MediaType -ne 'SSD')) { # Microsoft TPR contract dictates that if an SSD is installed, the OS must be installed onto it.
+					$lastChooseInstallDriveError = "`n    NOTICE: Windows MUST Be Installed onto an SSD When Available - CHOOSE AGAIN`n"
 				} else {
-					$lastChooseInstallDriveError = "`n    ERROR: Did Not Confirm Drive ID `"$possibleInstallDriveID`" - CHOOSE AGAIN`n"
+					FocusScriptWindow
+					$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+					$confirmDriveID = Read-Host "`n  Enter `"$possibleInstallDriveID`" Again to Confirm COMPLETELY ERASING and INSTALLING Windows`n  Onto $possibleInstallDriveName"
+					$confirmDriveID = $confirmDriveID -Replace '\D+', ''
+
+					if ($possibleInstallDriveID -eq $confirmDriveID) {
+						$installDriveID = $possibleInstallDriveID
+						$installDriveName = $possibleInstallDriveName
+
+						break
+					} else {
+						$lastChooseInstallDriveError = "`n    ERROR: Did Not Confirm Drive ID `"$possibleInstallDriveID`" - CHOOSE AGAIN`n"
+					}
 				}
 			} else {
 				if ($actionChoice) {
@@ -554,6 +617,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 	Start-Sleep 15
 } else {
 	$isSnapInstall = $false
+	$isNoAppsInstall = $false
 	$isBaseInstall = $false
 
 	if (-not $ipdtMode) { # Do not bother prompting to install SNAP apps when in IPDT mode.
@@ -569,6 +633,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 			Write-Host "`n    R: Regular Install with Standard Apps" -ForegroundColor Cyan
 			Write-Host "`n    S: SNAP Install with Extra Apps" -ForegroundColor Cyan
+			Write-Host "`n    N: Base Install with NO Apps (Useful When Only Wanting to Run Firmware Updates)" -ForegroundColor Cyan
 
 			if ($testMode) {
 				Write-Host "`n    B: Base Install With NO Apps and NO Testing (Boot Into Windows Setup After Install)" -ForegroundColor Cyan
@@ -593,20 +658,50 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 				Start-Sleep 2
 				break
-			} elseif ($testMode -and ($installationTypeChoice.ToUpper() -eq 'B')) {
+			} elseif ($installationTypeChoice.ToUpper() -eq 'N') {
+				FocusScriptWindow
+				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+				$confirmNoAppsInstall = Read-Host "`n  Enter `"N`" Again to Confirm Performing Base Windows Installation With NO Apps"
+
+				if ($confirmNoAppsInstall.ToUpper() -eq 'N') {
+					Write-Host "`n  Base Windows Installation With NO Apps Will Be Performed..." -ForegroundColor Green
+
+					$isNoAppsInstall = $true
+
+					Start-Sleep 2
+					break
+				} else {
+					$lastChooseInstallTypeError = "`n    ERROR: Did Not Confirm Performing Base Windows Installation With NO Apps - CHOOSE AGAIN`n"
+				}
+			} elseif ($installationTypeChoice.ToUpper() -eq 'B') { # Allow choosing "B" when NOT in Test Mode as a HIDDEN OPTION.
 				FocusScriptWindow
 				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 				$confirmBaseInstall = Read-Host "`n  Enter `"B`" Again to Confirm Performing Base Windows Installation With NO Apps and NO Testing"
 
 				if ($confirmBaseInstall.ToUpper() -eq 'B') {
-					Write-Host "`n  Base Windows Installation Will Be Performed..." -ForegroundColor Green
+					Write-Host "`n  Base Windows Installation With NO Apps and NO Testing Will Be Performed..." -ForegroundColor Green
 
 					$isBaseInstall = $true
 
 					Start-Sleep 2
 					break
 				} else {
-					$lastChooseInstallTypeError = "`n    ERROR: Did Not Confirm Performing Base Windows Installation - CHOOSE AGAIN`n"
+					$lastChooseInstallTypeError = "`n    ERROR: Did Not Confirm Performing Base Windows Installation With NO Apps and NO Testing - CHOOSE AGAIN`n"
+				}
+			} elseif ($installationTypeChoice.ToUpper() -eq 'IPDT') { # Allow specifying "IPDT" when NOT already in IPDT as a HIDDEN OPTION to also be able to get into IPDT mode dynamically if flag doesn't exist on boot.
+				FocusScriptWindow
+				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+				$confirmIPDTmode = Read-Host "`n  Type `"IPDT`" Again to Confirm `"Intel Processor Diagnostic Tool`" Mode"
+
+				if ($confirmIPDTmode.ToUpper() -eq 'IPDT') {
+					Write-Host "`n  Windows Installation in `"Intel Processor Diagnostic Tool`" Mode Will Be Performed..." -ForegroundColor Green
+
+					$ipdtMode = $true
+
+					Start-Sleep 2
+					break
+				} else {
+					$lastChooseInstallTypeError = "`n    ERROR: Did Not Confirm `"Intel Processor Diagnostic Tool`" Mode - CHOOSE AGAIN`n"
 				}
 			} elseif ($installationTypeChoice.ToUpper() -eq 'C') {
 				FocusScriptWindow
@@ -700,14 +795,11 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 	$osImagesSMBbasePath = "$smbShare\windows-resources\os-images"
 	$setupResourcesSMBbasePath = "$smbShare\windows-resources\setup-resources"
 
-	$osImagesPath = "$osImagesSMBbasePath\production"
-	$setupResourcesPath = "$setupResourcesSMBbasePath\production"
-
-	# When in test mode (and is not USB install), $osImagesSMBtestingPath will be checked first and $setupResourcesPath will be fallen back on if no test image is found.
+	# When in test mode (and local server is accessible), $osImagesSMBtestingPath will be checked first and $setupResourcesPath will be fallen back on if no test image is found.
 	# This way, we do not need to always store 2 duplicate os image files when no test image is needed.
 	$osImagesSMBtestingPath = "$osImagesSMBbasePath\testing"
 
-	# When in test mode (and is not USB install), all $setupResourcesPath files will be installed first and then anything in $setupResourcesSMBtestingPath will add to or overwrite those file.
+	# When in test mode (and local server is accessible), all $setupResourcesPath files will be installed first and then anything in $setupResourcesSMBtestingPath will add to or overwrite those file.
 	# This way, only modified or added files need to exist in $setupResourcesSMBtestingPath rather than a full duplicate of all required files.
 	$setupResourcesSMBtestingPath = "$setupResourcesSMBbasePath\testing"
 
@@ -731,14 +823,14 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 		$osImagesUSBpath = $null
 		$setupResourcesUSBpath = $null
-		# Check all removable drives for "windows-resources" folder (a better version of https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-identify-drive-letters)
+		# Check all drives for "windows-resources" folder (a better version of https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-identify-drive-letters)
 		# Do these checks within the loop because it seems that sometimes the USB isn't mounted on boot and needs to be unplugged and replugged and the technician needs to be able to try again.
-		$removableDrives = Get-Volume | Where-Object DriveType -eq Removable
-		foreach ($thisRemovableDrive in $removableDrives) {
-			$thisPossibleOSimagesUSBpath = "$($thisRemovableDrive.DriveLetter):\windows-resources\os-images"
-			$thisPossibleSetupResourcesUSBpath = "$($thisRemovableDrive.DriveLetter):\windows-resources\setup-resources"
+		$allVolumes = Get-Volume # DO NOT USE " | Where-Object DriveType -eq 'Removable'" because NVMe M.2 enclosures mount as "Fixed" drives (and when we were momentarily using Ventoy to boot from ISO, the ISO volume was "CD-ROM" instead of "Removable")
+		foreach ($thisVolume in $allVolumes) {
+			$thisPossibleOSimagesUSBpath = "$($thisVolume.DriveLetter):\windows-resources\os-images"
+			$thisPossibleSetupResourcesUSBpath = "$($thisVolume.DriveLetter):\windows-resources\setup-resources"
 
-			if ((Test-Path $thisPossibleOSimagesUSBpath) -and (Test-Path $thisPossibleSetupResourcesUSBpath) -and ((Get-ChildItem "$thisPossibleOSimagesUSBpath\*" -Include 'Windows-10-*.wim', 'Windows-10-*+1.swm').Count -gt 0)) {
+			if ((Test-Path $thisPossibleOSimagesUSBpath) -and (Test-Path $thisPossibleSetupResourcesUSBpath) -and ((Get-ChildItem "$thisPossibleOSimagesUSBpath\*" -Include 'Windows-*.wim', 'Windows-*+1.swm').Count -gt 0)) {
 				$osImagesUSBpath = $thisPossibleOSimagesUSBpath
 				$setupResourcesUSBpath = $thisPossibleSetupResourcesUSBpath
 
@@ -746,36 +838,40 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 			}
 		}
 
-		$isUSBinstall = $false # Will set to USB install mode if fails to connect to $smbServerIP AND both $osImagesUSBpath and $setupResourcesUSBpath are not null.
-
 		$lastTaskSucceeded = $true
 
-		$didConnectToServer = $false
+		$osImagesPath = "$osImagesSMBbasePath\production"
+		$setupResourcesPath = "$setupResourcesSMBbasePath\production"
 
-		try {
-			$didConnectToServer = (Test-Connection $smbServerIP -Count 1 -Quiet -ErrorAction Stop)
-		} catch {
-			Write-Host "`n  ERROR CONNECTING TO LOCAL FREE GEEK SERVER: $_" -ForegroundColor Red
-		}
+		$usbResourcesAccessible = $false
 
-		if ($didConnectToServer) {
-			Write-Host "`n  Successfully Connected to Local Free Geek Server" -ForegroundColor Green
-		} elseif (($null -ne $osImagesUSBpath) -and ($null -ne $setupResourcesUSBpath)) {
-			Write-Host "`n  Installing Windows via USB" -NoNewline -ForegroundColor Green
-			Write-Host " (Local Free Geek Server Unavailable)" -ForegroundColor Yellow
+		if (($null -ne $osImagesUSBpath) -and ($null -ne $setupResourcesUSBpath)) {
+			Write-Host "`n  Installing Windows via USB" -ForegroundColor Green
 
 			$osImagesPath = $osImagesUSBpath
 			$setupResourcesPath = $setupResourcesUSBpath
 
-			$isUSBinstall = $true
-		} else {
-			Write-Host "`n  ERROR: Failed to connect to local Free Geek server `"$smbServerIP`"." -ForegroundColor Red
+			$usbResourcesAccessible = $true
+		}
+
+		$localServerResourcesAccessible = $false
+
+		try {
+			$localServerResourcesAccessible = (Test-Connection $smbServerIP -Count 1 -Quiet -ErrorAction Stop)
+		} catch {
+			Write-Host "`n  ERROR CONNECTING TO LOCAL FREE GEEK SERVER: $_" -ForegroundColor Red
+		}
+
+		if ($localServerResourcesAccessible) {
+			Write-Host "`n  Successfully Connected to Local Free Geek Server" -ForegroundColor Green
+		} elseif (-not $usbResourcesAccessible) {
+			Write-Host "`n  ERROR: Failed to locate Windows on USB and failed connect to local Free Geek server." -ForegroundColor Red
 
 			$lastTaskSucceeded = $false
 		}
 
-		if ($lastTaskSucceeded -and (-not $isUSBinstall)) {
-			Write-Host "`n`n  Mounting SMB Share for Windows Installation Image - PLEASE WAIT, THIS MAY TAKE A MOMENT..." -NoNewline
+		if ($lastTaskSucceeded -and $localServerResourcesAccessible) {
+			Write-Host "`n`n  Mounting SMB Share for Windows Installation Images - PLEASE WAIT, THIS MAY TAKE A MOMENT..." -NoNewline
 
 			# Try to connect to SMB Share 5 times before stopping to show error to user because sometimes it takes a few attempts, or it sometimes just fails and takes more manual reattempts before it finally works.
 			# These failures seemed to happen more often when using a guest/anonymous SMS Share in WinPE. I think WinPE just has issues with guest/anonymous SMB Shares, so we're using a password protected one instead.
@@ -786,7 +882,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					$smbWdsMappingStatus = (New-SmbMapping -RemotePath $smbWdsShare -UserName $smbWdsUsername -Password $smbWdsPassword -Persistent $false -ErrorAction Stop).Status
 
 					if (($smbMappingStatus -eq 0) -and ($smbWdsMappingStatus -eq 0)) {
-						Write-Host "`n`n  Successfully Mounted SMB Share for Windows Installation Image" -ForegroundColor Green
+						Write-Host "`n`n  Successfully Mounted SMB Share for Windows Installation Images" -ForegroundColor Green
 					} else {
 						throw "SMB Mapping Status $smbMappingStatus + $smbWdsMappingStatus"
 					}
@@ -798,7 +894,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						Start-Sleep ($smbMountAttempt + 1) # Sleep a little longer after each attempt.
 					} else {
 						Write-Host "`n`n  ERROR MOUNTING SMB SHARE: $_" -ForegroundColor Red
-						Write-Host "`n  ERROR: Failed to connect to local Free Geek SMB share `"$smbShare`" or `"$smbWdsShare`"." -ForegroundColor Red
+						Write-Host "`n  ERROR: Failed to connect to local Free Geek SMB share." -ForegroundColor Red
 
 						$lastTaskSucceeded = $false
 					}
@@ -807,87 +903,72 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 		}
 
 		if (-not $lastTaskSucceeded) {
-			Write-Host "`n`n  IMPORTANT: Make sure Ethernet cable is plugged securely and try again." -ForegroundColor Red
-			Write-Host "`n  ALSO IMPORTANT: If you are doing a USB install, unplug and re-plug the USB drive and try again." -ForegroundColor Yellow
+			Write-Host "`n`n  IMPORTANT: Unplug and re-plug the USB drive and try again. " -ForegroundColor Red
+			Write-Host "`n  ALSO IMPORTANT: Make sure Ethernet cable is plugged securely and try again." -ForegroundColor Yellow
 		}
 
 		if (-not $didInstallWindowsImage) {
-			$latestWimPath = $null
-			$latestWimDisplayName = $null
+			$latestWindowsWims = @{}
 
 			if ($lastTaskSucceeded) {
-				Write-Output "`n`n  Locating Latest Windows 10 Installation Image..."
+				$windowsMajorVersions = @('11', '10')
 
-				$latestWin10wim = $null
-
-				if ($testMode -and (-not $isUSBinstall)) {
-					$latestWin10wim = Get-ChildItem "$osImagesSMBtestingPath\*" -Include 'Windows-10-*.wim', 'Windows-10-*+1.swm' | Sort-Object -Property 'LastWriteTime' | Select-Object -Last 1
-				}
-
-				if ($null -eq $latestWin10wim) {
-					$latestWin10wim = Get-ChildItem "$osImagesPath\*" -Include 'Windows-10-*.wim', 'Windows-10-*+1.swm' | Sort-Object -Property 'LastWriteTime' | Select-Object -Last 1
-
-					if (($null -ne $latestWin10wim) -and $testMode -and (-not $isUSBinstall)) {
-						Write-Host '    NO WIM IN TESTING OS IMAGES - USING WIM IN PRODUCTION OS IMAGES' -ForegroundColor Yellow
-					}
-				} else {
-					Write-Host '    FOUND WIM IN TESTING OS IMAGES' -ForegroundColor Yellow
-				}
-
-				if ($null -ne $latestWin10wim) {
-					$latestWimPath = $latestWin10wim.FullName
-					$latestWimDisplayName = $latestWin10wim.BaseName
-
-					if ($latestWimDisplayName.EndsWith('+1')) {
-						$latestWimDisplayName = $latestWin10wim.Name.Replace('+1.swm', ' (Split Image)')
+				foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
+					$windowsEditions = @('Pro')
+					if ($thisWindowsMajorVersion -eq '11') { # Only include Home for Windows 11 installs since Windows 10 is only kept around for testing and Firmware updates (and will never be licensed or sold) so only Pro is necessary.
+						$windowsEditions += 'Home'
 					}
 
-					$latestWimDisplayName = $latestWimDisplayName.Replace('-', ' ')
+					foreach ($thisWindowsEdition in $windowsEditions) {
+						Write-Output "`n`n  Locating Latest Windows $thisWindowsMajorVersion $thisWindowsEdition Installation Image..."
 
-					Write-Host "`n  Successfully Located Windows 10 Image: $latestWimDisplayName" -ForegroundColor Green
-				} else {
-					Write-Host "`n  ERROR: Failed to locate any Windows 10 installation images in `"$osImagesPath`"." -ForegroundColor Red
+						$thisLatestWindowsWim = $null
 
-					$lastTaskSucceeded = $false
+						if ($testMode -and $localServerResourcesAccessible) {
+							$thisLatestWindowsWim = Get-ChildItem "$osImagesSMBtestingPath\*" -Include "Windows-$thisWindowsMajorVersion-$thisWindowsEdition-*.wim", "Windows-$thisWindowsMajorVersion-$thisWindowsEdition-*+1.swm" | Sort-Object -Property 'LastWriteTime' | Select-Object -Last 1
+						}
+
+						if ($null -eq $thisLatestWindowsWim) {
+							$thisLatestWindowsWim = Get-ChildItem "$osImagesPath\*" -Include "Windows-$thisWindowsMajorVersion-$thisWindowsEdition-*.wim", "Windows-$thisWindowsMajorVersion-$thisWindowsEdition-*+1.swm" | Sort-Object -Property 'LastWriteTime' | Select-Object -Last 1
+
+							if (($null -ne $thisLatestWindowsWim) -and $testMode -and $localServerResourcesAccessible) {
+								Write-Host '    NO WIM IN TESTING OS IMAGES - USING WIM IN PRODUCTION OS IMAGES' -ForegroundColor Yellow
+							}
+						} else {
+							Write-Host '    FOUND WIM IN TESTING OS IMAGES' -ForegroundColor Yellow
+						}
+
+						if ($null -ne $thisLatestWindowsWim) {
+							$thisLatestWindowsWimPath = $thisLatestWindowsWim.FullName
+							$thisLatestWindowsWimDisplayName = $thisLatestWindowsWim.BaseName
+
+							if ($thisLatestWindowsWimDisplayName.EndsWith('+1')) {
+								$thisLatestWindowsWimDisplayName = $thisLatestWindowsWim.Name.Replace('+1.swm', ' (Split Image)')
+							}
+
+							$thisLatestWindowsWimDisplayName = $thisLatestWindowsWimDisplayName.Replace('-', ' ')
+
+							if (-not $latestWindowsWims.ContainsKey("$thisWindowsMajorVersion")) {
+								$latestWindowsWims["$thisWindowsMajorVersion"] = @{}
+							}
+
+							$latestWindowsWims["$thisWindowsMajorVersion"]["$thisWindowsEdition"] = @{
+								Path = $thisLatestWindowsWimPath
+								DisplayName = $thisLatestWindowsWimDisplayName
+							}
+
+							Write-Host "`n  Successfully Located Windows $thisWindowsMajorVersion $thisWindowsEdition Image: $thisLatestWindowsWimDisplayName" -ForegroundColor Green
+						} else {
+							Write-Host "`n  No Windows $thisWindowsMajorVersion $thisWindowsEdition Installation Image Found" -ForegroundColor Yellow
+						}
+					}
 				}
 			}
 
-			$latestWin11wimPath = $null
-			$latestWin11WimDisplayName = $null
+			if ($latestWindowsWims.Count -eq 0) {
+				Write-Host "`n`n  ERROR: FAILED TO LOCATE ANY WINDOWS INSTALLATION IMAGES ON USB OR LOCAL SERVER - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T." -ForegroundColor Red
 
-			if ($lastTaskSucceeded) {
-				Write-Output "`n`n  Locating Latest Windows 11 Installation Image..."
-
-				$latestWin11wim = $null
-
-				if ($testMode -and (-not $isUSBinstall)) {
-					$latestWin11wim = Get-ChildItem "$osImagesSMBtestingPath\*" -Include 'Windows-11-*.wim', 'Windows-11-*+1.swm' | Sort-Object -Property 'LastWriteTime' | Select-Object -Last 1
-				}
-
-				if ($null -eq $latestWin11wim) {
-					$latestWin11wim = Get-ChildItem "$osImagesPath\*" -Include 'Windows-11-*.wim', 'Windows-11-*+1.swm' | Sort-Object -Property 'LastWriteTime' | Select-Object -Last 1
-
-					if (($null -ne $latestWin11wim) -and $testMode -and (-not $isUSBinstall)) {
-						Write-Host '    NO WIM IN TESTING OS IMAGES - USING WIM IN PRODUCTION OS IMAGES' -ForegroundColor Yellow
-					}
-				} else {
-					Write-Host '    FOUND WIM IN TESTING OS IMAGES' -ForegroundColor Yellow
-				}
-
-				if ($null -ne $latestWin11wim) {
-					$latestWin11wimPath = $latestWin11wim.FullName
-					$latestWin11WimDisplayName = $latestWin11wim.BaseName
-
-					if ($latestWin11WimDisplayName.EndsWith('+1')) {
-						$latestWin11WimDisplayName = $latestWin11wim.Name.Replace('+1.swm', ' (Split Image)')
-					}
-
-					$latestWin11WimDisplayName = $latestWin11WimDisplayName.Replace('-', ' ')
-
-					Write-Host "`n  Successfully Located Windows 11 Image: $latestWin11WimDisplayName" -ForegroundColor Green
-				} else {
-					Write-Host "`n  No Windows 11 Installation Image Found - CONTINUING ANYWAY" -ForegroundColor Yellow # Do not error and stop installation if a Windows 11 WIM was not found but a Windows 10 WIM was.
-				}
+				$lastTaskSucceeded = $false
 			}
 
 			if ($lastTaskSucceeded) {
@@ -929,6 +1010,10 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 				}
 			}
 
+			$installWindowsVersion = 10
+			$installWimPath = $null
+			$installWimDisplayName = $null
+
 			if ($lastTaskSucceeded) {
 				Start-Sleep 3 # Sleep for a few seconds to be able to see last results before clearing screen.
 
@@ -951,16 +1036,40 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						$tpmSpecVersionString = 'UNKNOWN'
 					}
 
+					# Check for SSE4.2 support (even though it should be supported on every compatible CPU): https://www.tomshardware.com/software/windows/microsoft-updates-windows-11-24h2-requirements-cpu-must-support-sse42-or-the-os-will-not-boot
+					$processorFeatureFunctionTypes = Add-Type -PassThru -Name ProcessorFeature -MemberDefinition @'
+[DllImport("kernel32")]
+public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
+'@ # Based On: https://superuser.com/a/1861418
+
+					$win11compatibleSSE4dot2 = $processorFeatureFunctionTypes::IsProcessorFeaturePresent(38) # 38 = PF_SSE4_2_INSTRUCTIONS_AVAILABLE
+
+					$win11compatibleStorage = $false
+					if ((Get-Disk $installDriveID -ErrorAction SilentlyContinue).Size -ge 55GB) {
+						# NOT using "Storage Available" from WhyNotWin11 below because it will be inaccurate since it will be checking the storage of the booted RAM disk.
+						# Allowing 55 GB or more since some drives marketed as 64 GB (the specified requirement) can be a few GB under (seen first hand a drive marketed as 64 GB actually be 58 GB, but give a little more leeway than that just to be sure all drives marketed as 64 GB are allowed).
+						$win11compatibleStorage = $true
+					}
+
+					$eleventhGenIntelCPUorNewer = $false
+					$cpuInfo = (Get-CimInstance 'Win32_Processor' -Property 'Manufacturer', 'Name' -ErrorAction SilentlyContinue)
+					if ($cpuInfo.Manufacturer -and $cpuInfo.Name -and $cpuInfo.Manufacturer.ToUpper().Contains('INTEL') -and $cpuInfo.Name.ToUpper().Contains(' GEN ')) {
+						# "Manufacturer" should be "GenuineIntel" for all Intel processors, but do a case-insenstive check anything that contains "INTEL" just to be safe.
+						# Only 11th Gen Intel CPUs contain " Gen " in their model name strings, and they will always be compatible with Windows 11.
+						# This boolean will be used as a fallback to the "win11compatibleCPUmodel" check done by WhyNotWin11 below in case WhyNotWin11
+						# is not updated promptly and we run into a newer CPU that is not yet in the WhyNotWin11 list of compatible CPUs.
+						$eleventhGenIntelCPUorNewer = $true
+					}
+
 					if (Test-Path '\Install\Diagnostic Tools\WhyNotWin11.exe') { # Use WhyNotWin11 to help detect if the exact CPU model is compatible and more: https://github.com/rcmaehl/WhyNotWin11
 						Remove-Item '\Install\WhyNotWin11 Log.csv' -Force -ErrorAction SilentlyContinue
-						Start-Process '\Install\Diagnostic Tools\WhyNotWin11.exe' -NoNewWindow -Wait -ArgumentList '/export', 'CSV', '"X:\Install\WhyNotWin11 Log.csv"', '/silent', '/force' -ErrorAction SilentlyContinue
+						Start-Process '\Install\Diagnostic Tools\WhyNotWin11.exe' -NoNewWindow -Wait -ArgumentList '/export', 'CSV', '"X:\Install\WhyNotWin11 Log.csv"', '/skip', 'CPUFreq,DirectX,Disk,Storage', '/silent', '/force' -ErrorAction SilentlyContinue
 					}
 
 					$win11compatibleArchitecture = $false
 					$win11compatibleBootMethod = $false
 					$win11compatibleCPUmodel = $false
 					$win11compatibleCPUcores = $false
-					$win11compatibleCPUspeed = $false
 					$win11compatibleRAM = $false
 					$win11compatibleSecureBoot = $false
 					$win11compatibleTPMfromWhyNotWin11 = $false
@@ -978,12 +1087,12 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 								$win11compatibleBootMethod = ($whyNotWin11LogValues[2] -eq 'True')
 								$win11compatibleCPUmodel = ($whyNotWin11LogValues[3] -eq 'True')
 								$win11compatibleCPUcores = ($whyNotWin11LogValues[4] -eq 'True')
-								$win11compatibleCPUspeed = ($whyNotWin11LogValues[5] -eq 'True')
-								# Index 6 is "DirectX + WDDM2" which is undetectable in WinPE and will always fail since it requires drivers, but we can pretty safely assume compatibility if everything else passes.
-								# Index 7 is "Disk Partition Type" which will be inaccurate since will be checking the partition type of the booted RAM disk, but the drive formatting in this script will only ever create compatible GPT partitions when in UEFI mode.
+								# Index 5 is "CPU Frequency" which we are ignoring (and also SKIPPED with arguments in the command above) because sometimes the detected speed is inaccurate and under 1 Ghz which causes this check to fail even though the CPU is in the compatible list and is actually faster.
+								# Index 6 is "DirectX + WDDM2" which is undetectable in WinPE (and also SKIPPED with arguments in the command above) and would always fail since it requires drivers, but we can pretty safely assume compatibility if everything else passes.
+								# Index 7 is "Disk Partition Type" which will be inaccurate (and also SKIPPED with arguments in the command above) since will be checking the partition type of the booted RAM disk, but the drive formatting in this script will only ever create compatible GPT partitions when in UEFI mode.
 								$win11compatibleRAM = ($whyNotWin11LogValues[8] -eq 'True')
 								$win11compatibleSecureBoot = ($whyNotWin11LogValues[9] -eq 'True')
-								# Index 10 is "Storage Available" which will be inaccurate since will be checking the storage of the booted RAM disk, but the install drive size will be checked manually to be sure it's 64 GB or more. (WhyNotWin11 2.4.3.2 does add a way to specify a different Drive Letter to check, but that doesn't help since the install drive may not be formatted yet.)
+								# Index 10 is "Storage Available" which will be inaccurate (and also SKIPPED with arguments in the command above) since will be checking the storage of the booted RAM disk, but the install drive size is checked manually above to be sure it's 64 GB or more. (WhyNotWin11 2.4.3.2 does add a way to specify a different Drive Letter to check, but that doesn't help since the install drive may not be formatted yet.)
 								$win11compatibleTPMfromWhyNotWin11 = ($whyNotWin11LogValues[11] -eq 'True') # We already manually checked TPM version, but doesn't hurt to confirm that WinNotWin11 agrees.
 
 								$checkedWithWhyNotWin11 = $true
@@ -993,15 +1102,21 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 					if ($checkedWithWhyNotWin11) {
 						Write-Host '    CPU Compatible: ' -NoNewline
-						if (-not $win11compatibleCPUspeed) {
-							Write-Host 'NO (At Least 1 GHz Speed REQUIRED)' -ForegroundColor Red
+
+						if (-not $win11compatibleSSE4dot2) {
+							Write-Host 'NO (SSE 4.2 Support REQUIRED)' -ForegroundColor Red
 						} elseif (-not $win11compatibleCPUcores) {
 							Write-Host 'NO (At Least Dual-Core REQUIRED)' -ForegroundColor Red
 						} elseif (-not $win11compatibleArchitecture) {
 							# This incompatibility should never happen since we only refurbish 64-bit processors and only have 64-bit Windows installers.
 							Write-Host 'NO (64-bit REQUIRED)' -ForegroundColor Red
 						} elseif (-not $win11compatibleCPUmodel) {
-							Write-Host 'NO (Model NOT Supported)' -ForegroundColor Red
+							if ($eleventhGenIntelCPUorNewer) {
+								Write-Host 'YES' -NoNewline -ForegroundColor Green
+								Write-Host ' (Fallback Check Passed)' -ForegroundColor Yellow
+							} else {
+								Write-Host 'NO (Model NOT Supported)' -ForegroundColor Red
+							}
 						} else {
 							Write-Host 'YES' -ForegroundColor Green
 						}
@@ -1023,10 +1138,8 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						Write-Host '      WhyNotWin11 CHECK FAILED - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.' -ForegroundColor Red
 					}
 
-					$win11compatibleStorage = $false
 					Write-Host '    Storage 64 GB or More: ' -NoNewline
-					if ((Get-Disk $installDriveID -ErrorAction SilentlyContinue).Size -ge 64GB) {
-						$win11compatibleStorage = $true
+					if ($win11compatibleStorage) {
 						Write-Host 'YES' -ForegroundColor Green
 					} else {
 						Write-Host 'NO (At Least 64 GB REQUIRED)' -ForegroundColor Red
@@ -1070,97 +1183,100 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						Write-Host '      SOME COMPUTERS HAVE MULTIPLE TPM VERSION OPTIONS IN THE UEFI/BIOS SETUP' -ForegroundColor Yellow
 					}
 
-					if ($testMode -or ($checkedWithWhyNotWin11 -and $win11compatibleCPUmodel -and $win11compatibleArchitecture -and $win11compatibleCPUcores -and $win11compatibleCPUspeed -and $win11compatibleRAM -and $win11compatibleStorage -and ($biosOrUEFI -eq 'UEFI') -and $win11compatibleBootMethod -and $win11compatibleSecureBoot -and $win11compatibleTPM -and $win11compatibleTPMfromWhyNotWin11)) {
-						if ($testMode) {
-							Write-Host "`n  WINDOWS 11 COMPATIBILITY CHECKS ARE OVERRIDDEN IN TEST MODE" -ForegroundColor Yellow
+					if ($testMode -and $latestWindowsWims.ContainsKey('10') -and $latestWindowsWims.ContainsKey('11')) {
+						Write-Host "`n  WINDOWS 11 COMPATIBILITY CHECKS ARE OVERRIDDEN IN TEST MODE" -ForegroundColor Yellow
+
+						Write-Output "`n`n  Choose Windows Version for $installDriveName...`n"
+
+						if ($lastChooseWindowsVersionError -ne '') {
+							Write-Host $lastChooseWindowsVersionError -ForegroundColor Red
 						}
 
-						if (($null -ne $latestWin11wimPath) -and (Test-Path $latestWin11wimPath)) {
-							Write-Host "`n  This Computer Is Compatible With Window 11" -ForegroundColor Green
+						Write-Host "`n    1: Install Windows 11" -ForegroundColor Cyan
+						Write-Host "`n    0: Install Windows 10" -ForegroundColor Cyan
+						Write-Host "`n    C: Cancel Windows Installation and Reboot This Computer" -ForegroundColor Cyan
+						Write-Host "`n    X: Cancel Windows Installation and Shut Down This Computer" -ForegroundColor Cyan
 
-							Write-Output "`n`n  Choose Windows Version for $installDriveName...`n"
+						FocusScriptWindow
+						$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+						$windowsVersionChoice = Read-Host "`n`n  Enter the Number or Letter of an Action to Perform"
 
-							if ($lastChooseWindowsVersionError -ne '') {
-								Write-Host $lastChooseWindowsVersionError -ForegroundColor Red
-							}
-
-							Write-Host "`n    1: Install Windows 11" -ForegroundColor Cyan
-							Write-Host "`n    0: Install Windows 10" -ForegroundColor Cyan
-							Write-Host "`n    C: Cancel Windows Installation and Reboot This Computer" -ForegroundColor Cyan
-							Write-Host "`n    X: Cancel Windows Installation and Shut Down This Computer" -ForegroundColor Cyan
-
+						if ($windowsVersionChoice -eq '1') {
 							FocusScriptWindow
 							$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-							$windowsVersionChoice = Read-Host "`n`n  Enter the Number or Letter of an Action to Perform"
+							$confirmWin11 = Read-Host "`n  Enter `"1`" Again to Confirm Installing Windows 11"
 
-							if ($windowsVersionChoice -eq '1') {
-								FocusScriptWindow
-								$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-								$confirmWin11 = Read-Host "`n  Enter `"1`" Again to Confirm Installing Windows 11"
+							if ($confirmWin11 -eq '1') {
+								Write-Host "`n  Windows 11 Will Be Installed..." -ForegroundColor Green
 
-								if ($confirmWin11 -eq '1') {
-									Write-Host "`n  Windows 11 Will Be Installed..." -ForegroundColor Green
+								$installWindowsVersion = 11
 
-									$latestWimPath = $latestWin11wimPath
-									$latestWimDisplayName = $latestWin11WimDisplayName
-
-									Start-Sleep 2
-									break
-								} else {
-									$lastChooseWindowsVersionError = "`n    ERROR: Did Not Confirm Installing Windows 11 - CHOOSE AGAIN`n"
-								}
-							} elseif ($windowsVersionChoice -eq '0') {
-								FocusScriptWindow
-								$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-								$confirmWin11 = Read-Host "`n  Enter `"0`" Again to Confirm Installing Windows 10"
-
-								if ($confirmWin11 -eq '0') {
-									Write-Host "`n  Windows 10 Will Be Installed..." -ForegroundColor Yellow
-
-									Start-Sleep 2
-									break
-								} else {
-									$lastChooseWindowsVersionError = "`n    ERROR: Did Not Confirm Installing Windows 10 - CHOOSE AGAIN`n"
-								}
-							} elseif ($windowsVersionChoice.ToUpper() -eq 'C') {
-								FocusScriptWindow
-								$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-								$confirmQuit = Read-Host "`n  Enter `"C`" Again to Confirm Canceling Windows Installation and Rebooting This Computer"
-
-								if ($confirmQuit.ToUpper() -eq 'C') {
-									$shouldQuit = $true
-									break
-								} else {
-									$lastChooseWindowsVersionError = "`n    ERROR: Did Not Confirm Canceling Windows Installation and Rebooting This Computer - CHOOSE AGAIN`n"
-								}
-							} elseif ($windowsVersionChoice.ToUpper() -eq 'X') {
-								FocusScriptWindow
-								$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-								$confirmShutDown = Read-Host "`n  Enter `"X`" Again to Confirm Canceling Windows Installation and Shutting Down This Computer"
-
-								if ($confirmShutDown.ToUpper() -eq 'X') {
-									$shouldShutDown = $true
-									break
-								} else {
-									$lastChooseWindowsVersionError = "`n    ERROR: Did Not Confirm Canceling Windows Installation and Shutting Down This Computer - CHOOSE AGAIN`n"
-								}
+								Start-Sleep 2
+								break
 							} else {
-								if ($windowsVersionChoice) {
-									$lastChooseWindowsVersionError = "`n    ERROR: `"$windowsVersionChoice`" Is Not a Valid Choice - CHOOSE AGAIN`n"
-								} else {
-									$lastChooseWindowsVersionError = ''
-								}
+								$lastChooseWindowsVersionError = "`n    ERROR: Did Not Confirm Installing Windows 11 - CHOOSE AGAIN`n"
+							}
+						} elseif ($windowsVersionChoice -eq '0') {
+							FocusScriptWindow
+							$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+							$confirmWin10 = Read-Host "`n  Enter `"0`" Again to Confirm Installing Windows 10"
+
+							if ($confirmWin10 -eq '0') {
+								Write-Host "`n  Windows 10 Will Be Installed..." -ForegroundColor Green
+
+								Start-Sleep 2
+								break
+							} else {
+								$lastChooseWindowsVersionError = "`n    ERROR: Did Not Confirm Installing Windows 10 - CHOOSE AGAIN`n"
+							}
+						} elseif ($windowsVersionChoice.ToUpper() -eq 'C') {
+							FocusScriptWindow
+							$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+							$confirmQuit = Read-Host "`n  Enter `"C`" Again to Confirm Canceling Windows Installation and Rebooting This Computer"
+
+							if ($confirmQuit.ToUpper() -eq 'C') {
+								$shouldQuit = $true
+								break
+							} else {
+								$lastChooseWindowsVersionError = "`n    ERROR: Did Not Confirm Canceling Windows Installation and Rebooting This Computer - CHOOSE AGAIN`n"
+							}
+						} elseif ($windowsVersionChoice.ToUpper() -eq 'X') {
+							FocusScriptWindow
+							$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+							$confirmShutDown = Read-Host "`n  Enter `"X`" Again to Confirm Canceling Windows Installation and Shutting Down This Computer"
+
+							if ($confirmShutDown.ToUpper() -eq 'X') {
+								$shouldShutDown = $true
+								break
+							} else {
+								$lastChooseWindowsVersionError = "`n    ERROR: Did Not Confirm Canceling Windows Installation and Shutting Down This Computer - CHOOSE AGAIN`n"
 							}
 						} else {
-							Write-Host "`n  This Computer Is Compatible With Window 11" -ForegroundColor Green
-							Write-Host "`n  But, No Windows 11 Installation Image Found - WINDOWS 10 WILL BE INSTALLED INSTEAD..." -ForegroundColor Yellow
-							Start-Sleep 3 # Sleep for a few seconds to be able to see Windows 11 compatibility notes before clearing screen.
-
-							break
+							if ($windowsVersionChoice) {
+								$lastChooseWindowsVersionError = "`n    ERROR: `"$windowsVersionChoice`" Is Not a Valid Choice - CHOOSE AGAIN`n"
+							} else {
+								$lastChooseWindowsVersionError = ''
+							}
 						}
-					} elseif (((-not $checkedWithWhyNotWin11) -or ($win11compatibleCPUmodel -and $win11compatibleArchitecture -and $win11compatibleCPUcores -and $win11compatibleCPUspeed)) -and ((-not $win11compatibleRAM) -or (-not $win11compatibleStorage) -or (-not $win11compatibleTPM) -or (-not $win11compatibleTPMfromWhyNotWin11) -or ($biosOrUEFI -ne 'UEFI') -or (-not $win11compatibleBootMethod) -or (-not $win11compatibleSecureBoot))) {
+					} elseif ($checkedWithWhyNotWin11 -and ($win11compatibleCPUmodel -or $eleventhGenIntelCPUorNewer) -and $win11compatibleArchitecture -and $win11compatibleCPUcores -and $win11compatibleSSE4dot2 -and $win11compatibleRAM -and $win11compatibleStorage -and ($biosOrUEFI -eq 'UEFI') -and $win11compatibleBootMethod -and $win11compatibleSecureBoot -and $win11compatibleTPM -and $win11compatibleTPMfromWhyNotWin11) {
+						Write-Host "`n  This Computer Is Compatible With Window 11" -ForegroundColor Green
+
+						if ($latestWindowsWims.ContainsKey('11')) {
+							Write-Host "`n  Windows 11 Will Be Installed..." -ForegroundColor Green
+
+							$installWindowsVersion = 11
+
+							Start-Sleep 3 # Sleep for a few seconds to be able to see Windows 11 compatibility notes before clearing screen.
+						} else {
+							Write-Host "`n  ERROR: WINDOWS 11 INSTALLATION IMAGE NOT FOUND - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T." -ForegroundColor Red
+
+							$lastTaskSucceeded = $false
+						}
+
+						break
+					} elseif (((-not $checkedWithWhyNotWin11) -or (($win11compatibleCPUmodel -or $eleventhGenIntelCPUorNewer) -and $win11compatibleArchitecture -and $win11compatibleCPUcores -and $win11compatibleSSE4dot2)) -and ((-not $win11compatibleRAM) -or (-not $win11compatibleStorage) -or (-not $win11compatibleTPM) -or (-not $win11compatibleTPMfromWhyNotWin11) -or ($biosOrUEFI -ne 'UEFI') -or (-not $win11compatibleBootMethod) -or (-not $win11compatibleSecureBoot))) {
 						Write-Host "`n  This Computer Is NOT Currently Compatible With Window 11" -ForegroundColor Red
-						Write-Host "`n  But, some of the compatibilty issues listed above may be fixable.`n  You could cancel the installation and try to fix them instead of installing Windows 10." -ForegroundColor Yellow
+						Write-Host "`n  But, some of the compatibilty issues listed above may be fixable.`n  You should cancel the installation and try to fix them before installing Windows 10.`n  Our TPR contract with Microsoft states that if a computer supports Windows 11, then it MUST have Windows 11 installed onto it.`n  Therefore, if these compatibilty issues CAN be fixed they MUST be fixed.`n  Windows 10 should only be installed if it is NOT POSSIBLE BY ANY MEANS to fix these compatibilty issues." -ForegroundColor Yellow
 
 						Write-Output "`n`n  Confirm Windows Version for $installDriveName...`n"
 
@@ -1177,9 +1293,16 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						$windowsVersionChoice = Read-Host "`n`n  Enter the Number or Letter of an Action to Perform"
 
 						if ($windowsVersionChoice -eq '0') {
-							Write-Host "`n  Windows 10 Will Be Installed..." -ForegroundColor Green
+							if ($latestWindowsWims.ContainsKey('10')) {
+								Write-Host "`n  Windows 10 Will Be Installed..." -ForegroundColor Green
 
-							Start-Sleep 2
+								Start-Sleep 2
+							} else {
+								Write-Host "`n  ERROR: WINDOWS 10 INSTALLATION IMAGE NOT FOUND - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T." -ForegroundColor Red
+
+								$lastTaskSucceeded = $false
+							}
+
 							break
 						} elseif ($windowsVersionChoice.ToUpper() -eq 'C') {
 							FocusScriptWindow
@@ -1212,10 +1335,122 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						}
 					} else {
 						Write-Host "`n  This Computer Is NOT Compatible With Window 11" -ForegroundColor Yellow
-						Write-Host "`n  Windows 10 Will Be Installed..." -ForegroundColor Green
-						Start-Sleep 3 # Sleep for a few seconds to be able to see Windows 11 compatibility notes before clearing screen.
+
+						if ($latestWindowsWims.ContainsKey('10')) {
+							Write-Host "`n  Windows 10 Will Be Installed..." -ForegroundColor Green
+
+							Start-Sleep 3 # Sleep for a few seconds to be able to see Windows 11 compatibility notes before clearing screen.
+						} else {
+							Write-Host "`n  ERROR: WINDOWS 10 INSTALLATION IMAGE NOT FOUND - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T." -ForegroundColor Red
+
+							$lastTaskSucceeded = $false
+						}
 
 						break
+					}
+				}
+
+				if ($lastTaskSucceeded -and (-not $shouldQuit) -and (-not $shouldShutDown)) {
+					$lastChooseWindowsEditionError = ''
+
+					for ( ; ; ) {
+						if ((-not $latestWindowsWims.ContainsKey("$installWindowsVersion")) -or ($latestWindowsWims["$installWindowsVersion"].Count -eq 0)) {
+							Write-Host "`n  ERROR: WINDOWS $installWindowsVersion INSTALLATION IMAGE NOT FOUND - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T." -ForegroundColor Red
+
+							$lastTaskSucceeded = $false
+
+							break
+						} elseif ($latestWindowsWims["$installWindowsVersion"].Count -eq 1) {
+							$installWindowsEdition = $latestWindowsWims["$installWindowsVersion"].Keys | Select-Object -First 1
+
+							Write-Host "`n  Windows $installWindowsVersion $installWindowsEdition Will Be Installed..." -ForegroundColor Green
+
+							$installWimPath = $latestWindowsWims["$installWindowsVersion"]["$installWindowsEdition"].Path
+							$installWimDisplayName = $latestWindowsWims["$installWindowsVersion"]["$installWindowsEdition"].DisplayName
+
+							Start-Sleep 2
+							break
+						} else {
+							Clear-Host
+							Write-Output "`n  Choose Windows $installWindowsVersion Edition for $installDriveName...`n"
+
+							if ($lastChooseWindowsEditionError -ne '') {
+								Write-Host $lastChooseWindowsEditionError -ForegroundColor Red
+							}
+
+							Write-Host "`n    H: Install Windows $installWindowsVersion Home" -NoNewline -ForegroundColor Cyan
+							Write-Host " (ONLY Commercial Refurb DPKs Allowed)" -ForegroundColor Yellow
+							Write-Host "`n    P: Install Windows $installWindowsVersion Pro" -NoNewline -ForegroundColor Cyan
+							Write-Host " (Commercial OR Citizenship Refurb DPKs Allowed)" -ForegroundColor Yellow
+							Write-Host "`n    C: Cancel Windows Installation and Reboot This Computer" -ForegroundColor Cyan
+							Write-Host "`n    X: Cancel Windows Installation and Shut Down This Computer" -ForegroundColor Cyan
+
+							FocusScriptWindow
+							$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+							$windowsEditionChoice = Read-Host "`n`n  Enter the Letter of an Action to Perform"
+
+							if ($windowsEditionChoice -eq 'H') {
+								FocusScriptWindow
+								$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+								$confirmWindowsHomeEdition = Read-Host "`n  Enter `"H`" Again to Confirm Installing Windows $installWindowsVersion Home"
+
+								if ($confirmWindowsHomeEdition -eq 'H') {
+									Write-Host "`n  Windows $installWindowsVersion Home Will Be Installed..." -ForegroundColor Green
+
+									$installWimPath = $latestWindowsWims["$installWindowsVersion"].Home.Path
+									$installWimDisplayName = $latestWindowsWims["$installWindowsVersion"].Home.DisplayName
+
+									Start-Sleep 2
+									break
+								} else {
+									$lastChooseWindowsEditionError = "`n    ERROR: Did Not Confirm Installing Windows $installWindowsVersion Home - CHOOSE AGAIN`n"
+								}
+							} elseif ($windowsEditionChoice -eq 'P') {
+								FocusScriptWindow
+								$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+								$confirmWindowsProEdition = Read-Host "`n  Enter `"P`" Again to Confirm Installing Windows $installWindowsVersion Pro"
+
+								if ($confirmWindowsProEdition -eq 'P') {
+									Write-Host "`n  Windows $installWindowsVersion Pro Will Be Installed..." -ForegroundColor Green
+
+									$installWimPath = $latestWindowsWims["$installWindowsVersion"].Pro.Path
+									$installWimDisplayName = $latestWindowsWims["$installWindowsVersion"].Pro.DisplayName
+
+									Start-Sleep 2
+									break
+								} else {
+									$lastChooseWindowsEditionError = "`n    ERROR: Did Not Confirm Installing Windows $installWindowsVersion Pro - CHOOSE AGAIN`n"
+								}
+							} elseif ($windowsEditionChoice.ToUpper() -eq 'C') {
+								FocusScriptWindow
+								$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+								$confirmQuit = Read-Host "`n  Enter `"C`" Again to Confirm Canceling Windows Installation and Rebooting This Computer"
+
+								if ($confirmQuit.ToUpper() -eq 'C') {
+									$shouldQuit = $true
+									break
+								} else {
+									$lastChooseWindowsEditionError = "`n    ERROR: Did Not Confirm Canceling Windows Installation and Rebooting This Computer - CHOOSE AGAIN`n"
+								}
+							} elseif ($windowsEditionChoice.ToUpper() -eq 'X') {
+								FocusScriptWindow
+								$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+								$confirmShutDown = Read-Host "`n  Enter `"X`" Again to Confirm Canceling Windows Installation and Shutting Down This Computer"
+
+								if ($confirmShutDown.ToUpper() -eq 'X') {
+									$shouldShutDown = $true
+									break
+								} else {
+									$lastChooseWindowsEditionError = "`n    ERROR: Did Not Confirm Canceling Windows Installation and Shutting Down This Computer - CHOOSE AGAIN`n"
+								}
+							} else {
+								if ($windowsEditionChoice) {
+									$lastChooseWindowsEditionError = "`n    ERROR: `"$windowsEditionChoice`" Is Not a Valid Choice - CHOOSE AGAIN`n"
+								} else {
+									$lastChooseWindowsEditionError = ''
+								}
+							}
+						}
 					}
 				}
 
@@ -1233,6 +1468,12 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					Start-Sleep 60 # Sleep for 1 minute after executing "Stop-Computer" because if the script exits before "Stop-Computer" shut's down, the computer will be rebooted instead.
 
 					exit 11
+				}
+
+				if ($lastTaskSucceeded -and (($null -eq $installWimDisplayName) -or ($null -eq $installWimPath) -or (-not (Test-Path $installWimPath)))) {
+					Write-Host "`n  ERROR: FAILED TO SET WINDOWS INSTALLATION IMAGE - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T." -ForegroundColor Red
+
+					$lastTaskSucceeded = $false
 				}
 			}
 
@@ -1404,20 +1645,20 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 			if ($lastTaskSucceeded) {
 				Start-Sleep 3 # Sleep for a few seconds to be able to see last results before clearing screen.
 				Clear-Host
-				Write-Output "`n  Installing Windows Onto $installDriveName...`n`n`n`n`n`n  Windows Version: $latestWimDisplayName" # Add empty lines for PowerShell progress UI
+				Write-Output "`n  Installing Windows Onto $installDriveName...`n`n`n`n`n`n  Version: $installWimDisplayName" # Add empty lines for PowerShell progress UI
 
 				try {
 					# Would like to use Expand-WindowsImage's "-CheckIntegrity" parameter, but it generally takes too long.
 
-					if ($latestWimPath.EndsWith('.swm')) {
-						Expand-WindowsImage -ImagePath $latestWimPath -SplitImageFilePattern $latestWimPath.Replace('+1.swm', '+*.swm') -Index 1 -ApplyPath 'W:\' -Verify -ErrorAction Stop
+					if ($installWimPath.EndsWith('.swm')) {
+						Expand-WindowsImage -ImagePath $installWimPath -SplitImageFilePattern $installWimPath.Replace('+1.swm', '+*.swm') -Index 1 -ApplyPath 'W:\' -Verify -ErrorAction Stop
 					} else {
-						Expand-WindowsImage -ImagePath $latestWimPath -Index 1 -ApplyPath 'W:\' -Verify -ErrorAction Stop
+						Expand-WindowsImage -ImagePath $installWimPath -Index 1 -ApplyPath 'W:\' -Verify -ErrorAction Stop
 					}
 
 					Clear-Host
 					Write-Host "`n  Successfully Installed Windows Onto $installDriveName" -ForegroundColor Green
-					Add-Content '\Install\Windows Install Log.txt' "Installed Windows ($latestWimDisplayName) Onto $installDriveName (Drive ID $installDriveID) in $biosOrUEFI Mode - $(Get-Date)" -ErrorAction SilentlyContinue
+					Add-Content '\Install\Windows Install Log.txt' "Installed Windows ($installWimDisplayName) Onto $installDriveName (Drive ID $installDriveID) in $biosOrUEFI Mode - $(Get-Date)" -ErrorAction SilentlyContinue
 
 					$didInstallWindowsImage = $true
 				} catch {
@@ -1441,9 +1682,9 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 		}
 
 		if ($lastTaskSucceeded -and (-not $didInstallDrivers)) {
-			if ($isUSBinstall) {
-				Write-Host "`n`n  Driver Installation Not Available During USB Install - WINDOWS UPDATE WILL INSTALL DRIVERS IN OS" -ForegroundColor Yellow
-				Add-Content '\Install\Windows Install Log.txt' "Driver Installation Not Available During USB Install - $(Get-Date)" -ErrorAction SilentlyContinue
+			if (-not $localServerResourcesAccessible) {
+				Write-Host "`n`n  Driver Installation Not Available Without Local Server Access - WINDOWS UPDATE WILL INSTALL DRIVERS IN OS" -ForegroundColor Yellow
+				Add-Content '\Install\Windows Install Log.txt' "Driver Installation Not Available Without Local Server Access - $(Get-Date)" -ErrorAction SilentlyContinue
 			} else {
 				Write-Output "`n`n  Locating Drivers for This Computer Model..."
 
@@ -1650,12 +1891,18 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 						$driversCacheModelPathUniqueDriversPointerFileLines = Get-Content $driversModelPath -ErrorAction SilentlyContinue
 
 						foreach ($thisCachedUniqueDriverName in $driversCacheModelPathUniqueDriversPointerFileLines) {
-							if ($thisCachedUniqueDriverName.Contains('.inf_amd64_')) {
+							if (Test-Path "$driversCacheBasePath\Unique Drivers\$thisCachedUniqueDriverName-CACHING.lock") { # Do not install if currently being cached by another system (which means the current driver could be incomplete).
+								if ($testMode) {
+									Write-Host "`n      SKIPPING DRIVER CURRENTLY BEING CACHED BY ANOTHER SYSTEM (LOCK FILE EXISTS):`n        $thisCachedUniqueDriverName" -ForegroundColor Yellow
+								}
+							} elseif ($thisCachedUniqueDriverName.Contains('.inf_amd64_')) {
 								$thisCachedUniqueDriverInfPath = "$driversCacheBasePath\Unique Drivers\$thisCachedUniqueDriverName\$($thisCachedUniqueDriverName.Substring(0, $thisCachedUniqueDriverName.IndexOf('.'))).inf"
 
 								if (Test-Path $thisCachedUniqueDriverInfPath) {
 									$allAvailableDriverInfPathsForModel += $thisCachedUniqueDriverInfPath
 								}
+							} elseif ($testMode) {
+								Write-Host "`n      SKIPPING 32-BIT DRIVER (_amd64_ NOT IN FOLDER NAME):`n        $thisCachedUniqueDriverName" -ForegroundColor Yellow
 							}
 						}
 					}
@@ -2022,14 +2269,14 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 				# Copy UnattendAudit.xml to Installed OS to enter Audit mode and run "Setup Windows.ps1" (references are within XML file).
 				# Install "Unattend.xml" into "W:\Windows\System32\Sysprep" instead of "W:\Windows\Panther" so that it's processed after every reboot until it's deleted manually.
 				# If it's only installed into "W:\Windows\Panther" then the XML will be modified to mark the "auditUser" pass settings with "wasPassProcessed=true" which would make the "Setup Windows.ps1" only run once on the first boot, which we don't want.
-				if ($testMode -and (-not $isUSBinstall) -and (Test-Path "$setupResourcesSMBtestingPath\UnattendAudit.xml")) {
+				if ($testMode -and $localServerResourcesAccessible -and (Test-Path "$setupResourcesSMBtestingPath\UnattendAudit.xml")) {
 					Copy-Item "$setupResourcesSMBtestingPath\UnattendAudit.xml" 'W:\Windows\System32\Sysprep\Unattend.xml' -Force -ErrorAction Stop
 
 					Write-Host '    COPIED UNATTEND FROM TESTING RESOURCES' -ForegroundColor Yellow
 				} else {
 					Copy-Item "$setupResourcesPath\UnattendAudit.xml" 'W:\Windows\System32\Sysprep\Unattend.xml' -Force -ErrorAction Stop
 
-					if ($testMode -and (-not $isUSBinstall)) {
+					if ($testMode -and $localServerResourcesAccessible) {
 						Write-Host '    NO UNATTEND IN TESTING RESOURCES - COPIED UNATTEND FROM PRODUCTION RESOURCES' -ForegroundColor Yellow
 					}
 				}
@@ -2041,13 +2288,13 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 				Get-ChildItem $setupResourcesPath -Exclude 'UnattendAudit.xml' -ErrorAction Stop | ForEach-Object {
 					Copy-Item $_ 'W:\Install' -Recurse -Force -ErrorAction Stop
 
-					if ($testMode -and (-not $isUSBinstall)) {
+					if ($testMode -and $localServerResourcesAccessible) {
 						Write-Host "    COPIED PRODUCTION RESOURCE: $($_.Name)" -ForegroundColor Yellow
 					}
 				}
 
-				if ($testMode -and (-not $isUSBinstall)) {
-					# When in test mode (and is not USB install), copy production resources first and then add or overwrite with testing resources.
+				if ($testMode -and $localServerResourcesAccessible) {
+					# When in test mode (and local server is accessible), copy production resources first and then add or overwrite with testing resources.
 					Get-ChildItem $setupResourcesSMBtestingPath -Exclude 'UnattendAudit.xml' -ErrorAction Stop | ForEach-Object {
 						Copy-Item $_ 'W:\Install' -Recurse -Force -ErrorAction Stop
 
@@ -2067,10 +2314,16 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 					Write-Host '    SET SNAP MODE FOR INSTALLED OS TO AUTO-INSTALL EXTRA SNAP APPS' -ForegroundColor Yellow
 				}
 
+				if ($isNoAppsInstall -and (-not (Test-Path 'W:\Install\fgFLAG-NOAPPS'))) { # If technician chose "NO Apps" install mode, create flag so that "Setup Windows" in installed OS will not install apps.
+					New-Item -ItemType 'File' -Path 'W:\Install\fgFLAG-NOAPPS' | Out-Null
+
+					Write-Host '    SET NO APPS MODE FOR INSTALLED OS TO NOT INSTALL APPS' -ForegroundColor Yellow
+				}
+
 				if ($ipdtMode -and (-not (Test-Path 'W:\Install\fgFLAG-IPDT'))) { # Create the "IPDT" flag in the installed OS to auto-launch "Intel Processor Diagnostic Tool" instead of "QA Helper" (for Hardware Testing).
 					New-Item -ItemType 'File' -Path 'W:\Install\fgFLAG-IPDT' | Out-Null
 
-					Write-Host '    CREATED "IPDT" (Intel Processor Diagnostic Tool) FLAG IN INSTALLED OS SINCE "IPDT" FLAG EXISTS IN WINPE' -ForegroundColor Yellow
+					Write-Host '    CREATED "IPDT" (Intel Processor Diagnostic Tool) FLAG IN INSTALLED OS SINCE "IPDT" MODE SPECIFIED' -ForegroundColor Yellow
 				}
 
 				Write-Host "`n  Successfully Copied Setup Resources Onto $installDriveName" -ForegroundColor Green
@@ -2082,7 +2335,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 			}
 		}
 
-		if (-not $isUSBinstall) {
+		if ($localServerResourcesAccessible) {
 			Remove-SmbMapping -RemotePath $smbShare -Force -UpdateProfile -ErrorAction SilentlyContinue # Done with SMB Share now, so remove it.
 			Remove-SmbMapping -RemotePath $smbWdsShare -Force -UpdateProfile -ErrorAction SilentlyContinue # Done with SMB Share now, so remove it.
 		}
@@ -2164,9 +2417,9 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 								# For more info: https://social.technet.microsoft.com/Forums/en-US/4f04df47-8bd6-4fff-bd79-8d3b45c23f8a/last-pieces-of-the-puzzle-converting-diskpart-script-to-powershell-storage-cmdlets
 
 								$diskpartSetGptAttributesCommands = @(
-									"select disk $installDriveID",
-									"select partition $($recoveryPartition.PartitionNumber)",
-									'gpt attributes=0x8000000000000001',
+									"select disk $installDriveID"
+									"select partition $($recoveryPartition.PartitionNumber)"
+									'gpt attributes=0x8000000000000001'
 									'exit'
 								)
 

@@ -14,6 +14,8 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
+$Host.UI.RawUI.WindowTitle = 'Download Network Drivers for WinRE USB Install from Cache'
+
 $basePath = "$HOME\Documents\Free Geek"
 if (Test-Path "$HOME\Documents\Free Geek.lnk") {
 	$basePath = (New-Object -ComObject WScript.Shell).CreateShortcut("$HOME\Documents\Free Geek.lnk").TargetPath
@@ -59,6 +61,9 @@ for ($smbMountAttempt = 0; $smbMountAttempt -lt 5; $smbMountAttempt ++) {
 		} else {
 			Write-Host "`n`n  ERROR MOUNTING SMB SHARE: $_" -ForegroundColor Red
 			Write-Host "`n  ERROR: Failed to connect to local Free Geek SMB share `"$smbShare`"." -ForegroundColor Red
+
+			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+			Read-Host "`n`n  FAILED TO DOWNLOAD NETWORK DRIVERS FROM CACHE" | Out-Null
 
 			exit 2
 		}
@@ -108,17 +113,22 @@ foreach ($thisDriverFolderPath in $allCachedDriverPaths) {
 
 					if ($thisDriverClass -eq 'NET') {
 						$thisDriverIndex ++
-						$netDriverFolderNames += $thisDriverFolderName
-						if (-not (Test-Path "$winREnetDriversOutputPath\$thisDriverFolderName")) {
-							try {
-								Write-Output "    $thisDriverIndex) Downloading Network Driver: $thisDriverFolderName..."
-								Copy-Item $thisDriverFolderPath $winREnetDriversOutputPath -Recurse -Force -ErrorAction Stop
-								$downloadedNetDriversCount ++
-							} catch {
-								Write-Host "      ERROR DOWNLOADING NETWORK DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
+						$thisDriverSizeMB = $([math]::Round(((Get-ChildItem -Path $thisDriverFolderPath -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 2))
+						if ($thisDriverSizeMB -lt 20) {
+							$netDriverFolderNames += $thisDriverFolderName
+							if (-not (Test-Path "$winREnetDriversOutputPath\$thisDriverFolderName")) {
+								try {
+									Write-Output "    $thisDriverIndex) Downloading Network Driver: $thisDriverFolderName ($thisDriverSizeMB MB)..."
+									Copy-Item $thisDriverFolderPath $winREnetDriversOutputPath -Recurse -Force -ErrorAction Stop
+									$downloadedNetDriversCount ++
+								} catch {
+									Write-Host "      ERROR DOWNLOADING NETWORK DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
+								}
+							} else {
+								Write-Output "    $thisDriverIndex) ALREADY DOWNLOADED NETWORK DRIVER: $thisDriverFolderName ($thisDriverSizeMB MB)"
 							}
 						} else {
-							Write-Output "    $thisDriverIndex) ALREADY DOWNLOADED NETWORK DRIVER: $thisDriverFolderName..."
+							Write-Output "    $thisDriverIndex) SKIPPING LARGE NETWORK DRIVER: $thisDriverFolderName ($thisDriverSizeMB MB)"
 						}
 					}
 
@@ -155,4 +165,5 @@ try {
 	Write-Host "`n  ERROR: Failed to check for or delete stray downloaded network drivers." -ForegroundColor Red
 }
 
+$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 Read-Host "`n`n  DONE DOWNLOADING NETWORK DRIVERS FROM CACHE" | Out-Null

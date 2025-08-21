@@ -19,7 +19,7 @@
 :: Make sure this script is running as Administrator (and relaunch as Administrator if not) so that DISM commands can run in PowerShell script can run.
 :: Check "NET SESSION" error level since it will error if not running as Administrator.
 NET SESSION 1>NUL 2>NUL
-IF %ERRORLEVEL% NEQ 0 powershell -NoLogo -NoProfile -Command "Start-Process '%0' -Verb RunAs" & EXIT /B 1
+IF %ERRORLEVEL% NEQ 0 powershell -NoLogo -NoProfile -Command "Start-Process -WindowStyle Maximized '%0' -Verb RunAs" & EXIT /B 1
 
 :: "DandISetEnv" must be run here first for "copype" to work from within the PowerShell Script.
 CALL "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"

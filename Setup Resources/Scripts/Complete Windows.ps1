@@ -9,7 +9,8 @@
 # By Pico Mitchell for Free Geek
 # Originally written and tested in September 2020 for Windows 10, version 2004
 # Tested in November 2022 for Windows 10, version 22H2
-# AND Tested in November 2022 for Windows 11, version 22H2
+# AND Tested in November 2023 for Windows 11, version 23H2
+# AND Tested in October 2024 for Windows 11, version 24H2
 #
 # MIT License
 #
@@ -26,7 +27,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2023.3.24-1
+# Version: 2025.8.13-1
 
 param(
 	[Parameter(Position = 0)]
@@ -57,6 +58,7 @@ if (-not (Test-Path '\Windows\System32\Sysprep\Unattend.xml')) {
 
 $windowsVersionName = (Get-CimInstance 'Win32_OperatingSystem' -Property 'Caption' -ErrorAction SilentlyContinue).Caption
 $isWindows11 = ($windowsVersionName -and $windowsVersionName.ToUpper().Contains('WINDOWS 11'))
+$isWindowsHomeEdition = ($windowsVersionName -and $windowsVersionName.ToUpper().Contains(' HOME'))
 
 $focusWindowFunctionTypes = Add-Type -PassThru -Name FocusWindow -MemberDefinition @'
 [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -125,21 +127,44 @@ if (-not $onlyCacheDriversMode) { # Only do this verification and setup if not o
 				$tpmSpecVersionString = 'UNKNOWN'
 			}
 
+			# Check for SSE4.2 support (even though it should be supported on every compatible CPU): https://www.tomshardware.com/software/windows/microsoft-updates-windows-11-24h2-requirements-cpu-must-support-sse42-or-the-os-will-not-boot
+			$processorFeatureFunctionTypes = Add-Type -PassThru -Name ProcessorFeature -MemberDefinition @'
+[DllImport("kernel32")]
+public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
+'@ # Based On: https://superuser.com/a/1861418
+
+			$win11compatibleSSE4dot2 = $processorFeatureFunctionTypes::IsProcessorFeaturePresent(38) # 38 = PF_SSE4_2_INSTRUCTIONS_AVAILABLE
+
+			$win11compatibleStorage = $false
+			if ((Get-Partition -DriveLetter (Get-CimInstance 'Win32_OperatingSystem' -Property 'SystemDrive' -ErrorAction SilentlyContinue).SystemDrive.Replace(':', '') -ErrorAction SilentlyContinue | Get-Disk -ErrorAction SilentlyContinue).Size -ge 55GB) {
+				# NOT using "Storage Available" from WhyNotWin11 below because it will get the VOLUME size which could be smaller after formatting and a Recovery Volume is partitioned rather than checking the WHOLE DISK size which I believe is the actual requirement.
+				# Allowing 55 GB or more since some drives marketed as 64 GB (the specified requirement) can be a few GB under (seen first hand a drive marketed as 64 GB actually be 58 GB, but give a little more leeway than that just to be sure all drives marketed as 64 GB are allowed).
+				$win11compatibleStorage = $true
+			}
+
+			$eleventhGenIntelCPUorNewer = $false
+			$cpuInfo = (Get-CimInstance 'Win32_Processor' -Property 'Manufacturer', 'Name' -ErrorAction SilentlyContinue)
+			if ($cpuInfo.Manufacturer -and $cpuInfo.Name -and $cpuInfo.Manufacturer.ToUpper().Contains('INTEL') -and $cpuInfo.Name.ToUpper().Contains(' GEN ')) {
+				# "Manufacturer" should be "GenuineIntel" for all Intel processors, but do a case-insenstive check anything that contains "INTEL" just to be safe.
+				# Only 11th Gen Intel CPUs contain " Gen " in their model name strings, and they will always be compatible with Windows 11.
+				# This boolean will be used as a fallback to the "win11compatibleCPUmodel" check done by WhyNotWin11 below in case WhyNotWin11
+				# is not updated promptly and we run into a newer CPU that is not yet in the WhyNotWin11 list of compatible CPUs.
+				$eleventhGenIntelCPUorNewer = $true
+			}
+
 			if (Test-Path '\Install\Diagnostic Tools\WhyNotWin11.exe') { # Use WhyNotWin11 to help detect if the exact CPU model is compatible and more: https://github.com/rcmaehl/WhyNotWin11
 				Remove-Item '\Install\WhyNotWin11 Log.csv' -Force -ErrorAction SilentlyContinue
-				Start-Process '\Install\Diagnostic Tools\WhyNotWin11.exe' -NoNewWindow -Wait -ArgumentList '/export', 'CSV', '"C:\Install\WhyNotWin11 Log.csv"', '/silent', '/force' -ErrorAction SilentlyContinue
+				Start-Process '\Install\Diagnostic Tools\WhyNotWin11.exe' -NoNewWindow -Wait -ArgumentList '/export', 'CSV', '"C:\Install\WhyNotWin11 Log.csv"', '/skip', 'CPUFreq,Storage', '/silent', '/force' -ErrorAction SilentlyContinue
 			}
 
 			$win11compatibleArchitecture = $false
 			$win11compatibleBootMethod = $false
 			$win11compatibleCPUmodel = $false
 			$win11compatibleCPUcores = $false
-			$win11compatibleCPUspeed = $false
 			$win11compatibleGPU = $false
 			$win11compatiblePartitionType = $false
 			$win11compatibleRAM = $false
 			$win11compatibleSecureBoot = $false
-			$win11compatibleStorage = $false
 			$win11compatibleTPMfromWhyNotWin11 = $false
 			$checkedWithWhyNotWin11 = $false
 
@@ -155,12 +180,12 @@ if (-not $onlyCacheDriversMode) { # Only do this verification and setup if not o
 						$win11compatibleBootMethod = ($whyNotWin11LogValues[2] -eq 'True')
 						$win11compatibleCPUmodel = ($whyNotWin11LogValues[3] -eq 'True')
 						$win11compatibleCPUcores = ($whyNotWin11LogValues[4] -eq 'True')
-						$win11compatibleCPUspeed = ($whyNotWin11LogValues[5] -eq 'True')
+						# Index 5 is "CPU Frequency" which we are ignoring (and also SKIPPED with arguments in the command above) because sometimes the detected speed is inaccurate and under 1 Ghz which causes this check to fail even though the CPU is in the compatible list and is actually faster.
 						$win11compatibleGPU = ($whyNotWin11LogValues[6] -eq 'True')
 						$win11compatiblePartitionType = ($whyNotWin11LogValues[7] -eq 'True')
 						$win11compatibleRAM = ($whyNotWin11LogValues[8] -eq 'True')
 						$win11compatibleSecureBoot = ($whyNotWin11LogValues[9] -eq 'True')
-						$win11compatibleStorage = ($whyNotWin11LogValues[10] -eq 'True')
+						# Index 10 is "Storage Available" which we are ignoring (and also SKIPPED with arguments in the command above) and checking manually above since WhyNotWin11 will get the VOLUME size which could be smaller after formatting and a Recovery Volume is partitioned rather than checking the WHOLE DISK size which I believe is the actual requirement.
 						$win11compatibleTPMfromWhyNotWin11 = ($whyNotWin11LogValues[11] -eq 'True') # We already manually checked TPM version, but doesn't hurt to confirm that WinNotWin11 agrees.
 
 						$checkedWithWhyNotWin11 = $true
@@ -169,15 +194,20 @@ if (-not $onlyCacheDriversMode) { # Only do this verification and setup if not o
 			}
 
 			Write-Host "`n    CPU Compatible: " -NoNewline
-			if (-not $win11compatibleCPUspeed) {
-				Write-Host 'NO (At Least 1 GHz Speed REQUIRED)' -ForegroundColor Red
+			if (-not $win11compatibleSSE4dot2) {
+				Write-Host 'NO (SSE 4.2 Support REQUIRED)' -ForegroundColor Red
 			} elseif (-not $win11compatibleCPUcores) {
 				Write-Host 'NO (At Least Dual-Core REQUIRED)' -ForegroundColor Red
 			} elseif (-not $win11compatibleArchitecture) {
 				# This incompatibility should never happen since we only refurbish 64-bit processors and only have 64-bit Windows installers.
 				Write-Host 'NO (64-bit REQUIRED)' -ForegroundColor Red
 			} elseif (-not $win11compatibleCPUmodel) {
-				Write-Host 'NO (Model NOT Supported)' -ForegroundColor Red
+				if ($eleventhGenIntelCPUorNewer) {
+					Write-Host 'YES' -NoNewline -ForegroundColor Green
+					Write-Host ' (Fallback Check Passed)' -ForegroundColor Yellow
+				} else {
+					Write-Host 'NO (Model NOT Supported)' -ForegroundColor Red
+				}
 			} else {
 				Write-Host 'YES' -ForegroundColor Green
 			}
@@ -254,7 +284,7 @@ if (-not $onlyCacheDriversMode) { # Only do this verification and setup if not o
 
 					exit 0 # Not sure if exit is necessary after Stop-Computer but doesn't hurt.
 				}
-			} elseif ((-not $win11compatibleTPM) -or (-not $win11compatibleArchitecture) -or (-not $win11compatibleBootMethod) -or (-not $win11compatibleCPUmodel) -or (-not $win11compatibleCPUcores) -or (-not $win11compatibleCPUspeed) -or (-not $win11compatiblePartitionType) -or (-not $win11compatibleRAM) -or (-not $win11compatibleSecureBoot) -or (-not $win11compatibleStorage) -or (-not $win11compatibleTPMfromWhyNotWin11)) {
+			} elseif ((-not $win11compatibleTPM) -or (-not $win11compatibleArchitecture) -or (-not $win11compatibleBootMethod) -or ((-not $win11compatibleCPUmodel) -and (-not $eleventhGenIntelCPUorNewer)) -or (-not $win11compatibleCPUcores) -or (-not $win11compatibleSSE4dot2) -or (-not $win11compatiblePartitionType) -or (-not $win11compatibleRAM) -or (-not $win11compatibleSecureBoot) -or (-not $win11compatibleStorage) -or (-not $win11compatibleTPMfromWhyNotWin11)) {
 				# None of the previous elseif checks should fail (unless in Test Mode) because it was all verified in WinPE before allowing Windows 11 to be installed.
 				# So, if we got here, this computer needs to be sent to Free Geek I.T. to see what went wrong.
 
@@ -272,8 +302,9 @@ if (-not $onlyCacheDriversMode) { # Only do this verification and setup if not o
 		}
 
 		$hasRefurbProductKey = $false
+		$dpkTypeCode = 'WIN'
 		$dpkID = $null
-		$didUploadCBRifDPK = $true
+		$didUploadCBR = $false
 		$isQAcompleted = $false
 
 		try {
@@ -284,22 +315,49 @@ if (-not $onlyCacheDriversMode) { # Only do this verification and setup if not o
 			$slmgrDlvOutput = Get-Content -Raw "$Env:TEMP\fgComplete-slmgr-dlv-Output.txt"
 
 			if (($slmgrDlvExitCode -eq 0) -and ($null -eq $slmgrDlvError)) {
-				if ($slmgrDlvOutput.Contains('Product Key Channel: OEM:NONSLP')) {
-					$hasRefurbProductKey = $true
-				} elseif ($slmgrDlvOutput.Contains('Product Key Channel: OEM:DM') -and (Test-Path '\Install\DPK\Logs\oa3tool-assemble.xml')) {
+				if ($slmgrDlvOutput.Contains('Product Key Channel: OEM:DM') -and (Test-Path '\Install\DPK\Logs\oa3tool-assemble.xml')) {
 					# "OEM:DM" could mean that the computer has an Embedded Digital Product Key OR that we have issued it Refurbished Digital Product Key using oa3tool.
-					# Therefore, only allow "OEM:DM" Product Keys if the "oa3tool-assemble.xml" file exists (which contains the Refurb DPK applied by us) AND the "Partial Product Key" matches the end of that DPK.
+					# Therefore, only allow "OEM:DM" Product Keys if the "oa3tool-assemble.xml" file exists (which contains the Refurb DPK applied by us) AND the "Partial Product Key" matches the end of that DPK AND it contains a valid Licensable Part Number for the correct version and edition.
 
 					$slmgrDlvPartialProductKeyLine = (Select-String -Path "$Env:TEMP\fgComplete-slmgr-dlv-Output.txt" -Pattern 'Partial Product Key: ').Line
 
 					if (($null -ne $slmgrDlvPartialProductKeyLine) -and ($slmgrDlvPartialProductKeyLine.length -eq 26)) {
 						[xml]$oa3toolAssembleXML = Get-Content '\Install\DPK\Logs\oa3tool-assemble.xml'
 
-						if (($null -ne $oa3toolAssembleXML.Key.ProductKey) -and ($null -ne $oa3toolAssembleXML.Key.ProductKeyID)) {
-							if ($oa3toolAssembleXML.Key.ProductKey.EndsWith("-$($slmgrDlvPartialProductKeyLine.Substring(21))")) {
+						if (($null -ne $oa3toolAssembleXML.Key.ProductKey) -and ($null -ne $oa3toolAssembleXML.Key.ProductKeyID) -and ($null -ne $oa3toolAssembleXML.Key.ProductKeyPartNumber)) {
+							$validRefurbDPKLPNs = @()
+
+							if ($isWindows11) {
+								$dpkTypeCode += '11-'
+								if ($isWindowsHomeEdition) {
+									$dpkTypeCode += 'HOM-'
+									$validRefurbDPKLPNs += 'WV2-00048'
+								} else {
+									$dpkTypeCode += 'PRO-'
+									$validRefurbDPKLPNs += 'QLF-00626', 'QLF-00624' # Citizenship, Commercial
+								}
+							} else {
+								$dpkTypeCode += '10-'
+								if ($isWindowsHomeEdition) {
+									$dpkTypeCode += 'HOM-'
+									$validRefurbDPKLPNs += 'WV2-00047'
+								} else {
+									$dpkTypeCode += 'PRO-'
+									$validRefurbDPKLPNs += 'QLF-00623', 'QLF-00621' # Citizenship, Commercial
+								}
+							}
+
+							$dpkLicensablePartNumber = $oa3toolAssembleXML.Key.ProductKeyPartNumber.Trim()
+							if ($oa3toolAssembleXML.Key.ProductKey.Trim().EndsWith("-$($slmgrDlvPartialProductKeyLine.Substring(21))") -and $validRefurbDPKLPNs.Contains($dpkLicensablePartNumber)) {
 								$hasRefurbProductKey = $true
-								$dpkID = $oa3toolAssembleXML.Key.ProductKeyID
-								$didUploadCBRifDPK = $false
+
+								if ((-not $isWindowsHomeEdition) -and ($dpkLicensablePartNumber -eq $validRefurbDPKLPNs[0])) {
+									$dpkTypeCode += 'CIT-DPK'
+								} else {
+									$dpkTypeCode += 'COM-DPK'
+								}
+
+								$dpkID = $oa3toolAssembleXML.Key.ProductKeyID.Trim() # Trim because "ProductKeyID" value could have trailing spaces.
 							}
 						} else {
 							Write-Host "`n  ERROR: Failed to get contents of the `"oa3tool-assemble.xml`" file." -ForegroundColor Red
@@ -310,7 +368,7 @@ if (-not $onlyCacheDriversMode) { # Only do this verification and setup if not o
 				}
 
 				if (-not $hasRefurbProductKey) {
-					Write-Host "`n  ERROR: Windows IS NOT activated with a Refurbished PC Product Key." -ForegroundColor Red
+					Write-Host "`n  ERROR: Windows IS NOT licensed with a Refurbished PC Product Key." -ForegroundColor Red
 				}
 			} else {
 				if ($null -eq $slmgrDlvError) {
@@ -334,12 +392,14 @@ if (-not $onlyCacheDriversMode) { # Only do this verification and setup if not o
 				if ($thisQAhelperLogLine.StartsWith('Status: ')) {
 					$qaHelperLogLastStatusLine = $thisQAhelperLogLine
 					# Continue check entire QA Helper Log for last status since all past statuses are saved.
-				} elseif (($null -ne $dpkID) -and (-not $didUploadCBRifDPK) -and $thisQAhelperLogLine.StartsWith("Uploaded CBR for DPK: CBR+$dpkID+")) {
-					$didUploadCBRifDPK = $true
+				} elseif (($null -ne $dpkID) -and ($dpkTypeCode.EndsWith('-DPK')) -and (-not $didUploadCBR) -and $thisQAhelperLogLine.StartsWith("Uploaded CBR for DPK: CBR+$dpkTypeCode+$dpkID+")) {
+					$didUploadCBR = $true
+				} elseif ($thisQAhelperLogLine.StartsWith('Reverted DPK')) {
+					$didUploadCBR = $false
 				}
 			}
 
-			if (-not $didUploadCBRifDPK) {
+			if (-not $didUploadCBR) {
 				Write-Host "`n  ERROR: The CBR for the Digital Product Key HAS NOT been uploaded." -ForegroundColor Red
 			}
 
@@ -352,7 +412,7 @@ if (-not $onlyCacheDriversMode) { # Only do this verification and setup if not o
 			Write-Host "`n  ERROR: QA Helper Log file DOES NOT exist." -ForegroundColor Red
 		}
 
-		if ((-not $hasRefurbProductKey) -or (-not $didUploadCBRifDPK) -or (-not $isQAcompleted)) {
+		if ((-not $hasRefurbProductKey) -or (-not $didUploadCBR) -or (-not $isQAcompleted)) {
 			Write-Host "`n`n  This Computer IS NOT Ready to Be Completed - SEE PREVIOUS ERRORS FOR DETAILS" -ForegroundColor Yellow
 
 			Write-Host "`n`n  !!! THIS COMPUTER CANNOT BE SOLD UNTIL WINDOWS IS COMPLETED SUCCESSFULLY !!!" -ForegroundColor Red
@@ -514,6 +574,12 @@ for ( ; ; ) {
 		} catch {
 			Write-Host "    ERROR QUITTING QA HELPER: $_" -ForegroundColor Red
 		}
+
+		try {
+			Get-CimInstance 'Win32_Process' -Filter 'Name LIKE "java%.exe" AND CommandLine LIKE "%Keyboard_Test%.jar%"' -ErrorAction Stop | Invoke-CimMethod -Name Terminate -ErrorAction Stop | Out-Null
+		} catch {
+			Write-Host "    ERROR QUITTING KEYBOARD TEST: $_" -ForegroundColor Red
+		}
 	}
 
 	$lastTaskSucceeded = $true
@@ -603,7 +669,7 @@ for ( ; ; ) {
 							$compatibleDeviceIDsForDrivers = (($pnpEntityCompatibleAndHardwareIDs.HardwareID + $pnpEntityCompatibleAndHardwareIDs.CompatibleID) | Where-Object { ($null -ne $_) } | Sort-Object -Unique).ToUpper()
 
 							$excludedInfNames = @(
-								'unifhid', # EXCLUDING "unifhid.inf" because it's just the Logitech USB Adapter Driver (and previously thought it may have been related to hanging on "Preparing Windows" screen in installed OS when installed in WinPE in Win 10 20H2 but it turns out it wasn't related. Still don't want it included in the Drivers Cache).
+								'unifhid' # EXCLUDING "unifhid.inf" because it's just the Logitech USB Adapter Driver (and previously thought it may have been related to hanging on "Preparing Windows" screen in installed OS when installed in WinPE in Win 10 20H2 but it turns out it wasn't related. Still don't want it included in the Drivers Cache).
 								'tbwkern' # EXCLUDING "tbwkern.inf" because it's just the Kensington MouseWorks Driver
 							)
 
@@ -757,61 +823,94 @@ for ( ; ; ) {
 											Write-Host "`n    Caching Driver $thisInstalledCompatibleDriverIndex of $($installedCompatibleDrivers.Count): `"$thisInstalledCompatibleDriverInfBaseName`" Version $thisInstalledCompatibleDriverVersion`n      $thisInstalledCompatibleDriverClassName - $thisInstalledCompatibleDriverHardwareDescription"
 
 											$thisCachedDriverDirectoryPath = "$driversCacheBasePath\Unique Drivers\$thisInstalledDriverDirectoryName"
+											$thisCachedDriverLockFilePath = "$driversCacheBasePath\Unique Drivers\$thisInstalledDriverDirectoryName-CACHING.lock"
 
-											if (Test-Path $thisCachedDriverDirectoryPath) {
-												$thisCachedDriverInfPath = "$thisCachedDriverDirectoryPath\$(Split-Path $thisInstalledCompatibleDriverInfPath -Leaf)"
+											if (Test-Path $thisCachedDriverLockFilePath) {
+												try {
+													$thisCachedDriverLockFilePathAge = ([int64](Get-Date -UFormat '%s') - [int64](Get-Content -Raw $thisCachedDriverLockFilePath -ErrorAction Stop))
 
-												if (Test-Path $thisCachedDriverInfPath) {
-													if ((Get-FileHash $thisInstalledCompatibleDriverInfPath).Hash -eq (Get-FileHash $thisCachedDriverInfPath).Hash) {
-														$theseInstalledDriverDirectoryFilePaths = (Get-ChildItem $thisInstalledDriverDirectoryPath -Recurse -File -Exclude '*.PNF').FullName
-														$theseCachedDriverDirectoryFilePaths = (Get-ChildItem $thisCachedDriverDirectoryPath -Recurse -File -Exclude '*.PNF').FullName
-
-														# Exclude ".PNF" when comparing driver contents since they are temporary compiled versions of ".inf" files that may or may not exist in $thisInstalledDriverDirectoryPath
-														# and are always excluded from the Drivers Cache, this difference could cause unnecessary updates to the cache: https://file.org/extension/pnf
-
-														$cachedDriverContentsMatchInstalledDriver = $true
-
-														if ($theseInstalledDriverDirectoryFilePaths.Count -eq $theseCachedDriverDirectoryFilePaths.Count) {
-															# Confirm that all contents within installed driver folders exist in the cache folder for the model.
-
-															foreach ($thisInstalledDriverDirectoryFilePath in $theseInstalledDriverDirectoryFilePaths) {
-																$thisInstalledDriverDirectoryFilePathInCache = $thisInstalledDriverDirectoryFilePath.Replace($thisInstalledDriverDirectoryPath, $thisCachedDriverDirectoryPath)
-
-																if (-not (Test-Path $thisInstalledDriverDirectoryFilePathInCache)) {
-																	$cachedDriverContentsMatchInstalledDriver = $false
-																	if ($testMode) {
-																		Write-Host "      DEBUG - Installed Driver File NOT in Cache: $($thisInstalledDriverDirectoryFilePathInCache.Replace("$driversCacheBasePath\", ''))" -ForegroundColor Yellow
-																	}
-																	break
-																}
-
-																# Historical Note: Would previously compare hashes of ".cat" and ".sys" files.
-																# BUT, not doing that anymore since it would result in basically identical drivers from different models overwriting each other when getting cached.
-																# From what I could tell comparing the binary contents, it was generally because of minor differences in the headers and footers and seemed to be because of code signing differences.
-																# From testing, these differences do not make them incompatible between different models (since the ".inf" files are identical and both copies of the ".cat" and ".sys" files are valid).
-															}
-														} else {
-															$cachedDriverContentsMatchInstalledDriver = $false
-															if ($testMode) {
-																Write-Host "      DEBUG - Installed Driver Contents Count ($($theseInstalledDriverDirectoryFilePaths.Count)) != Cached Driver Contents Count ($($theseCachedDriverDirectoryFilePaths.Count))" -ForegroundColor Yellow
-															}
+													if (($null -eq $thisCachedDriverLockFilePathAge) -or ($thisCachedDriverLockFilePathAge -ge 86400) -or ($thisCachedDriverLockFilePathAge -lt 0)) {
+														if ($testMode) {
+															Write-Host "      DEBUG - Caching Lock File Is OVER 1 Day Old ($thisCachedDriverLockFilePathAge Seconds) - Deleting Lock File and Driver" -ForegroundColor Yellow
 														}
 
-														if ($cachedDriverContentsMatchInstalledDriver) {
-															$thisInstalledDriverNeedsToBeCached = $false
+														if (Test-Path $thisCachedDriverDirectoryPath) {
+															Remove-Item $thisCachedDriverDirectoryPath -Recurse -Force -ErrorAction Stop
 														}
-													} elseif ($testMode) {
-														Write-Host "      DEBUG - inf Hash NE: $($thisCachedDriverInfPath.Replace("$driversCacheBasePath\", ''))" -ForegroundColor Yellow
+
+														Remove-Item $thisCachedDriverLockFilePath -ErrorAction Stop
+													} else {
+														$thisInstalledDriverNeedsToBeCached = $false
+
+														if ($testMode) {
+															Write-Host "      DEBUG - Caching Lock File Already Exists And Is Less Than 1 Day Old ($thisCachedDriverLockFilePathAge Seconds) - Skipping" -ForegroundColor Yellow
+														}
 													}
-												} elseif ($testMode) {
-													Write-Host "      DEBUG - inf DNE: $($thisCachedDriverInfPath.Replace("$driversCacheBasePath\", ''))" -ForegroundColor Yellow
+												} catch {
+													Write-Host "      FAILED TO CHECK CACHING DRIVER LOCK FILE: $_" -ForegroundColor Red
 												}
-											} elseif ($testMode) {
-												Write-Host "      DEBUG - folder DNE: $($thisCachedDriverDirectoryPath.Replace("$driversCacheBasePath\", ''))" -ForegroundColor Yellow
 											}
 
 											if ($thisInstalledDriverNeedsToBeCached) {
+												if (Test-Path $thisCachedDriverDirectoryPath) {
+													$thisCachedDriverInfPath = "$thisCachedDriverDirectoryPath\$(Split-Path $thisInstalledCompatibleDriverInfPath -Leaf)"
+
+													if (Test-Path $thisCachedDriverInfPath) {
+														if ((Get-FileHash $thisInstalledCompatibleDriverInfPath).Hash -eq (Get-FileHash $thisCachedDriverInfPath).Hash) {
+															$theseInstalledDriverDirectoryFilePaths = (Get-ChildItem $thisInstalledDriverDirectoryPath -Recurse -File -Exclude '*.PNF').FullName
+															$theseCachedDriverDirectoryFilePaths = (Get-ChildItem $thisCachedDriverDirectoryPath -Recurse -File -Exclude '*.PNF').FullName
+
+															# Exclude ".PNF" when comparing driver contents since they are temporary compiled versions of ".inf" files that may or may not exist in $thisInstalledDriverDirectoryPath
+															# and are always excluded from the Drivers Cache, this difference could cause unnecessary updates to the cache: https://file.org/extension/pnf
+
+															$cachedDriverContentsMatchInstalledDriver = $true
+
+															if ($theseInstalledDriverDirectoryFilePaths.Count -eq $theseCachedDriverDirectoryFilePaths.Count) {
+																# Confirm that all contents within installed driver folders exist in the cache folder for the model.
+
+																foreach ($thisInstalledDriverDirectoryFilePath in $theseInstalledDriverDirectoryFilePaths) {
+																	$thisInstalledDriverDirectoryFilePathInCache = $thisInstalledDriverDirectoryFilePath.Replace($thisInstalledDriverDirectoryPath, $thisCachedDriverDirectoryPath)
+
+																	if (-not (Test-Path $thisInstalledDriverDirectoryFilePathInCache)) {
+																		$cachedDriverContentsMatchInstalledDriver = $false
+																		if ($testMode) {
+																			Write-Host "      DEBUG - Installed Driver File NOT in Cache: $($thisInstalledDriverDirectoryFilePathInCache.Replace("$driversCacheBasePath\", ''))" -ForegroundColor Yellow
+																		}
+																		break
+																	}
+
+																	# Historical Note: Would previously compare hashes of ".cat" and ".sys" files.
+																	# BUT, not doing that anymore since it would result in basically identical drivers from different models overwriting each other when getting cached.
+																	# From what I could tell comparing the binary contents, it was generally because of minor differences in the headers and footers and seemed to be because of code signing differences.
+																	# From testing, these differences do not make them incompatible between different models (since the ".inf" files are identical and both copies of the ".cat" and ".sys" files are valid).
+																}
+															} else {
+																$cachedDriverContentsMatchInstalledDriver = $false
+																if ($testMode) {
+																	Write-Host "      DEBUG - Installed Driver Contents Count ($($theseInstalledDriverDirectoryFilePaths.Count)) != Cached Driver Contents Count ($($theseCachedDriverDirectoryFilePaths.Count))" -ForegroundColor Yellow
+																}
+															}
+
+															if ($cachedDriverContentsMatchInstalledDriver) {
+																$thisInstalledDriverNeedsToBeCached = $false
+															}
+														} elseif ($testMode) {
+															Write-Host "      DEBUG - Driver inf Hash NE: $($thisCachedDriverInfPath.Replace("$driversCacheBasePath\", ''))" -ForegroundColor Yellow
+														}
+													} elseif ($testMode) {
+														Write-Host "      DEBUG - Driver inf DNE: $($thisCachedDriverInfPath.Replace("$driversCacheBasePath\", ''))" -ForegroundColor Yellow
+													}
+												} elseif ($testMode) {
+													Write-Host "      DEBUG - Driver Folder DNE: $($thisCachedDriverDirectoryPath.Replace("$driversCacheBasePath\", ''))" -ForegroundColor Yellow
+												}
+											}
+
+											if (Test-Path $thisCachedDriverLockFilePath) {
+												Write-Host '      BEING CACHED BY ANOTHER SYSTEM' -ForegroundColor Yellow
+											} elseif ($thisInstalledDriverNeedsToBeCached) {
 												try {
+													Set-Content $thisCachedDriverLockFilePath (Get-Date -UFormat '%s') -ErrorAction Stop
+
 													$cacheDriverSuccess = 'CACHED'
 
 													if (Test-Path $thisCachedDriverDirectoryPath) {
@@ -828,15 +927,23 @@ for ( ; ; ) {
 													# Exclude ".PNF" files from Drivers Cache since they are temporary compiled versions of ".inf" files that will be re-created when needed: https://file.org/extension/pnf
 													# I confirmed through testing that drivers install successfully without the ".PNF" files and that they are re-created by Windows during driver setup.
 
+													Remove-Item $thisCachedDriverLockFilePath -ErrorAction Stop
+
 													Write-Host "      $cacheDriverSuccess" -ForegroundColor Green
 
 													$cachedDriversSuccessCount ++
 												} catch {
+													if (Test-Path $thisCachedDriverDirectoryPath) {
+														Remove-Item $thisCachedDriverDirectoryPath -Recurse -Force -ErrorAction SilentlyContinue
+													}
+
+													Remove-Item $thisCachedDriverLockFilePath -ErrorAction SilentlyContinue
+
 													Write-Host "      FAILED: $_" -ForegroundColor Red
 													$cachedDriversFailedCount ++
 												}
 											} else {
-												Write-Host "      ALREADY CACHED" -ForegroundColor Yellow
+												Write-Host '      ALREADY CACHED' -ForegroundColor Yellow
 											}
 										} else {
 											Write-Host "`n    INF NOT FOUND for Driver $thisInstalledCompatibleDriverIndex of $($installedCompatibleDrivers.Count): $thisInstalledDriverDirectoryName`n      CONTINUING ANYWAY..." -ForegroundColor Yellow
@@ -893,10 +1000,26 @@ for ( ; ; ) {
 
 				$deletedStrayCachedDriversCount = 0
 
-				Get-ChildItem "$driversCacheBasePath\Unique Drivers" -ErrorAction Stop | ForEach-Object {
-					if (-not $allReferencedCachedDrivers.Contains($_.Name)) {
+				$currentEpochTime = [int64](Get-Date -UFormat '%s') # ALSO check for any LOCK files over a day old and delete them and their associated drivers (assuming if they exist something went wrong and the driver may be incomplete).
+				Get-ChildItem "$driversCacheBasePath\Unique Drivers\*" -File -Include '*-CACHING.lock' -ErrorAction Stop | ForEach-Object {
+					$thisCachedDriverLockFilePathAge = ($currentEpochTime - [int64](Get-Content -Raw $_.FullName -ErrorAction Stop))
+
+					if (($null -eq $thisCachedDriverLockFilePathAge) -or ($thisCachedDriverLockFilePathAge -ge 86400) -or ($thisCachedDriverLockFilePathAge -lt 0)) {
+						$thisCachedDriverDirectoryPath = $_.FullName.Replace('-CACHING.lock', '')
+						if (Test-Path $thisCachedDriverDirectoryPath) {
+							Remove-Item $thisCachedDriverDirectoryPath -Recurse -Force -ErrorAction Stop
+						}
+
+						Remove-Item $_.FullName -ErrorAction Stop
+
 						$deletedStrayCachedDriversCount ++
+					}
+				}
+
+				Get-ChildItem "$driversCacheBasePath\Unique Drivers" -Directory -ErrorAction Stop | ForEach-Object {
+					if ((-not $allReferencedCachedDrivers.Contains($_.Name)) -and (-not (Test-Path "$($_.FullName)-CACHING.lock"))) {
 						Remove-Item $_.FullName -Recurse -Force -ErrorAction Stop
+						$deletedStrayCachedDriversCount ++
 					}
 				}
 
@@ -1023,6 +1146,27 @@ for ( ; ; ) {
 		}
 
 		if ($lastTaskSucceeded) {
+			# Even though making GPU-Z run in Standalone Mode without prompting for install on launch and also to not check for updates during testing is in HKCU and will not affect the account the customer will create, clean up after ourselves anyway.
+			# https://www.techpowerup.com/forums/threads/how-to-gpu-z-to-run-option-to-install.191730/#post-2988383
+
+			$techPowerUpRegistryPath = 'HKCU:\SOFTWARE\techPowerUp'
+
+			if (Test-Path $techPowerUpRegistryPath) {
+				Write-Output "`n`n  Removing GPU-Z Settings..."
+
+				try {
+					Remove-Item $techPowerUpRegistryPath -Recurse -Force -ErrorAction Stop
+
+					Write-Host "`n  Successfully Removed GPU-Z Settings" -ForegroundColor Green
+				} catch {
+					Write-Host "`n  ERROR REMOVING GPU-Z SETTINGS: $_" -ForegroundColor Red
+
+					$lastTaskSucceeded = $false
+				}
+			}
+		}
+
+		if ($lastTaskSucceeded) {
 			$unigineProgramFolders = @('\Program Files (x86)\Unigine', '\Program Files\Unigine') # Unigine apps ARE NOT part of our testing process, but if some technician chose to (incorrectly) install any for GPU testing (instead of correctly using PassMark PerformanceTest), uninstall it so it's not left for the end user.
 
 			foreach ($thisUnigineProgramFolder in $unigineProgramFolders) {
@@ -1115,20 +1259,111 @@ for ( ; ; ) {
 		}
 
 		if ($lastTaskSucceeded) {
-			# Even though disabling the Network Location Wizard during testing is in HKCU and will not affect the account the customer will create, clean up after ourselves anyway.
-			# https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2008-R2-and-2008/gg252535(v=ws.10)#to-turn-off-the-network-location-wizard-for-the-current-user
+			if (-not $isWindows11) { # This is not set in Windows 11.
+				# Even though disabling the Network Location Wizard during testing is in HKCU and will not affect the account the customer will create, clean up after ourselves anyway.
+				# https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2008-R2-and-2008/gg252535(v=ws.10)#to-turn-off-the-network-location-wizard-for-the-current-user
 
-			$networkLocationWizardRegistryPath = 'HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Network\NwCategoryWizard'
+				$networkLocationWizardRegistryPath = 'HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Network\NwCategoryWizard'
 
-			if (Test-Path $networkLocationWizardRegistryPath) {
-				Write-Output "`n`n  Enabling Network Location Wizard..."
+				if (Test-Path $networkLocationWizardRegistryPath) {
+					Write-Output "`n`n  Enabling Network Location Wizard..."
+
+					try {
+						Remove-Item $networkLocationWizardRegistryPath -Force -ErrorAction Stop
+
+						Write-Host "`n  Successfully Enabled Network Location Wizard" -ForegroundColor Green
+					} catch {
+						Write-Host "`n  ERROR ENABLING NETWORK LOCATION WIZARD: $_" -ForegroundColor Red
+
+						$lastTaskSucceeded = $false
+					}
+				}
+			} else { # This is only set in Windows 11.
+				# Even though setting the Host Console during testing is in HKCU and will not affect the account the customer will create, clean up after ourselves anyway.
+				# https://support.microsoft.com/en-us/windows/command-prompt-and-windows-powershell-for-windows-11-6453ce98-da91-476f-8651-5c14d5777c20
+
+				$consoleStartupRegistryPath = 'HKCU:\Console\%%Startup'
+
+				if (Test-Path $consoleStartupRegistryPath) {
+					Write-Output "`n`n  Setting Host Console to Terminal..."
+
+					try {
+						if (Get-ItemProperty -Path $consoleStartupRegistryPath -Name 'DelegationConsole' -ErrorAction SilentlyContinue) {
+							Remove-ItemProperty -Path $consoleStartupRegistryPath -Name 'DelegationConsole'
+						}
+
+						if (Get-ItemProperty -Path $consoleStartupRegistryPath -Name 'DelegationTerminal' -ErrorAction SilentlyContinue) {
+							Remove-ItemProperty -Path $consoleStartupRegistryPath -Name 'DelegationTerminal'
+						}
+
+						Write-Host "`n  Setting Set Host Console to Terminal" -ForegroundColor Green
+					} catch {
+						Write-Host "`n  ERROR SETTING HOST CONSOLE TO TERMINAL: $_" -ForegroundColor Red
+
+						$lastTaskSucceeded = $false
+					}
+				}
+			}
+		}
+
+		if ($lastTaskSucceeded) {
+			# Even though bypassing the Edge first run screen during testing is in HKCU and will not affect the account the customer will create, clean up after ourselves anyway.
+			# https://admx.help/?Category=EdgeChromium&Policy=Microsoft.Policies.Edge::HideFirstRunExperience
+
+			$edgePoliciesRegistryPath = 'HKCU:\SOFTWARE\Policies\Microsoft\Edge'
+
+			if (Test-Path $edgePoliciesRegistryPath) {
+				Write-Output "`n`n  Enabling Edge First Run Screen..."
 
 				try {
-					Remove-Item $networkLocationWizardRegistryPath -Force -ErrorAction Stop
+					Remove-Item $edgePoliciesRegistryPath -Force -ErrorAction Stop
 
-					Write-Host "`n  Successfully Enabled Network Location Wizard" -ForegroundColor Green
+					Write-Host "`n  Successfully Enabled Edge First Run Screen" -ForegroundColor Green
 				} catch {
-					Write-Host "`n  ERROR ENABLING NETWORK LOCATION WIZARD: $_" -ForegroundColor Red
+					Write-Host "`n  ERROR ENABLING EDGE FIRST RUN SCREEN: $_" -ForegroundColor Red
+
+					$lastTaskSucceeded = $false
+				}
+			}
+		}
+
+		if ($lastTaskSucceeded) {
+			# Even though disabling OneDrive notifications during testing is in HKCU and will not affect the account the customer will create, clean up after ourselves anyway.
+			# https://learn.microsoft.com/en-us/answers/questions/1376997/turn-off-onedrive-backup-notification-via-gpo-or-s#answer-1326409
+
+			$oneDriveNotificationsRegistryPath = 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Notifications\Settings\Microsoft.SkyDrive.Desktop'
+
+			if (Test-Path $oneDriveNotificationsRegistryPath) {
+				Write-Output "`n`n  Enabling OneDrive Notifications..."
+
+				try {
+					Remove-Item $oneDriveNotificationsRegistryPath -Force -ErrorAction Stop
+
+					Write-Host "`n  Successfully Enabled OneDrive Notifications" -ForegroundColor Green
+				} catch {
+					Write-Host "`n  ERROR ENABLING ONEDRIVE NOTIFICATIONS: $_" -ForegroundColor Red
+
+					$lastTaskSucceeded = $false
+				}
+			}
+		}
+
+		if ($lastTaskSucceeded) {
+			# Allowing Camera and Microphone access for all apps during testing MUST be set in HKLM and would affect the account the customer will create, so clean up after ourselves.
+			# https://admx.help/?Category=Windows_10_2016&Policy=Microsoft.Policies.AppPrivacy::LetAppsAccessCamera
+			# https://admx.help/?Category=Windows_10_2016&Policy=Microsoft.Policies.AppPrivacy::LetAppsAccessMicrophone
+
+			$appPrivacyRegistryPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\AppPrivacy'
+
+			if (Test-Path $appPrivacyRegistryPath) {
+				Write-Output "`n`n  Disabling Camera and Microphone Access for All Apps..."
+
+				try {
+					Remove-Item $appPrivacyRegistryPath -Force -ErrorAction Stop
+
+					Write-Host "`n  Successfully Disabled Camera and Microphone Access for All Apps" -ForegroundColor Green
+				} catch {
+					Write-Host "`n  ERROR DISABLING CAMERA AND MICROPHONE ACCESS FOR ALL APPS: $_" -ForegroundColor Red
 
 					$lastTaskSucceeded = $false
 				}
@@ -1183,7 +1418,7 @@ for ( ; ; ) {
 						if ($null -eq $powercfgHibernateOnError) {
 							$powercfgHibernateOnError = Get-Content -Raw "$Env:TEMP\fgComplete-powercfg-hibernate-on-Output.txt"
 						}
-	
+
 						Write-Host "`n  ERROR ENABLING HIBERNATION: $powercfgHibernateOnError" -ForegroundColor Red
 						Write-Host "`n  ERROR: Failed to enable hibernation (powercfg Exit Code = $powercfgHibernateOnExitCode)." -ForegroundColor Red
 
@@ -1264,6 +1499,36 @@ for ( ; ; ) {
 		}
 
 		if ($lastTaskSucceeded) {
+			if ($isWindows11) {
+				try {
+					# The "\Windows\System32\OOBE\BypassNRO.cmd" script which bypasses network requirement during OOBE setup (which in turn allows setting up Windows 11 without a Microsoft Account)
+					# simply sets the following registry value, which we can do manually in advance so that all our Windows installations do not require a Microsoft Account,
+					# which is much more convenient for many first time users and for folks without consistent internet access.
+
+					$oobeRegistryPath = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\OOBE'
+
+					if (Test-Path $oobeRegistryPath) {
+						if ((Get-ItemProperty $oobeRegistryPath).BypassNRO -ne 1) {
+							Write-Output "`n  Bypassing Microsoft Account Requirement..."
+
+							Set-ItemProperty $oobeRegistryPath -Name 'BypassNRO' -Value 1 -Type 'DWord' -Force -ErrorAction Stop | Out-Null
+
+							Write-Host "`n  Successfully Bypassed Microsoft Account Requirement" -ForegroundColor Green
+						}
+					} else {
+						Write-Host "`n  ERROR BYPASSING MICROSOFT ACCOUNT REQUIREMENT: OOBE REGISTRY PATH DOES NOT EXIST" -ForegroundColor Red
+
+						$lastTaskSucceeded = $false
+					}
+				} catch {
+					Write-Host "`n  ERROR BYPASSING MICROSOFT ACCOUNT REQUIREMENT: $_" -ForegroundColor Red
+
+					$lastTaskSucceeded = $false
+				}
+			}
+		}
+
+		if ($lastTaskSucceeded) {
 			Write-Output "`n`n  Cleaning Up Leftover Files and Folders from Installation and Setup Process..."
 
 			try {
@@ -1297,7 +1562,7 @@ for ( ; ; ) {
 
 				Write-Host "`n  Successfully Emptied Recycle Bin" -ForegroundColor Green
 			} catch {
-				Write-Host "`n  ERROR EMPTYING REYCYLE BIN: $_`n" -ForegroundColor Red
+				Write-Host "`n  ERROR EMPTYING REYCYLE BIN: $_" -ForegroundColor Red
 				Write-Host "`n  Failed to empty Recycle Bin - CONTINUING ANYWAY" -ForegroundColor Yellow
 			}
 		}

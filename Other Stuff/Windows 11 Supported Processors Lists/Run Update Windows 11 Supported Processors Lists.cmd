@@ -1,7 +1,7 @@
 ::
 :: MIT License
 ::
-:: Copyright (c) 2021 Free Geek
+:: Copyright (c) 2025 Free Geek
 ::
 :: Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
 :: to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
@@ -16,27 +16,7 @@
 
 @ECHO OFF
 
-:: Make sure this script is running as Administrator (and relaunch as Administrator if not) so that MakeWinPEMedia command can run.
-:: Check "NET SESSION" error level since it will error if not running as Administrator.
-NET SESSION 1>NUL 2>NUL
-IF %ERRORLEVEL% NEQ 0 powershell -NoLogo -NoProfile -Command "Start-Process '%0' -Verb RunAs" & EXIT /B 1
-
-SET WIN_PE_NAME=WinPE 11 22H2
-
-ECHO.
-ECHO   Make %WIN_PE_NAME% USB...
-ECHO.
-
-SET WIN_PE_OUTPUT_PATH=%USERPROFILE%\Documents\Free Geek\%WIN_PE_NAME%
-
-SET /P USB_DRIVE_LETTER="> Enter USB Drive Letter for %WIN_PE_NAME%: "
-
-ECHO.
-ECHO   STARTING ON %DATE% AT %TIME%...
-ECHO.
-
-:: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-create-usb-bootable-drive#create-a-bootable-winpe-usb-drive
-CALL "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\MakeWinPEMedia.cmd" /UFD "%WIN_PE_OUTPUT_PATH%" %USB_DRIVE_LETTER%:
+powershell -NoLogo -NoProfile -ExecutionPolicy Unrestricted -File "%~dp0Update Windows 11 Supported Processors Lists.ps1"
 
 ECHO.
 ECHO   DONE ON %DATE% AT %TIME%
