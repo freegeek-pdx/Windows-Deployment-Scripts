@@ -37,7 +37,7 @@ $startDate = Get-Date
 Write-Output "`n  Starting at $startDate..."
 
 $windows10featureVersion = '22H2' # 22H2 is the FINAL feature update for Windows 10: https://techcommunity.microsoft.com/t5/windows-it-pro-blog/windows-client-roadmap-update/ba-p/3805227
-$windows11featureVersion = '24H2'
+$windows11featureVersion = '25H2'
 
 $winPEmajorVersion = '11' # It is fine to use WinPE/WinRE from Windows 11 even when Windows 10 will be installed.
 $winPEfeatureVersion = $windows11featureVersion
@@ -67,8 +67,17 @@ if (Test-Path $winPEsourcePath) {
 	# only want to have the single "FG BOOT" partition be bootable (in both Legacy BIOS and UEFI mode),
 	# and the GRUB menu in the "FG BOOT" partition has an menu entry to "Install Windows" by chainloading "\EFI\Microsoft\Boot\WinPE.efi" (which "bootmgfw.efi" will be renamed to below).
 	# NOTE: There is no option to install Windows in the Legacy BIOS mode GRUB menu since only Windows 11 can be installed, and UEFI mode is a Microsoft requirement for Windows 11.
-	Remove-Item "$fgWindowsDriveLetter\bootmgr*", "$fgWindowsDriveLetter\EFI\Boot\bootx64.efi" -Force -ErrorAction Stop
-	Move-Item "$fgWindowsDriveLetter\EFI\Microsoft\Boot\bootmgfw.efi" "$fgWindowsDriveLetter\EFI\Microsoft\Boot\WinPE.efi" -Force -ErrorAction Stop
+	Remove-Item "$fgWindowsDriveLetter\bootmgr*", "$fgWindowsDriveLetter\EFI\Boot\boot*.efi" -Force -ErrorAction Stop
+	if (Test-Path "$fgWindowsDriveLetter\EFI\Microsoft\Boot\bootmgfw.efi") { # This file may not exist here yet since "MakeWinPEMedia.cmd" copies it into place, which would not have been run (see notes above).
+		Move-Item "$fgWindowsDriveLetter\EFI\Microsoft\Boot\bootmgfw.efi" "$fgWindowsDriveLetter\EFI\Microsoft\Boot\WinPE.efi" -Force -ErrorAction Stop
+	} elseif (Test-Path "$winPEoutputPath\bootbins\bootmgfw.efi") { # TODO: Is there a reason to use the "Windows UEFI CA 2023" signed version at "bootmgfw_EX.efi" instead? "MakeWinPEMedia.cmd" has a "/bootex" option to use it.
+		Copy-Item "$winPEoutputPath\bootbins\bootmgfw.efi" "$fgWindowsDriveLetter\EFI\Microsoft\Boot\WinPE.efi" -Force -ErrorAction Stop
+	}
+
+	if (-not (Test-Path "$fgWindowsDriveLetter\EFI\Microsoft\Boot\WinPE.efi")) {
+		Write-Host "      FAILED to Rename or Copy WinPE.efi" -ForegroundColor Red
+		$verificationError = $true
+	}
 
 	if (Test-Path "$winPEoutputPath\boot.wim.checksum") {
 		$bootWimChecksum = Get-Content "$winPEoutputPath\boot.wim.checksum" -First 1

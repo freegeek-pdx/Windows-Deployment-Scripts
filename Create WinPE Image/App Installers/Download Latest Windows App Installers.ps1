@@ -17,6 +17,8 @@
 Write-Output "`nDownload Latest Windows App Installers"
 $Host.UI.RawUI.WindowTitle = 'Download Latest Windows App Installers'
 
+$ProgressPreference = 'SilentlyContinue' # Not showing progress makes "Invoke-WebRequest" downloads MUCH faster: https://stackoverflow.com/a/43477248
+
 function DownloadAppInstaller {
 	Param(
 		[Parameter(Mandatory=$true)][ValidateNotNullOrEmpty()][string]$AppName,
@@ -40,20 +42,31 @@ function DownloadAppInstaller {
 	Write-Output "Downloaded $AppName Installer: $downloadedVersion"
 
 	if ($LatestVersion -Match '^\d[.\d]*$') {
-		$installerDownloadPath = "$DownloadFolderPath\$($AppName)_$($LatestVersion)_Installer.$InstallerExtension"
-		if (-not (Test-Path $installerDownloadPath)) {
+		$installerFileName = "$($AppName)_$($LatestVersion)_Installer.$InstallerExtension"
+		$installerPath = "$DownloadFolderPath\$installerFileName"
+
+		if (-not (Test-Path $installerPath)) {
 			Write-Output "Downloading Latest $AppName Installer..."
 
-			Remove-Item "$DownloadFolderPath\$($AppName)_*" -Force -ErrorAction Stop
+			$systemTempDir = [System.Environment]::GetEnvironmentVariable('TEMP', 'Machine') # Get SYSTEM (not user) temporary directory, which should be "\Windows\Temp".
+			if (-not (Test-Path $systemTempDir)) {
+				$systemTempDir = '\Windows\Temp'
+			}
 
-			Invoke-WebRequest -UserAgent 'curl' -Uri $DownloadURL -OutFile "$($installerDownloadPath).download" -ErrorAction Stop
+			if (Test-Path "$systemTempDir\$($installerFileName)-download") {
+				Remove-Item "$systemTempDir\$($installerFileName)-download" -Force -ErrorAction Stop
+			}
+
+			Invoke-WebRequest -UserAgent 'curl' -Uri $DownloadURL -OutFile "$systemTempDir\$($installerFileName)-download" -ErrorAction Stop
 			# NOTE: If the default PowerShell user agent string is used, the VLC download URL goes to a website which starts the download as if it was accessed in the browser, but with the "curl" user agent string the Windows installers is properly downloaded.
 			# Also, without changing the user agent string the Dropbox URL would redirect to the Mac version when run via "pwsh" on macOS even though "os=win" is specified in the URL.
 			# Finally, changing the user agent string to "curl" doesn't break any of the other download URLs even though it isn't necessary for them.
 
-			Move-Item "$($installerDownloadPath).download" $installerDownloadPath -Force -ErrorAction Stop
+			Remove-Item "$DownloadFolderPath\$($AppName)_*" -Force -ErrorAction Stop
 
-			if (Test-Path $installerDownloadPath) {
+			Move-Item "$systemTempDir\$($installerFileName)-download" $installerPath -Force -ErrorAction Stop
+
+			if (Test-Path $installerPath) {
 				Write-Output "Downloaded Latest $AppName Installer"
 			} else {
 				Write-Output "ERROR DOWNLOADING LATEST $AppName INSTALLER"
@@ -87,7 +100,7 @@ $latestFirefoxDownloadURL = 'https://download.mozilla.org/?product=firefox-msi-l
 $latestFirefoxVersion = [System.Net.HttpWebRequest]::Create($latestFirefoxDownloadURL).GetResponse().ResponseUri.AbsoluteUri.Split('/')[6] # https://stackoverflow.com/a/45593554
 DownloadAppInstaller -AppName 'Firefox' -InstallerExtension 'msi' -LatestVersion $latestFirefoxVersion -DownloadURL $latestFirefoxDownloadURL -DownloadFolderPath $installersDownloadFolderPath
 
-$latestLibreOfficeVersion = ((Invoke-WebRequest -TimeoutSec 5 -Uri 'https://download.documentfoundation.org/libreoffice/stable/').Links.href | Select-String '^(\d[.\d]*)/$').Matches[-1].Groups[1].Value
+$latestLibreOfficeVersion = ((Invoke-WebRequest -TimeoutSec 10 -Uri 'https://download.documentfoundation.org/libreoffice/stable/').Links.href | Select-String '^(\d[.\d]*)/$').Matches[-1].Groups[1].Value # Seen this one sometimes timeout after 5 seconds, so give it 10 seconds.
 $latestLibreOfficeDownloadURL = "https://download.documentfoundation.org/libreoffice/stable/$latestLibreOfficeVersion/win/x86_64/LibreOffice_$($latestLibreOfficeVersion)_Win_x86-64.msi"
 DownloadAppInstaller -AppName 'LibreOffice' -InstallerExtension 'msi' -LatestVersion $latestLibreOfficeVersion -DownloadURL $latestLibreOfficeDownloadURL -DownloadFolderPath $installersDownloadFolderPath
 

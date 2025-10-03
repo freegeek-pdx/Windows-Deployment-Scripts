@@ -37,9 +37,18 @@
 
 $Host.UI.RawUI.WindowTitle = 'Create Windows Install Image'
 
+$ProgressPreference = 'SilentlyContinue' # Not showing progress makes "Invoke-WebRequest" downloads MUCH faster: https://stackoverflow.com/a/43477248
+
 $basePath = "$HOME\Documents\Free Geek"
 if (Test-Path "$HOME\Documents\Free Geek.lnk") {
 	$basePath = (New-Object -ComObject WScript.Shell).CreateShortcut("$HOME\Documents\Free Geek.lnk").TargetPath
+}
+
+$sourceISOchecksums = @{
+	'Win10_22H2_English_x64v1.iso' = 'A6F470CA6D331EB353B815C043E327A347F594F37FF525F17764738FE812852E'
+	'Win11_23H2_English_x64v2.iso' = '36DE5ECB7A0DAA58DCE68C03B9465A543ED0F5498AA8AE60AB45FB7C8C4AE402'
+	'Win11_24H2_English_x64.iso' = 'B56B911BF18A2CEAEB3904D87E7C770BDF92D3099599D61AC2497B91BF190B11'
+	'Win11_25H2_English_x64.iso' = 'D141F6030FED50F75E2B03E1EB2E53646C4B21E5386047CB860AF5223F102A32'
 }
 
 $windowsMajorVersions = @('11', '10')
@@ -86,7 +95,8 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 		$windowsFeatureVersions += '22H2' # 22H2 is the FINAL feature update for Windows 10: https://techcommunity.microsoft.com/t5/windows-it-pro-blog/windows-client-roadmap-update/ba-p/3805227
 	} else {
 		# $windowsFeatureVersions += '23H2' # https://www.reddit.com/r/WindowsHelp/comments/1ga0e8h/comment/mcplrzl & https://archive.org/details/win11_23h2_english_x64v2_202409
-		$windowsFeatureVersions += '24H2'
+		# $windowsFeatureVersions += '24H2' # https://archive.org/details/win-11-24-h-2-english-x-64_202507
+		$windowsFeatureVersions += '25H2'
 	}
 
 	foreach ($thisWindowsFeatureVersion in $windowsFeatureVersions) {
@@ -184,6 +194,21 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 			}
 
 			if ((Test-Path $sourceISOpath) -and (-not (Test-Path $sourceWIMpath))) {
+				if ($sourceISOchecksums.ContainsKey($sourceISOname)) {
+					Write-Output "`n  Verifying $sourceISOname..."
+					$thisISOchecksum = (Get-FileHash $sourceISOpath -Algorithm 'SHA256').Hash
+
+					if ($thisISOchecksum -eq $sourceISOchecksums[$sourceISOname]) {
+						Write-Output "    Successfully Verified Source ISO $sourceISOname"
+					} else {
+						Write-Host "`n  FAILED TO VERIFY SOURCE ISO $sourceISOname ($thisISOchecksum != $($sourceISOchecksums[$sourceISOname]))" -ForegroundColor Red
+
+						exit 1
+					}
+				} else {
+					Write-Output "    WARNING: CANNOT VERIFY SOURCE ISO $sourceISOname (NO SHA256 SPECIFIED IN SCRIPT)" -ForegroundColor Yellow
+				}
+
 				Write-Output "`n  Mounting $sourceISOname..."
 
 				$mountedDiskImageDriveLetter = (Mount-DiskImage $sourceISOpath -ErrorAction Stop | Get-Volume -ErrorAction Stop).DriveLetter
@@ -414,7 +439,7 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 									# In an attempt to isolate each update file, I put them in their own subfolders, and that ended up solving the problem.
 									# I don't fully understand why a separate MSU file (KB5058499 in the logs above) is getting checked when a command is run to only install KB5043080, but this workaround allowed all MSU files to be installed properly.
 
-									while ("$($thisUpdateDownloadPath).download".Length -gt 248) { # MAX_PATH (260) minus 12 (248) seems to be the safest path length: https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation
+									while ("$($thisUpdateDownloadPath)-download".Length -gt 248) { # MAX_PATH (260) minus 12 (248) seems to be the safest path length: https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation
 										$thisUpdateName = $thisUpdateName.Substring(0, $thisUpdateName.LastIndexOf(' '))
 										$thisUpdateDownloadPath = "$osUpdatesToInstallPath\$thisUpdateName\$thisUpdateFilename"
 									}
@@ -447,9 +472,9 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 										} else {
 											Write-Output "        Downloading Windows Update `"$thisUpdateFilename`" ($thisUpdateSize)..."
 
-											Invoke-WebRequest $thisUpdateDownloadURL -OutFile "$($thisUpdateDownloadPath).download" -ErrorAction Stop
+											Invoke-WebRequest $thisUpdateDownloadURL -OutFile "$($thisUpdateDownloadPath)-download" -ErrorAction Stop
 
-											Move-Item "$($thisUpdateDownloadPath).download" "$thisUpdateDownloadPath" -Force -ErrorAction Stop
+											Move-Item "$($thisUpdateDownloadPath)-download" "$thisUpdateDownloadPath" -Force -ErrorAction Stop
 
 											Write-Output "          Downloaded Windows Update `"$thisUpdateFilename`""
 										}
@@ -793,7 +818,7 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 
 					if ($updatedWinReWimSizeBytes -lt $sourceWinReWimSizeBytes) {
 						$updatedWinReWimSizeBytesDifference = ($sourceWinReWimSizeBytes - $updatedWinReWimSizeBytes)
-						if ($updatedWinReWimSizeBytesDifference -ge 1000000) {
+						if ($updatedWinReWimSizeBytesDifference -ge 1500000) {
 							Write-Host "`n    ERROR: UPDATED WINRE WIM ($updatedWinReWimSizeBytes) IS *$([math]::Round(($updatedWinReWimSizeBytesDifference / 1MB), 2)) MB SMALLER THAN* SOURCE WINRE WIM ($sourceWinReWimSizeBytes) - THIS SHOULD NOT NORMALLY HAPPENED" -ForegroundColor Red
 
 							$smallerUpdatedWinReWimPromptCaption = '    Continue anyway?'

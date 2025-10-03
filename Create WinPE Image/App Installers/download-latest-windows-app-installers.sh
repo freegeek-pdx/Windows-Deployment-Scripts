@@ -23,6 +23,8 @@
 # AS OF 10/12/23 I HAVE WRITTEN A POWERSHELL VERSION OF THIS SCRIPT WHICH IS "Download Latest Windows App Installers.ps1" IN THIS SAME FOLDER.
 
 
+TMPDIR="$([[ -d "${TMPDIR}" && -w "${TMPDIR}" ]] && echo "${TMPDIR%/}" || echo '/tmp')" # Make sure "TMPDIR" is always set and that it DOES NOT have a trailing slash for consistency regardless of the current environment.
+
 download_app_installer() {
 	local app_name="$1"
 	local installer_extension="$2"
@@ -50,9 +52,9 @@ download_app_installer() {
 		if [[ ! -f "${installer_download_filename}" ]]; then
 			echo "Downloading Latest ${app_name} Installer..."
 
-			rm -f "${app_name}_"*
+			rm -f "${TMPDIR}/${installer_download_filename}-download"
 
-			if curl --connect-timeout 5 --progress-bar -fL "${download_url}" -o "${installer_download_filename}.download" && mv -f "${installer_download_filename}.download" "${installer_download_filename}" && [[ -f "${installer_download_filename}" ]]; then
+			if curl --connect-timeout 5 --progress-bar -fL "${download_url}" -o "${TMPDIR}/${installer_download_filename}-download" && rm -f "${app_name}_"* && mv -f "${TMPDIR}/${installer_download_filename}-download" "${installer_download_filename}" && [[ -f "${installer_download_filename}" ]]; then
 				echo "Downloaded Latest ${app_name} Installer"
 			else
 				echo "ERROR $? DOWNLOADING LATEST ${app_name} INSTALLER"

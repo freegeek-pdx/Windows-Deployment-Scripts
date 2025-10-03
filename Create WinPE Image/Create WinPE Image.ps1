@@ -33,7 +33,7 @@ $createISO = $false;
 $includeResourcesInUSB = $false;
 
 $windows10featureVersion = '22H2' # 22H2 is the FINAL feature update for Windows 10: https://techcommunity.microsoft.com/t5/windows-it-pro-blog/windows-client-roadmap-update/ba-p/3805227
-$windows11featureVersion = '24H2'
+$windows11featureVersion = '25H2'
 
 $winPEmajorVersion = '11' # It is fine to use WinPE/WinRE from Windows 11 even when Windows 10 will be installed.
 $winPEfeatureVersion = $windows11featureVersion
@@ -604,7 +604,7 @@ function Add-WinPECustomizations {
 
 		if ($updatedWinPeWimSizeBytes -lt $sourceWinPeWimSizeBytes) {
 			$updatedWinPeWimSizeBytesDifference = ($sourceWinPeWimSizeBytes - $updatedWinPeWimSizeBytes)
-			if ($updateResourcesOnly -and ($updatedWinPeWimSizeBytesDifference -lt 1000000)) {
+			if ($updateResourcesOnly -and ($updatedWinPeWimSizeBytesDifference -lt 1500000)) {
 				Write-Host "`n    NOTICE: UPDATED $winPEname WIM ($updatedWinPeWimSizeBytes) IS *$([math]::Round(($updatedWinPeWimSizeBytesDifference / 1MB), 2)) MB SMALLER THAN* SOURCE $wimImageBaseName WIM ($sourceWinPeWimSizeBytes) - CONTINUING ANYWAY`n" -ForegroundColor Yellow
 			} else {
 				Write-Host "`n    ERROR: UPDATED $winPEname WIM ($updatedWinPeWimSizeBytes) IS *$([math]::Round(($updatedWinPeWimSizeBytesDifference / 1MB), 2)) MB SMALLER THAN* SOURCE $wimImageBaseName WIM ($sourceWinPeWimSizeBytes) - THIS SHOULD NOT HAVE HAPPENED" -ForegroundColor Red
@@ -790,7 +790,7 @@ if ($includeResourcesInUSB) {
 		Write-Host "`n`n  NO MEDIA FOLDER FOR $wimImageBaseName USB" -ForegroundColor Red
 	}
 } else {
-	Write-Host "`n`n  NOT ADDING RESOURCES TO BOOT FOLDER FOR STANDALONE $wimImageBaseName USB (WILL BE INCLUDED IN SEPARATE USB PARITION)" -ForegroundColor Yellow
+	Write-Host "`n`n  NOT ADDING RESOURCES TO BOOT FOLDER FOR STANDALONE $wimImageBaseName USB (WILL BE INCLUDED IN SEPARATE USB PARTITION)" -ForegroundColor Yellow
 }
 
 

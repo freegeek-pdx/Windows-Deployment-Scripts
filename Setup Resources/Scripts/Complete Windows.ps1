@@ -11,6 +11,7 @@
 # Tested in November 2022 for Windows 10, version 22H2
 # AND Tested in November 2023 for Windows 11, version 23H2
 # AND Tested in October 2024 for Windows 11, version 24H2
+# AND Tested in October 2025 for Windows 11, version 25H2
 #
 # MIT License
 #
@@ -27,7 +28,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2025.8.13-1
+# Version: 2025.10.2-1
 
 param(
 	[Parameter(Position = 0)]
@@ -765,7 +766,8 @@ for ( ; ; ) {
 
 								try {
 									if (Test-Path $driversCacheModelPathUniqueDriversPointerFilePath) {
-										$cachedDriversDidChange = (-not ((Compare-Object $installedCompatibleDriverFolderNames (Get-Content $driversCacheModelPathUniqueDriversPointerFilePath -ErrorAction Stop)).Length -eq 0))
+										$currentCachedDriversFolderNames = (Get-Content $driversCacheModelPathUniqueDriversPointerFilePath -ErrorAction Stop)
+										$cachedDriversDidChange = (($null -eq $currentCachedDriversFolderNames) -or ((Compare-Object -ReferenceObject $installedCompatibleDriverFolderNames -DifferenceObject $currentCachedDriversFolderNames).Length -ne 0))
 									}
 
 									Set-Content $driversCacheModelPathUniqueDriversPointerFilePath $installedCompatibleDriverFolderNames -ErrorAction Stop

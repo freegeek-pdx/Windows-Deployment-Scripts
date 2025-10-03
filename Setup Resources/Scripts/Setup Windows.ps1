@@ -12,6 +12,7 @@
 # Tested in November 2022 for Windows 10, version 22H2
 # AND Tested in November 2023 for Windows 11, version 23H2
 # AND Tested in October 2024 for Windows 11, version 24H2
+# AND Tested in October 2025 for Windows 11, version 25H2
 #
 # MIT License
 #
@@ -28,7 +29,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2025.8.5-1
+# Version: 2025.10.2-1
 
 param(
 	[Parameter(Position = 0)]

@@ -4,6 +4,7 @@
 # Tested in November 2022 for Windows 10, version 22H2
 # AND Tested in November 2023 for Windows 11, version 23H2
 # AND Tested in October 2024 for Windows 11, version 24H2
+# AND Tested in October 2025 for Windows 11, version 25H2
 #
 # MIT License
 #
@@ -20,7 +21,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2025.8.21-1
+# Version: 2025.10.2-1
 
 # PowerShell must be installed in WinPE to run this script (which will be taken care of automatically if WinPE is built with "Create WinPE Image.ps1"):
 # https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-adding-powershell-support-to-windows-pe
@@ -633,10 +634,12 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 			Write-Host "`n    R: Regular Install with Standard Apps" -ForegroundColor Cyan
 			Write-Host "`n    S: SNAP Install with Extra Apps" -ForegroundColor Cyan
-			Write-Host "`n    N: Base Install with NO Apps (Useful When Only Wanting to Run Firmware Updates)" -ForegroundColor Cyan
+			Write-Host "`n    N: Base Install with NO Apps" -NoNewline -ForegroundColor Cyan
+			Write-Host " (Useful When Only Wanting to Run Firmware Updates)" -ForegroundColor Yellow
 
 			if ($testMode) {
-				Write-Host "`n    B: Base Install With NO Apps and NO Testing (Boot Into Windows Setup After Install)" -ForegroundColor Cyan
+				Write-Host "`n    B: Base Install With NO Apps and NO Testing" -NoNewline -ForegroundColor Cyan
+				Write-Host " (Boot Into Windows Setup After Install)" -ForegroundColor Yellow
 			}
 
 			Write-Host "`n    C: Cancel Windows Installation and Reboot This Computer" -ForegroundColor Cyan
@@ -2348,7 +2351,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 					Write-Output "`n  Creating Recovery Partition...`n`n`n`n`n`n`n`n`n" # Add empty lines for PowerShell progress UI
 
 					try {
-						# Recovery Parition Sizing Research and Notes:
+						# Recovery Partition Sizing Research and Notes:
 
 						# Windows 10 1903 (v1) ISO Installer made Recovery partition 529 MB for 365 MB WinRE, which is 164 MB over WinRE size.
 						# Windows 10 1903 (v2) ISO Installer made Recovery partition 529 MB for 409 MB WinRE, which is 120 MB over WinRE size.
@@ -2359,7 +2362,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 						# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/hard-drives-and-partitions#recovery-partitions
 						# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/configure-uefigpt-based-hard-drive-partitions#partition-layout
 
-						# There also seems to be a change in the drive paritioning code at this point since the Recovery partition was always 529 MB in Win 10 1909 and older, regardless of WinRE size.
+						# There also seems to be a change in the drive partitioning code at this point since the Recovery partition was always 529 MB in Win 10 1909 and older, regardless of WinRE size.
 						# Then, in Win 10 2004 and newer, the Recovery partition size seems to get set dynamically to be 102 MB larger than actual WinRE size.
 
 						# Windows 10 2004 ISO Installer made Recovery partition 505 MB for 403 MB WinRE, which is 102 MB over WinRE size.
