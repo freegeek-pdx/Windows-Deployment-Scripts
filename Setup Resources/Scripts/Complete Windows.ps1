@@ -28,7 +28,9 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2025.10.2-1
+# Version: 2025.11.10-1
+
+#Requires -RunAsAdministrator
 
 param(
 	[Parameter(Position = 0)]
@@ -51,7 +53,7 @@ if (-not (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\State
 	exit 1
 }
 
-if (-not (Test-Path '\Windows\System32\Sysprep\Unattend.xml')) {
+if (-not (Test-Path "$Env:SystemRoot\System32\Sysprep\Unattend.xml")) {
 	Write-Host "`n  ERROR: `"Unattend.xml`" DOES NOT EXISTS - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n`n  EXITING IN 5 SECONDS..." -ForegroundColor Red
 	Start-Sleep 5
 	exit 2
@@ -107,11 +109,11 @@ try {
 	# Only try once to quit Sysprep in case it's running, but don't show any error if it's wasn't.
 }
 
-$testMode = (($OverrideMode -eq 'TESTING') -or (Test-Path '\Install\fgFLAG-TEST') -or (Test-Path '\Install\TESTING')) # Still check for old flag names (which are easier to create manually).
+$testMode = (($OverrideMode -eq 'TESTING') -or (Test-Path "$Env:SystemDrive\Install\fgFLAG-TEST") -or (Test-Path "$Env:SystemDrive\Install\TESTING")) # Still check for old flag names (which are easier to create manually).
 
 
 if (-not $onlyCacheDriversMode) { # Only do this verification and setup if not only caching drivers.
-	$auditUnattendContents = Get-Content -Raw '\Windows\System32\Sysprep\Unattend.xml'
+	$auditUnattendContents = Get-Content -Raw "$Env:SystemRoot\System32\Sysprep\Unattend.xml"
 
 	if (-not $auditUnattendContents.Contains('\Complete Windows.ps1')) { # Only actually verify and confirm if this script HAS NOT run before.
 		if ($isWindows11) {
@@ -143,19 +145,19 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 				$win11compatibleStorage = $true
 			}
 
-			$eleventhGenIntelCPUorNewer = $false
+			$eleventhToThirteenthGenIntelCPU = $false
 			$cpuInfo = (Get-CimInstance 'Win32_Processor' -Property 'Manufacturer', 'Name' -ErrorAction SilentlyContinue)
 			if ($cpuInfo.Manufacturer -and $cpuInfo.Name -and $cpuInfo.Manufacturer.ToUpper().Contains('INTEL') -and $cpuInfo.Name.ToUpper().Contains(' GEN ')) {
 				# "Manufacturer" should be "GenuineIntel" for all Intel processors, but do a case-insenstive check anything that contains "INTEL" just to be safe.
-				# Only 11th Gen Intel CPUs contain " Gen " in their model name strings, and they will always be compatible with Windows 11.
+				# Only 11th-13th Gen Intel CPUs contain " Gen " in their model name strings, and they will always be compatible with Windows 11.
 				# This boolean will be used as a fallback to the "win11compatibleCPUmodel" check done by WhyNotWin11 below in case WhyNotWin11
 				# is not updated promptly and we run into a newer CPU that is not yet in the WhyNotWin11 list of compatible CPUs.
-				$eleventhGenIntelCPUorNewer = $true
+				$eleventhToThirteenthGenIntelCPU = $true
 			}
 
-			if (Test-Path '\Install\Diagnostic Tools\WhyNotWin11.exe') { # Use WhyNotWin11 to help detect if the exact CPU model is compatible and more: https://github.com/rcmaehl/WhyNotWin11
-				Remove-Item '\Install\WhyNotWin11 Log.csv' -Force -ErrorAction SilentlyContinue
-				Start-Process '\Install\Diagnostic Tools\WhyNotWin11.exe' -NoNewWindow -Wait -ArgumentList '/export', 'CSV', '"C:\Install\WhyNotWin11 Log.csv"', '/skip', 'CPUFreq,Storage', '/silent', '/force' -ErrorAction SilentlyContinue
+			if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\WhyNotWin11.exe") { # Use WhyNotWin11 to help detect if the exact CPU model is compatible and more: https://github.com/rcmaehl/WhyNotWin11
+				Remove-Item "$Env:SystemDrive\Install\WhyNotWin11 Log.csv" -Force -ErrorAction SilentlyContinue
+				Start-Process "$Env:SystemDrive\Install\Diagnostic Tools\WhyNotWin11.exe" -NoNewWindow -Wait -ArgumentList '/export', 'CSV', "`"$Env:SystemDrive\Install\WhyNotWin11 Log.csv`"", '/skip', 'CPUFreq,Storage', '/silent', '/force' -ErrorAction SilentlyContinue
 			}
 
 			$win11compatibleArchitecture = $false
@@ -169,8 +171,8 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 			$win11compatibleTPMfromWhyNotWin11 = $false
 			$checkedWithWhyNotWin11 = $false
 
-			if (Test-Path '\Install\WhyNotWin11 Log.csv') {
-				$whyNotWin11LogLastLine = Get-Content '\Install\WhyNotWin11 Log.csv' -Last 1
+			if (Test-Path "$Env:SystemDrive\Install\WhyNotWin11 Log.csv") {
+				$whyNotWin11LogLastLine = Get-Content "$Env:SystemDrive\Install\WhyNotWin11 Log.csv" -Last 1
 
 				if ($null -ne $whyNotWin11LogLastLine) {
 					$whyNotWin11LogValues = $whyNotWin11LogLastLine.Split(',')
@@ -203,7 +205,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 				# This incompatibility should never happen since we only refurbish 64-bit processors and only have 64-bit Windows installers.
 				Write-Host 'NO (64-bit REQUIRED)' -ForegroundColor Red
 			} elseif (-not $win11compatibleCPUmodel) {
-				if ($eleventhGenIntelCPUorNewer) {
+				if ($eleventhToThirteenthGenIntelCPU) {
 					Write-Host 'YES' -NoNewline -ForegroundColor Green
 					Write-Host ' (Fallback Check Passed)' -ForegroundColor Yellow
 				} else {
@@ -285,7 +287,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 
 					exit 0 # Not sure if exit is necessary after Stop-Computer but doesn't hurt.
 				}
-			} elseif ((-not $win11compatibleTPM) -or (-not $win11compatibleArchitecture) -or (-not $win11compatibleBootMethod) -or ((-not $win11compatibleCPUmodel) -and (-not $eleventhGenIntelCPUorNewer)) -or (-not $win11compatibleCPUcores) -or (-not $win11compatibleSSE4dot2) -or (-not $win11compatiblePartitionType) -or (-not $win11compatibleRAM) -or (-not $win11compatibleSecureBoot) -or (-not $win11compatibleStorage) -or (-not $win11compatibleTPMfromWhyNotWin11)) {
+			} elseif ((-not $win11compatibleTPM) -or (-not $win11compatibleArchitecture) -or (-not $win11compatibleBootMethod) -or ((-not $win11compatibleCPUmodel) -and (-not $eleventhToThirteenthGenIntelCPU)) -or (-not $win11compatibleCPUcores) -or (-not $win11compatibleSSE4dot2) -or (-not $win11compatiblePartitionType) -or (-not $win11compatibleRAM) -or (-not $win11compatibleSecureBoot) -or (-not $win11compatibleStorage) -or (-not $win11compatibleTPMfromWhyNotWin11)) {
 				# None of the previous elseif checks should fail (unless in Test Mode) because it was all verified in WinPE before allowing Windows 11 to be installed.
 				# So, if we got here, this computer needs to be sent to Free Geek I.T. to see what went wrong.
 
@@ -311,19 +313,19 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 		try {
 			Remove-Item "$Env:TEMP\fgComplete-*.txt" -Force -ErrorAction SilentlyContinue
 
-			$slmgrDlvExitCode = (Start-Process 'cscript' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgComplete-slmgr-dlv-Output.txt" -RedirectStandardError "$Env:TEMP\fgComplete-slmgr-dlv-Error.txt" -ArgumentList '/nologo', '\Windows\System32\slmgr.vbs', '/dlv' -ErrorAction Stop).ExitCode
+			$slmgrDlvExitCode = (Start-Process 'cscript' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgComplete-slmgr-dlv-Output.txt" -RedirectStandardError "$Env:TEMP\fgComplete-slmgr-dlv-Error.txt" -ArgumentList '/nologo', "$Env:SystemRoot\System32\slmgr.vbs", '/dlv' -ErrorAction Stop).ExitCode
 			$slmgrDlvError = Get-Content -Raw "$Env:TEMP\fgComplete-slmgr-dlv-Error.txt"
 			$slmgrDlvOutput = Get-Content -Raw "$Env:TEMP\fgComplete-slmgr-dlv-Output.txt"
 
 			if (($slmgrDlvExitCode -eq 0) -and ($null -eq $slmgrDlvError)) {
-				if ($slmgrDlvOutput.Contains('Product Key Channel: OEM:DM') -and (Test-Path '\Install\DPK\Logs\oa3tool-assemble.xml')) {
+				if ($slmgrDlvOutput.Contains('Product Key Channel: OEM:DM') -and (Test-Path "$Env:SystemDrive\Install\DPK\Logs\oa3tool-assemble.xml")) {
 					# "OEM:DM" could mean that the computer has an Embedded Digital Product Key OR that we have issued it Refurbished Digital Product Key using oa3tool.
 					# Therefore, only allow "OEM:DM" Product Keys if the "oa3tool-assemble.xml" file exists (which contains the Refurb DPK applied by us) AND the "Partial Product Key" matches the end of that DPK AND it contains a valid Licensable Part Number for the correct version and edition.
 
 					$slmgrDlvPartialProductKeyLine = (Select-String -Path "$Env:TEMP\fgComplete-slmgr-dlv-Output.txt" -Pattern 'Partial Product Key: ').Line
 
 					if (($null -ne $slmgrDlvPartialProductKeyLine) -and ($slmgrDlvPartialProductKeyLine.length -eq 26)) {
-						[xml]$oa3toolAssembleXML = Get-Content '\Install\DPK\Logs\oa3tool-assemble.xml'
+						[xml]$oa3toolAssembleXML = Get-Content "$Env:SystemDrive\Install\DPK\Logs\oa3tool-assemble.xml"
 
 						if (($null -ne $oa3toolAssembleXML.Key.ProductKey) -and ($null -ne $oa3toolAssembleXML.Key.ProductKeyID) -and ($null -ne $oa3toolAssembleXML.Key.ProductKeyPartNumber)) {
 							$validRefurbDPKLPNs = @()
@@ -386,10 +388,10 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 			Write-Host "`n  ERROR: Failed to check Product Key." -ForegroundColor Red
 		}
 
-		if (Test-Path '\Install\QA Helper Log.txt') {
+		if (Test-Path "$Env:SystemDrive\Install\QA Helper Log.txt") {
 			$qaHelperLogLastStatusLine = 'Status: UNKNOWN'
 
-			foreach ($thisQAhelperLogLine in (Get-Content '\Install\QA Helper Log.txt')) {
+			foreach ($thisQAhelperLogLine in (Get-Content "$Env:SystemDrive\Install\QA Helper Log.txt")) {
 				if ($thisQAhelperLogLine.StartsWith('Status: ')) {
 					$qaHelperLogLastStatusLine = $thisQAhelperLogLine
 					# Continue check entire QA Helper Log for last status since all past statuses are saved.
@@ -418,7 +420,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 
 			Write-Host "`n`n  !!! THIS COMPUTER CANNOT BE SOLD UNTIL WINDOWS IS COMPLETED SUCCESSFULLY !!!" -ForegroundColor Red
 
-			if ((Test-Path '\Install\QA Helper\java-jre\bin\javaw.exe') -and (Test-Path '\Install\QA Helper\QA_Helper.jar')) {
+			if ((Test-Path "$Env:SystemDrive\Install\QA Helper\java-jre\bin\javaw.exe") -and (Test-Path "$Env:SystemDrive\Install\QA Helper\QA_Helper.jar")) {
 				Write-Host "`n`n  If this computer is actually ready to be completed, please inform Free Geek I.T.`n" -ForegroundColor Red
 				FocusScriptWindow
 				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
@@ -426,7 +428,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 
 				if ((-not $testMode) -or ($notReadyResponse -ne 'TESTING')) { # Can bypass in test mode even if the computer isn't ready to be completed for testing purposes.
 					Write-Output "`n`n  Launching QA Helper..."
-					Start-Process '\Install\QA Helper\java-jre\bin\javaw.exe' -NoNewWindow -ArgumentList '-jar', '"\Install\QA Helper\QA_Helper.jar"' -ErrorAction SilentlyContinue
+					Start-Process "$Env:SystemDrive\Install\QA Helper\java-jre\bin\javaw.exe" -NoNewWindow -ArgumentList '-jar', "`"$Env:SystemDrive\Install\QA Helper\QA_Helper.jar`"" -ErrorAction SilentlyContinue
 
 					Start-Sleep 3
 
@@ -455,9 +457,9 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 			if ($confirmComplete -ne '') {
 				if ($confirmComplete.ToUpper() -eq 'Y') {
 					break
-				} elseif ((Test-Path '\Install\QA Helper\java-jre\bin\javaw.exe') -and (Test-Path '\Install\QA Helper\QA_Helper.jar')) {
+				} elseif ((Test-Path "$Env:SystemDrive\Install\QA Helper\java-jre\bin\javaw.exe") -and (Test-Path "$Env:SystemDrive\Install\QA Helper\QA_Helper.jar")) {
 					Write-Output "`n`n  Launching QA Helper..."
-					Start-Process '\Install\QA Helper\java-jre\bin\javaw.exe' -NoNewWindow -ArgumentList '-jar', '"\Install\QA Helper\QA_Helper.jar"' -ErrorAction SilentlyContinue
+					Start-Process "$Env:SystemDrive\Install\QA Helper\java-jre\bin\javaw.exe" -NoNewWindow -ArgumentList '-jar', "`"$Env:SystemDrive\Install\QA Helper\QA_Helper.jar`"" -ErrorAction SilentlyContinue
 
 					Start-Sleep 3
 
@@ -477,7 +479,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 
 		# Update Unattend.xml to make "Complete Windows.ps1" run on boot instead of "Setup Windows.ps1" (in case the computer is rebooted or shut down prematurely).
 		try {
-			Set-Content -Path '\Windows\System32\Sysprep\Unattend.xml' -Value $auditUnattendContents.Replace('Setup Windows', 'Complete Windows') -Force -ErrorAction Stop
+			Set-Content -Path "$Env:SystemRoot\System32\Sysprep\Unattend.xml" -Value $auditUnattendContents.Replace('Setup Windows', 'Complete Windows') -Force -ErrorAction Stop
 		} catch {
 			Write-Host "`n  ERROR UPDATING AUDIT UNATTEND CONTENTS: $_" -ForegroundColor Red
 		}
@@ -526,7 +528,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 [xml]$smbCredentialsXML = $null
 
 try {
-	[xml]$smbCredentialsXML = Get-Content '\Install\Scripts\smb-credentials.xml' -ErrorAction Stop
+	[xml]$smbCredentialsXML = Get-Content "$Env:SystemDrive\Install\Scripts\smb-credentials.xml" -ErrorAction Stop
 
 	if ($null -eq $smbCredentialsXML.smbCredentials.driversReadWriteShare.ip) {
 		throw 'NO DRIVERS SHARE IP'
@@ -643,9 +645,9 @@ for ( ; ; ) {
 		$cachedDriversDidChange = $true
 
 		if ($lastTaskSucceeded) {
-			$driversCacheModelNameFilePath = '\Install\Drivers Cache Model Name.txt' # This file is created by QA Helper in WinPE using its detailed model info.
+			$driversCacheModelNameFilePath = "$Env:SystemDrive\Install\Drivers Cache Model Name.txt" # This file is created by QA Helper in WinPE using its detailed model info.
 			if (-not (Test-Path $driversCacheModelNameFilePath)) {
-				$driversCacheModelNameFilePath = '\Install\Drivers Cache Model Path.txt' # This is the old filename from when paths were specified instead of a filename.
+				$driversCacheModelNameFilePath = "$Env:SystemDrive\Install\Drivers Cache Model Path.txt" # This is the old filename from when paths were specified instead of a filename.
 			}
 
 			if (Test-Path $driversCacheModelNameFilePath) {
@@ -696,7 +698,7 @@ for ( ; ; ) {
 											$thisExcludedInfName = "$thisExcludedInfName.inf"
 										}
 
-										if ($_.OriginalFileName.Contains("\$($thisExcludedInfName)_")) {
+										if ($_.OriginalFileName.Contains("\${thisExcludedInfName}_")) {
 											if ($testMode) {
 												Write-Host "    DEBUG - EXCLUDING DRIVER FROM CACHE: $thisExcludedInfName" -ForegroundColor Yellow
 											}
@@ -767,7 +769,7 @@ for ( ; ; ) {
 								try {
 									if (Test-Path $driversCacheModelPathUniqueDriversPointerFilePath) {
 										$currentCachedDriversFolderNames = (Get-Content $driversCacheModelPathUniqueDriversPointerFilePath -ErrorAction Stop)
-										$cachedDriversDidChange = (($null -eq $currentCachedDriversFolderNames) -or ((Compare-Object -ReferenceObject $installedCompatibleDriverFolderNames -DifferenceObject $currentCachedDriversFolderNames).Length -ne 0))
+										$cachedDriversDidChange = (($null -eq $currentCachedDriversFolderNames) -or ((Compare-Object $installedCompatibleDriverFolderNames $currentCachedDriversFolderNames).Count -ne 0))
 									}
 
 									Set-Content $driversCacheModelPathUniqueDriversPointerFilePath $installedCompatibleDriverFolderNames -ErrorAction Stop
@@ -881,10 +883,11 @@ for ( ; ; ) {
 																		break
 																	}
 
-																	# Historical Note: Would previously compare hashes of ".cat" and ".sys" files.
+																	# HISTORICAL NOTE: Would previously compare hashes of ".cat" and ".sys" files.
 																	# BUT, not doing that anymore since it would result in basically identical drivers from different models overwriting each other when getting cached.
 																	# From what I could tell comparing the binary contents, it was generally because of minor differences in the headers and footers and seemed to be because of code signing differences.
 																	# From testing, these differences do not make them incompatible between different models (since the ".inf" files are identical and both copies of the ".cat" and ".sys" files are valid).
+																	# This also means that using "Compare-Object $theseInstalledDriverDirectoryFiles $theseCachedDriverDirectoryFiles -Property Name, Length" would give false negatives for the same reason.
 																}
 															} else {
 																$cachedDriverContentsMatchInstalledDriver = $false
@@ -1058,7 +1061,7 @@ for ( ; ; ) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Program Files\Intel Corporation\Intel Processor Diagnostic Tool 64bit')) { # See comments in "Setup Windows" about why IPDT is installed instead of run from "Diagnostic Tools" (and therefore must be uninstalled manually so it's not leftover for the end user).
+		if ($lastTaskSucceeded -and (Test-Path "$Env:ProgramFiles\Intel Corporation\Intel Processor Diagnostic Tool 64bit")) { # See comments in "Setup Windows" about why IPDT is installed instead of run from "Diagnostic Tools" (and therefore must be uninstalled manually so it's not leftover for the end user).
 			Write-Output "`n`n  Uninstalling Intel Processor Diagnostic Tool..."
 
 			$ipdtMSIpath = 'NOT FOUND IN REGISTRY' # Need to locate cached MSI from Registry to uninstall, but they are cached with random names: https://stackoverflow.com/a/75179157
@@ -1080,11 +1083,11 @@ for ( ; ; ) {
 					$ipdtUninstallError = Get-Content -Raw "$Env:TEMP\fgComplete-IPDT-uninstaller-Error.txt"
 
 					if (($ipdtUninstallExitCode -eq 0) -and ($null -eq $ipdtUninstallError)) {
-						if (Test-Path '\Program Files\Intel Corporation\Intel Processor Diagnostic Tool 64bit') { # Log files could be leftover in the "Intel Processor Diagnostic Tool 64bit" folder, so manually delete them and the folder if needed.
-							Remove-Item '\Program Files\Intel Corporation\Intel Processor Diagnostic Tool 64bit' -Recurse -Force -ErrorAction Stop
+						if (Test-Path "$Env:ProgramFiles\Intel Corporation\Intel Processor Diagnostic Tool 64bit") { # Log files could be leftover in the "Intel Processor Diagnostic Tool 64bit" folder, so manually delete them and the folder if needed.
+							Remove-Item "$Env:ProgramFiles\Intel Corporation\Intel Processor Diagnostic Tool 64bit" -Recurse -Force -ErrorAction Stop
 
-							if (-not (Test-Path '\Program Files\Intel Corporation\*')) { # Only manually delete the "Intel Corporation" parent folder if it's empty (which it should be).
-								Remove-Item '\Program Files\Intel Corporation' -Force -ErrorAction Stop
+							if (-not (Test-Path "$Env:ProgramFiles\Intel Corporation\*")) { # Only manually delete the "Intel Corporation" parent folder if it's empty (which it should be).
+								Remove-Item "$Env:ProgramFiles\Intel Corporation" -Force -ErrorAction Stop
 							}
 						}
 
@@ -1112,14 +1115,14 @@ for ( ; ; ) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Program Files (x86)\GPU-Z')) { # GPU-Z (in "Diagnostic Tools") will have its Registry key set just run in standalone mode and NOT prompt to install, but check and uninstall it just in case anyways.
+		if ($lastTaskSucceeded -and (Test-Path "${Env:ProgramFiles(x86)}\GPU-Z")) { # GPU-Z (in "Diagnostic Tools") will have its Registry key set just run in standalone mode and NOT prompt to install, but check and uninstall it just in case anyways.
 			Write-Output "`n`n  Uninstalling GPU-Z..."
 
-			if (Test-Path '\Program Files (x86)\GPU-Z\unins000.exe') {
+			if (Test-Path "${Env:ProgramFiles(x86)}\GPU-Z\unins000.exe") {
 				try {
 					Remove-Item "$Env:TEMP\fgComplete-*.txt" -Force -ErrorAction SilentlyContinue
 
-					$gpuzUninstallSilentExitCode = (Start-Process '\Program Files (x86)\GPU-Z\unins000.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgComplete-gpuzUninstall-silent-Output.txt" -RedirectStandardError "$Env:TEMP\fgComplete-gpuzUninstall-silent-Error.txt" -ArgumentList '/silent' -ErrorAction Stop).ExitCode
+					$gpuzUninstallSilentExitCode = (Start-Process "${Env:ProgramFiles(x86)}\GPU-Z\unins000.exe" -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgComplete-gpuzUninstall-silent-Output.txt" -RedirectStandardError "$Env:TEMP\fgComplete-gpuzUninstall-silent-Error.txt" -ArgumentList '/silent' -ErrorAction Stop).ExitCode
 					$gpuzUninstallSilentError = Get-Content -Raw "$Env:TEMP\fgComplete-gpuzUninstall-silent-Error.txt"
 
 					if (($gpuzUninstallSilentExitCode -eq 0) -and ($null -eq $gpuzUninstallSilentError)) {
@@ -1141,7 +1144,7 @@ for ( ; ; ) {
 					$lastTaskSucceeded = $false
 				}
 			} else {
-				Write-Host "`n  ERROR: `"GPU-Z`" is installed but UNINSTALLER EXE was not found at `"\Program Files (x86)\GPU-Z\unins000.exe`"." -ForegroundColor Red
+				Write-Host "`n  ERROR: `"GPU-Z`" is installed but UNINSTALLER EXE was not found at `"${Env:ProgramFiles(x86)}\GPU-Z\unins000.exe`"." -ForegroundColor Red
 
 				$lastTaskSucceeded = $false
 			}
@@ -1169,7 +1172,7 @@ for ( ; ; ) {
 		}
 
 		if ($lastTaskSucceeded) {
-			$unigineProgramFolders = @('\Program Files (x86)\Unigine', '\Program Files\Unigine') # Unigine apps ARE NOT part of our testing process, but if some technician chose to (incorrectly) install any for GPU testing (instead of correctly using PassMark PerformanceTest), uninstall it so it's not left for the end user.
+			$unigineProgramFolders = @("${Env:ProgramFiles(x86)}\Unigine", "$Env:ProgramFiles\Unigine") # Unigine apps ARE NOT part of our testing process, but if some technician chose to (incorrectly) install any for GPU testing (instead of correctly using PassMark PerformanceTest), uninstall it so it's not left for the end user.
 
 			foreach ($thisUnigineProgramFolder in $unigineProgramFolders) {
 				if (Test-Path $thisUnigineProgramFolder) {
@@ -1542,9 +1545,9 @@ for ( ; ; ) {
 					Remove-Item "$desktopPath\QA Helper.lnk" -Force -ErrorAction Stop
 				}
 
-				if (Test-Path '\Install\') {
+				if (Test-Path "$Env:SystemDrive\Install\") {
 					# Do not delete self yet in case something fails and we need to restart and run this script again.
-					Remove-Item '\Install\*' -Exclude '*Log.txt', 'smb-credentials.xml', "$(Split-Path $PSCommandPath -Leaf)" -Recurse -Force -ErrorAction Stop
+					Remove-Item "$Env:SystemDrive\Install\*" -Exclude '*Log.txt', 'smb-credentials.xml', (Split-Path $PSCommandPath -Leaf) -Recurse -Force -ErrorAction Stop
 
 					Write-Host "`n  Successfully Cleaned Up Leftover Files and Folders from Installation and Setup Process" -ForegroundColor Green
 				}
@@ -1584,20 +1587,20 @@ for ( ; ; ) {
 
 				# Install SetupComplete.cmd (if it exists as WindowsSetupComplete.txt). It's originally stored as a ".txt" file so it cannot be run by accident before installation.
 				# Reference: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/add-a-custom-script-to-windows-setup
-				if ($testMode -and (Test-Path '\Install\Scripts\Resources\WindowsSetupComplete.txt')) {
-					if (-not (Test-Path '\Windows\Setup\Scripts')) {
-						New-Item -ItemType 'Directory' -Path '\Windows\Setup\Scripts' -ErrorAction Stop | Out-Null
+				if ($testMode -and (Test-Path "$Env:SystemDrive\Install\Scripts\Resources\WindowsSetupComplete.txt")) {
+					if (-not (Test-Path "$Env:SystemRoot\Setup\Scripts")) {
+						New-Item -ItemType 'Directory' -Path "$Env:SystemRoot\Setup\Scripts" -ErrorAction Stop | Out-Null
 					}
 
-					Move-Item '\Install\Scripts\Resources\WindowsSetupComplete.txt' '\Windows\Setup\Scripts\SetupComplete.cmd'
+					Move-Item "$Env:SystemDrive\Install\Scripts\Resources\WindowsSetupComplete.txt" "$Env:SystemRoot\Setup\Scripts\SetupComplete.cmd"
 				}
 
 				$sysprepOobeArgs = @('/oobe', '/quit') # Quit after Sysprep instead of letting it shut the computer down so we can confirm success, cleanup leftovers, and then shut down ourselves.
 
 				# Use UnattendOOBE.xml during Sysprep (if it exists) and determine required Sysprep command-line options from its contents.
 				# Reference: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/sysprep-command-line-options
-				if ($testMode -and (Test-Path '\Install\Scripts\Resources\UnattendOOBE.xml')) {
-					$oobeUnattendContents = Get-Content -Raw '\Install\Scripts\Resources\UnattendOOBE.xml'
+				if ($testMode -and (Test-Path "$Env:SystemDrive\Install\Scripts\Resources\UnattendOOBE.xml")) {
+					$oobeUnattendContents = Get-Content -Raw "$Env:SystemDrive\Install\Scripts\Resources\UnattendOOBE.xml"
 
 					if ($oobeUnattendContents.Contains('<unattend xmlns="urn:schemas-microsoft-com:unattend">')) {
 						if ($oobeUnattendContents.Contains('<settings pass="specialize">') -or $oobeUnattendContents.Contains('<settings pass="generalize">')) {
@@ -1610,7 +1613,7 @@ for ( ; ; ) {
 							$sysprepOobeArgs += '/generalize'
 						}
 
-						$sysprepOobeArgs += '/unattend:"\Install\Scripts\Resources\UnattendOOBE.xml"'
+						$sysprepOobeArgs += "/unattend:`"$Env:SystemDrive\Install\Scripts\Resources\UnattendOOBE.xml`""
 					}
 				}
 
@@ -1623,24 +1626,24 @@ for ( ; ; ) {
 				Remove-Item "$Env:TEMP\fgComplete-*.txt" -Force -ErrorAction SilentlyContinue
 
 				# Remove Previous Unattend Files
-				if (Test-Path '\Windows\Panther\Unattend.xml') {
-					Remove-Item '\Windows\Panther\Unattend.xml' -Force -ErrorAction Stop
+				if (Test-Path "$Env:SystemRoot\Panther\Unattend.xml") {
+					Remove-Item "$Env:SystemRoot\Panther\Unattend.xml" -Force -ErrorAction Stop
 				}
 
-				if (Test-Path '\Windows\System32\Sysprep\Panther') {
-					Remove-Item '\Windows\System32\Sysprep\Panther' -Recurse -Force -ErrorAction Stop
+				if (Test-Path "$Env:SystemRoot\System32\Sysprep\Panther") {
+					Remove-Item "$Env:SystemRoot\System32\Sysprep\Panther" -Recurse -Force -ErrorAction Stop
 				}
 
-				if (Test-Path '\Windows\System32\Sysprep\Sysprep_succeeded.tag') {
-					Remove-Item '\Windows\System32\Sysprep\Sysprep_succeeded.tag' -Force -ErrorAction Stop # This tag should not exist, and Sysprep would delete it when it launches anyway.
+				if (Test-Path "$Env:SystemRoot\System32\Sysprep\Sysprep_succeeded.tag") {
+					Remove-Item "$Env:SystemRoot\System32\Sysprep\Sysprep_succeeded.tag" -Force -ErrorAction Stop # This tag should not exist, and Sysprep would delete it when it launches anyway.
 				}
 
 				# Sysprep Reference: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/sysprep-command-line-options
-				$sysprepOobeExitCode = (Start-Process '\Windows\System32\Sysprep\sysprep.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgComplete-Sysprep-oobe-Output.txt" -RedirectStandardError "$Env:TEMP\fgComplete-Sysprep-oobe-Error.txt" -ArgumentList $sysprepOobeArgs -ErrorAction Stop).ExitCode
+				$sysprepOobeExitCode = (Start-Process "$Env:SystemRoot\System32\Sysprep\sysprep.exe" -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgComplete-Sysprep-oobe-Output.txt" -RedirectStandardError "$Env:TEMP\fgComplete-Sysprep-oobe-Error.txt" -ArgumentList $sysprepOobeArgs -ErrorAction Stop).ExitCode
 				$sysprepOobeError = Get-Content -Raw "$Env:TEMP\fgComplete-Sysprep-oobe-Error.txt"
-				$sysprepErrorLog = Get-Content -Raw '\Windows\System32\Sysprep\Panther\setuperr.log'
+				$sysprepErrorLog = Get-Content -Raw "$Env:SystemRoot\System32\Sysprep\Panther\setuperr.log"
 
-				if (($sysprepOobeExitCode -eq 0) -and ($null -eq $sysprepOobeError) -and ($null -eq $sysprepErrorLog) -and (Test-Path '\Windows\System32\Sysprep\Sysprep_succeeded.tag')) {
+				if (($sysprepOobeExitCode -eq 0) -and ($null -eq $sysprepOobeError) -and ($null -eq $sysprepErrorLog) -and (Test-Path "$Env:SystemRoot\System32\Sysprep\Sysprep_succeeded.tag")) {
 					# Sysprep can FAIL with and exit code of 0 and no StandardError, so we must also check for any error in "setuperr.log" and check for the "Sysprep_succeeded.tag" file.
 
 					if ((Get-LocalUser 'Administrator' -ErrorAction SilentlyContinue).Enabled) {
@@ -1650,10 +1653,10 @@ for ( ; ; ) {
 						Write-Host "`n  ERROR: Sysprep failed to disable Administrator account." -ForegroundColor Red
 
 						$lastTaskSucceeded = $false
-					} elseif (Test-Path '\Windows\System32\Sysprep\Unattend.xml') {
+					} elseif (Test-Path "$Env:SystemRoot\System32\Sysprep\Unattend.xml") {
 						try {
 							# Removing THIS Unattend.xml should be done AFTER Sysprep has SUCCEEDED so that this script can re-run on reboot if any errors happen.
-							Remove-Item '\Windows\System32\Sysprep\Unattend.xml' -Force -ErrorAction Stop
+							Remove-Item "$Env:SystemRoot\System32\Sysprep\Unattend.xml" -Force -ErrorAction Stop
 
 							Write-Host "`n  Successfully Ran System Preparation Tool (Sysprep) to Enter Out-of-Box Experience (OOBE) on Next Boot" -ForegroundColor Green
 						} catch {
@@ -1673,7 +1676,7 @@ for ( ; ; ) {
 					}
 
 					if ($null -eq $sysprepErrorLog) {
-						$sysprepErrorLog = Get-Content -Raw '\Windows\System32\Sysprep\Panther\setupact.log'
+						$sysprepErrorLog = Get-Content -Raw "$Env:SystemRoot\System32\Sysprep\Panther\setupact.log"
 					}
 
 					if (($null -eq $sysprepErrorLog) -or ($sysprepErrorLog -eq '')) {
@@ -1683,7 +1686,7 @@ for ( ; ; ) {
 					}
 
 					$sysprepSucceededTagNote = 'Succeeded Tag DNE'
-					if (Test-Path '\Windows\System32\Sysprep\Sysprep_succeeded.tag') {
+					if (Test-Path "$Env:SystemRoot\System32\Sysprep\Sysprep_succeeded.tag") {
 						$sysprepSucceededTagNote = 'Succeeded Tag Exists'
 					}
 
@@ -1703,11 +1706,11 @@ for ( ; ; ) {
 			Remove-Item "$Env:TEMP\fgComplete-*.txt" -Force -ErrorAction SilentlyContinue
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Install\')) {
+		if ($lastTaskSucceeded -and (Test-Path "$Env:SystemDrive\Install\")) {
 			Write-Output "`n`n  Deleting `"Complete Windows`" Script..."
 
 			try {
-				Remove-Item '\Install\*' -Exclude 'QA Helper Log.txt' -Recurse -Force -ErrorAction Stop
+				Remove-Item "$Env:SystemDrive\Install\*" -Exclude 'QA Helper Log.txt' -Recurse -Force -ErrorAction Stop
 
 				Write-Host "`n  Successfully Deleted `"Complete Windows`" Script" -ForegroundColor Green
 			} catch {

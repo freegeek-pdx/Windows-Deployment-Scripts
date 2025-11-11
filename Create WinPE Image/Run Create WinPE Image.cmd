@@ -22,9 +22,14 @@ NET SESSION 1>NUL 2>NUL
 IF %ERRORLEVEL% NEQ 0 powershell -NoLogo -NoProfile -Command "Start-Process -WindowStyle Maximized '%0' -Verb RunAs" & EXIT /B 1
 
 :: "DandISetEnv" must be run here first for "copype" to work from within the PowerShell Script.
-CALL "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
-
-powershell -NoLogo -NoProfile -ExecutionPolicy Unrestricted -File "%~dp0Create WinPE Image.ps1"
+SET DANDISETENV_BAT_PATH=%ProgramFiles(x86)%\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat
+IF EXIST "%DANDISETENV_BAT_PATH%" (
+	CALL "%DANDISETENV_BAT_PATH%"
+	powershell -NoLogo -NoProfile -ExecutionPolicy Unrestricted -File "%~dp0Create WinPE Image.ps1"
+) ELSE (
+	ECHO.
+	ECHO   ERROR: "%DANDISETENV_BAT_PATH%" NOT FOUND - ADK MUST BE INSTALLED
+)
 
 ECHO.
 ECHO   DONE ON %DATE% AT %TIME%

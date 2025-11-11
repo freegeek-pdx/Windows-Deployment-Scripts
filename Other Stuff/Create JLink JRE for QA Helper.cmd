@@ -21,24 +21,23 @@
 :: To use this script, you must download the latest JDK version and extract the folder on the Desktop.
 
 :: Set the version of the JDK (in the folder name "jdk-#") below:
-SET JDK_VERSION=21.0.8+9
+SET JDK_VERSION=25.0.1+8
 
 ECHO.
 ECHO   Creating JLink JRE %JDK_VERSION:_=+%...
 ECHO.
 
-SET DESKTOP_PATH=%USERPROFILE%\Desktop
-IF NOT EXIST %DESKTOP_PATH% SET DESKTOP_PATH=%USERPROFILE%\OneDrive\Desktop
+SET JDK_PARENT_PATH=%PUBLIC%\Windows Deployment\Java JRE
 
-SET JDK_PATH=%DESKTOP_PATH%\jdk-%JDK_VERSION:_=+%
+SET JDK_PATH=%JDK_PARENT_PATH%\jdk-%JDK_VERSION:_=+%
 IF NOT EXIST "%JDK_PATH%" ECHO   ERROR: %JDK_PATH% DOES NOT EXIST!
 
-IF EXIST "%DESKTOP_PATH%\java-jre" RMDIR /S /Q "%DESKTOP_PATH%\java-jre"
-IF EXIST "%JDK_PATH%" %JDK_PATH%\bin\jlink.exe --add-modules "java.base,java.desktop,java.logging" --strip-debug --no-man-pages --no-header-files --compress "zip-9" --output "%DESKTOP_PATH%\java-jre"
+IF EXIST "%JDK_PARENT_PATH%\java-jre" RMDIR /S /Q "%JDK_PARENT_PATH%\java-jre"
+IF EXIST "%JDK_PATH%" "%JDK_PATH%\bin\jlink.exe" --add-modules "java.base,java.desktop,java.logging" --strip-debug --no-man-pages --no-header-files --compress "zip-9" --output "%JDK_PARENT_PATH%\java-jre"
 :: java.datatransfer, java.prefs, and java.xml are included automatically with java.desktop
 
-IF EXIST "%DESKTOP_PATH%\jlink-jre-%JDK_VERSION:+=_%_windows-x64.zip" DEL /F "%DESKTOP_PATH%\jlink-jre-%JDK_VERSION:+=_%_windows-x64.zip"
-IF EXIST "%JDK_PATH%" "\Program Files\7-Zip\7z.exe" a "%DESKTOP_PATH%\jlink-jre-%JDK_VERSION:+=_%_windows-x64.zip" "%DESKTOP_PATH%\java-jre"
+IF EXIST "%JDK_PARENT_PATH%\jlink-jre-%JDK_VERSION:+=_%_windows-x64.zip" DEL /F "%JDK_PARENT_PATH%\jlink-jre-%JDK_VERSION:+=_%_windows-x64.zip"
+IF EXIST "%JDK_PARENT_PATH%\java-jre" "%ProgramFiles%\7-Zip\7z.exe" a "%JDK_PARENT_PATH%\jlink-jre-%JDK_VERSION:+=_%_windows-x64.zip" "%JDK_PARENT_PATH%\java-jre"
 
 ECHO.
 ECHO   DONE!

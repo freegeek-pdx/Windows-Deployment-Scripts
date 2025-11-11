@@ -36,7 +36,7 @@ Invoke-WebRequest -Uri 'http://downloads.dell.com/catalog/DriverPackCatalog.cab'
 
 if (($IsWindows -or ($null -eq $IsWindows)) -and (Test-Path "$PSScriptRoot\DriverPackCatalog-Dell.cab")) {
 	$expandExitCode = (Start-Process 'expand' -NoNewWindow -Wait -PassThru -RedirectStandardOutput 'NUL' -ArgumentList "`"$PSScriptRoot\DriverPackCatalog-Dell.cab`"", "`"$PSScriptRoot\DriverPackCatalog-Dell-NEW.xml`"").ExitCode
-		
+
 	if ($expandExitCode -ne 0) {
 		Write-Output ">>> EXPANSION FAILED (EXIT CODE $expandExitCode) <<<"
 	}
@@ -69,19 +69,19 @@ foreach ($thisDriverPack in $dellDriverPackCatalogXML.DriverPackManifest.DriverP
 		} else {
 			$systemIDs = @()
 		}
-	
+
 		if ($systemIDs -is [string]) {
 			$systemIDs = @($systemIDs)
 		}
 
 		$modelNames = $thisDriverPack.SupportedSystems.Brand.Model.name.Trim().ToLower()
-		
+
 		if ($modelNames -is [string]) {
 			$modelNames = @($modelNames)
 		}
 
 		$modelNames = ($modelNames | Sort-Object -Unique)
-		
+
 		$modelNames = $modelNames.Replace('precision precision', 'precision') # Fix typo in DriverPackCatalog from Jan 15th, 2021
 
 		$modelNameVariants = @()
@@ -97,7 +97,7 @@ foreach ($thisDriverPack in $dellDriverPackCatalogXML.DriverPackManifest.DriverP
 			} elseif ($thisModelName.EndsWith('-vpro')) {
 				$modelNameVariants += $thisModelName.Replace('-vpro', ' vpro')
 			}
-			
+
 			if ($null -eq $systemIDsForModelNames[$thisModelName]) {
 				$systemIDsForModelNames[$thisModelName] = @()
 			}
@@ -113,12 +113,12 @@ foreach ($thisDriverPack in $dellDriverPackCatalogXML.DriverPackManifest.DriverP
 
 		$systemIDs += $modelNames
 		$systemIDs += $modelNameVariants
-		
+
 		$systemIDs = ($systemIDs | Sort-Object -Unique)
 
 		$cabOrExeDownloadURL = "https://downloads.dell.com/$($thisDriverPack.path)"
 		$cabOrExeFileName = Split-Path $thisDriverPack.path -Leaf
-		
+
 		foreach ($thisSystemID in $systemIDs) {
 			$addDriver = $true
 
@@ -179,7 +179,7 @@ $redundantDriverPacksSize = 0
 
 foreach ($thisDriverPack in ($driverPacksForSystemIDs.GetEnumerator() | Sort-Object -Property Key)) {
 	$redundantDriverPacksSize += $thisDriverPack.Value.Size
-	
+
 	if (-not $uniqueDriverPacks[$thisDriverPack.Value.DriverPackID]) {
 		$allUnqiueDriverPacksSize += $thisDriverPack.Value.Size
 		$uniqueDriverPacks[$thisDriverPack.Value.DriverPackID] = @($thisDriverPack.Value)
@@ -206,11 +206,11 @@ $dellDriverPacksPath = 'F:\SMB\Drivers\Packs\Dell'
 
 foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sort-Object -Property Key)) {
 	$thisUniqueDriverPack = $theseRedundantDriverPacks.Value | Select-Object -First 1
-	
+
 	$cabOrExeCount ++
 	Write-Output '----------'
-	Write-Output "UNIQUE DRIVER PACK CAB/EXE $($cabOrExeCount) (USED BY $($theseRedundantDriverPacks.Value.Count) SYSTEM IDs):"
-	
+	Write-Output "UNIQUE DRIVER PACK CAB/EXE $cabOrExeCount (USED BY $($theseRedundantDriverPacks.Value.Count) SYSTEM IDs):"
+
 	if ($IsWindows -or ($null -eq $IsWindows)) {
 		$theseRedundantDriverPacks.Value.SystemID -Join ', '
 	} else {
@@ -262,10 +262,10 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 
 					if (Test-Path "$cabOrExeDownloadPath\$($thisUniqueDriverPack.FileName)") {
 						Write-Output 'EXPANDING...'
-			
+
 						# CAB expand will FAIL unless we make all necessary directories first (but EXE extraction would not).
 						New-Item -ItemType 'Directory' -Force -Path "$cabOrExeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" | Out-Null
-			
+
 						$expandExitCode = 9999
 						if ($thisUniqueDriverPack.FileName.EndsWith('.CAB')) {
 							$expandExitCode = (Start-Process 'expand' -NoNewWindow -Wait -PassThru -RedirectStandardOutput 'NUL' -ArgumentList "`"$cabOrExeDownloadPath\$($thisUniqueDriverPack.FileName)`"", '/f:*', "`"$cabOrExeExpansionPath\$($thisUniqueDriverPack.DriverPackID)`"").ExitCode
@@ -322,7 +322,7 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 if (($IsWindows -or ($null -eq $IsWindows)) -and (Test-Path $dellDriverPacksPath)) {
 	Write-Output '----------'
 	Write-Output 'CHECKING FOR STRAY DRIVER PACKS...'
-	
+
 	$allReferencedDriverPacks = @()
 
 	Get-ChildItem "$dellDriverPacksPath\*" -File -Include '*.txt' | ForEach-Object {

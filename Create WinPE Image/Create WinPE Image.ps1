@@ -27,45 +27,85 @@
 
 # IMPORTANT: "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat" must be run from within the CMD launcher file first for "copype" to work.
 
+#Requires -RunAsAdministrator
+
 $Host.UI.RawUI.WindowTitle = 'Create WinPE Image'
 
 $createISO = $false;
 $includeResourcesInUSB = $false;
 
-$windows10featureVersion = '22H2' # 22H2 is the FINAL feature update for Windows 10: https://techcommunity.microsoft.com/t5/windows-it-pro-blog/windows-client-roadmap-update/ba-p/3805227
-$windows11featureVersion = '25H2'
-
 $winPEmajorVersion = '11' # It is fine to use WinPE/WinRE from Windows 11 even when Windows 10 will be installed.
-$winPEfeatureVersion = $windows11featureVersion
-$winREfeatureVersion = $winPEfeatureVersion
+$winPEfeatureVersion = '24H2' # WinPE version in the December 2024 ADK is 10.0.26100.1 (11 24H2).
 
-$basePath = "$HOME\Documents\Free Geek"
-if (Test-Path "$HOME\Documents\Free Geek.lnk") {
-	$basePath = (New-Object -ComObject WScript.Shell).CreateShortcut("$HOME\Documents\Free Geek.lnk").TargetPath
+$windowsFeatureVersionsForMajorVersions = @{
+	'11' = '25H2' # Build 26200
+	# '11' = '24H2' # Build 26100
+	# '11' = '23H2' # Build 22631
+	# '11' = '22H2' # Build 22621
+	# '11' = '21H2' # Build 22000
+
+	'10' = '22H2' # 22H2 is the FINAL feature update for Windows 10: https://techcommunity.microsoft.com/t5/windows-it-pro-blog/windows-client-roadmap-update/ba-p/3805227
+}
+
+$winREfeatureVersionsForWindowsFeatureVersions = @{
+	# NOTE: Some (not all) WinRE version included within Windows 11 are one feature version back.
+	# (ie. Windows 25H2 includes WinRE 24H2, and Windows 23H2 includes WinRE 22H2)
+
+	'25H2' = '24H2'
+	'23H2' = '22H2'
 }
 
 $winPEname = "WinPE-$winPEmajorVersion-$winPEfeatureVersion"
+$winPEnameActual = $winPEname # Used to be able to revert back from $winREname if needed.
+
+$winREfeatureVersion = $windowsFeatureVersionsForMajorVersions[$winPEmajorVersion]
+if ($winREfeatureVersionsForWindowsFeatureVersions.ContainsKey($winREfeatureVersion)) {
+	$winREfeatureVersion = $winREfeatureVersionsForWindowsFeatureVersions[$winREfeatureVersion]
+}
+
+$winREname = "WinRE-$winPEmajorVersion-Pro-$winREfeatureVersion"
+
+$basePath = "$Env:PUBLIC\Windows Deployment"
+if (Test-Path "$Env:PUBLIC\Windows Deployment.lnk") {
+	$basePath = (New-Object -ComObject WScript.Shell).CreateShortcut("$Env:PUBLIC\Windows Deployment.lnk").TargetPath
+}
+
+if (-not (Test-Path $basePath)) {
+	New-Item -ItemType 'Directory' -Path $basePath -ErrorAction Stop | Out-Null
+}
 
 $winPEoutputPath = "$basePath\$($winPEname.Replace('-', ' '))"
+$winPEoutputPathActual = $winPEoutputPath # Used to be able to revert back from $winREoutputPath if needed.
+
+$winREoutputPath = "$basePath\$($winREname.Replace('-', ' '))"
 
 $winPEextraDriversPath = "$basePath\WinPE Extra Drivers to Install"
+# NOTE: Manually including Intel RST VMD storage drivers to be able to detect SSDs on some newer Dell laptops:
+	# https://www.dell.com/support/kbdoc/en-us/000188116/intel-11th-generation-processors-no-drives-can-be-found-during-windows-10-installation
+	# https://www.intel.com/content/www/us/en/support/articles/000092508/technologies.html
+	# https://www.intel.com/content/www/us/en/support/articles/000057787/memory-and-storage/intel-optane-memory.html
+# Links to Drivers:
+	# https://www.intel.com/content/www/us/en/download/19755/intel-rapid-storage-technology-driver-installation-software-with-intel-optane-memory-8th-and-9th-gen-platforms.html
+	# https://www.intel.com/content/www/us/en/download/19512/intel-rapid-storage-technology-driver-installation-software-with-intel-optane-memory-10th-and-11th-gen-platforms.html
+	# https://www.intel.com/content/www/us/en/download/849933/intel-rapid-storage-technology-driver-installation-software-with-intel-optane-memory-12th-to-13th-gen-platforms.html
+	# https://www.intel.com/content/www/us/en/download/849936/intel-rapid-storage-technology-driver-installation-software-with-intel-optane-memory-12th-to-15th-gen-platforms.html
+
 $winREnetDriversPath = "$basePath\WinRE Network Drivers for USB Install"
 
-$winREimagesSourcePath = "$basePath\Windows $winPEmajorVersion Pro $winREfeatureVersion"
+$latestWindowsProFullName = "Windows $winPEmajorVersion Pro $($windowsFeatureVersionsForMajorVersions[$winPEmajorVersion])"
+$winREimagesSourcePath = "$basePath\$latestWindowsProFullName"
 
 if (-not (Test-Path $winREimagesSourcePath)) {
 	# NOTE: Windows source folders may have a version suffix ("v1", "v2", etc) from the source ISOs,
 	# so if the folders are not found check for up to 10 version suffix folder names.
 
 	for ($possibleISOversionSuffix = 10; $possibleISOversionSuffix -ge 1; $possibleISOversionSuffix --) {
-		$winREimagesSourcePath = "$basePath\Windows $winPEmajorVersion Pro $winREfeatureVersion v$possibleISOversionSuffix"
+		$winREimagesSourcePath = "$basePath\$latestWindowsProFullName v$possibleISOversionSuffix"
 		if (Test-Path $winREimagesSourcePath) {
 			break
 		}
 	}
 }
-
-$winREname = "WinRE-$winPEmajorVersion-Pro-$winREfeatureVersion"
 
 $setupResourcesSourcePath = "$(Split-Path -Parent $PSScriptRoot)\Setup Resources" # Used to include "setup-resources" folder in WinPE USB
 $appInstallersSourcePath = "$PSScriptRoot\App Installers" # Used to include "app-installers" folder in WinPE USB
@@ -74,7 +114,7 @@ Write-Output "`n  Creating WinPE Image...`n`n`n`n" # Add empty lines for PowerSh
 
 $systemTempDir = [System.Environment]::GetEnvironmentVariable('TEMP', 'Machine') # Get SYSTEM (not user) temporary directory, which should be "\Windows\Temp".
 if (-not (Test-Path $systemTempDir)) {
-	$systemTempDir = '\Windows\Temp'
+	$systemTempDir = "$Env:SystemRoot\Temp"
 }
 
 if ((Test-Path "$systemTempDir\mountPE") -and ((Get-ChildItem "$systemTempDir\mountPE").Count -gt 0)) {
@@ -85,24 +125,32 @@ if ((Test-Path "$systemTempDir\mountPE") -and ((Get-ChildItem "$systemTempDir\mo
 
 $updateResourcesOnly = $false
 
-if (Test-Path "$winPEoutputPath\media\sources\boot.wim") {
-	if ((-not (Test-Path "$winPEoutputPath\$winPEname.wim")) -and (Test-Path "$winPEoutputPath\WinRE-$winPEmajorVersion-$winREfeatureVersion.wim")) {
-		$winPEname = "WinRE-$winPEmajorVersion-$winREfeatureVersion"
-	}
+if (Test-Path "$winREoutputPath\media\sources\boot.wim") {
+	$winPEname = $winREname
+	$winPEoutputPath = $winREoutputPath
+}
 
+if (Test-Path "$winPEoutputPath\media\sources\boot.wim") {
 	$promptCaption = "  `"$winPEname`" Has Already Been Created - Want do you want to do?"
-	$promptChoices = 'E&xit', '&Update Resources Only', 'Delete and Re-&Create'
+	$promptChoices = 'Update &Resources Only', 'Delete and Re-&Create', 'E&xit'
 
 	$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-	$promptResponse = $Host.UI.PromptForChoice($promptCaption, "`n", $promptChoices, 1)
+	$promptResponse = $Host.UI.PromptForChoice($promptCaption, "`n", $promptChoices, 0)
 	Write-Output ''
 
-	if ($promptResponse -eq 0) {
+	if ($promptResponse -eq 2) {
 		exit 0
-	} elseif ($promptResponse -eq 1) {
+	} elseif ($promptResponse -eq 0) {
 		$updateResourcesOnly = $true
 	} elseif (Test-Path $winPEoutputPath) {
 		Remove-Item $winPEoutputPath -Recurse -Force -ErrorAction Stop
+
+		$winPEname = $winPEnameActual
+		$winPEoutputPath = $winPEoutputPathActual
+
+		if (Test-Path $winPEoutputPath) {
+			Remove-Item $winPEoutputPath -Recurse -Force -ErrorAction Stop
+		}
 	}
 }
 
@@ -131,7 +179,7 @@ if ($updateResourcesOnly) {
 		Remove-Item $winPEoutputPath -Recurse -Force -ErrorAction Stop
 	}
 
-	Write-Output "`n  Copying New WinPE Image from ADK..."
+	Write-Output "`n  Copying New WinPE $winPEmajorVersion $winPEfeatureVersion Image from ADK..."
 	$copypeExitCode = (Start-Process 'copype' -NoNewWindow -Wait -PassThru -ArgumentList 'amd64', "`"$winPEoutputPath`"").ExitCode
 
 	if ($copypeExitCode -ne 0) {
@@ -146,7 +194,7 @@ if ($updateResourcesOnly) {
 		$latestWinREpath = $latestWinRE.FullName
 		$latestWinREfilename = $latestWinRE.BaseName
 
-		$promptCaption = "  Would you like to REPLACE WinPE from the ADK with $latestWinREfilename from Windows $winPEmajorVersion Pro ($winREfeatureVersion)?"
+		$promptCaption = "  Would you like to REPLACE WinPE $winPEmajorVersion $winPEfeatureVersion from the ADK with $latestWinREfilename from ${latestWindowsProFullName}?"
 		$promptMessage = "`n  WinRE can support Wi-Fi (with the correct drivers) and Audio and also has the `"BCD`" and `"boot.sdi`" files built-in`n  for iPXE/wimboot to extract and load automatically without having to include and specify them seperately.`n`n"
 		$promptChoices = '&Yes', '&No'
 
@@ -157,6 +205,15 @@ if ($updateResourcesOnly) {
 		Write-Output ''
 
 		if ($promptResponse -eq 0) {
+			if (Test-Path $winREoutputPath) {
+				Remove-Item $winREoutputPath -Recurse -Force -ErrorAction Stop
+			}
+
+			Move-Item $winPEoutputPath $winREoutputPath -Force -ErrorAction Stop
+
+			$winPEname = $winREname
+			$winPEoutputPath = $winREoutputPath
+
 			Remove-Item "$winPEoutputPath\media\sources\boot.wim" -Force -ErrorAction Stop
 			Copy-Item $latestWinREpath "$winPEoutputPath\media\sources\boot.wim" -Force -ErrorAction Stop
 		}
@@ -166,17 +223,16 @@ if ($updateResourcesOnly) {
 }
 
 
+$winPEorRE = 'WinPE'
+if ($winPEname.StartsWith('WinRE')) {
+	$winPEorRE = 'WinRE'
+}
+
 $startDate = Get-Date
-Write-Output "`n  Starting at $startDate..."
+Write-Output "`n  Starting Create $winPEorRE Image at $startDate..."
 
 $wimDetails = Get-WindowsImage -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 -ErrorAction Stop
 $wimDetails # Print wimDetails
-
-$wimImageBaseName = 'WinPE'
-if ($wimDetails.ImageName -like '*Recovery Environment*') {
-	$wimImageBaseName = 'WinRE'
-	$winPEname = "$wimImageBaseName-$winPEmajorVersion-$winREfeatureVersion"
-}
 
 function Add-WinPECustomizations {
 	$excludedCompareWinPeWimContentPaths = @('\Install\', '\Windows\Microsoft.NET\', '\Windows\servicing\', '\Windows\System32\CatRoot\', '\Windows\System32\DriverStore\FileRepository\', '\Windows\WinSxS\') # Exclude these paths from the difference comparison because these are the paths we expect to be different (even though "\Install\" and "\Windows\Microsoft.NET\" will only exist on the updated image, exclude them too to make the comparison lists smaller so the comparison is faster).
@@ -221,9 +277,9 @@ function Add-WinPECustomizations {
 			$packageStartDate = Get-Date
 			Write-Output "    Installing $thisWinPEpackageToInstall Package Into $winPEname Image at $packageStartDate..."
 			# Dism /Add-Package /Image:"C:\WinPE_amd64_PS\mount" /PackagePath:"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-PACKAGENAME.cab"
-			Add-WindowsPackage -Path "$systemTempDir\mountPE" -PackagePath "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-$thisWinPEpackageToInstall.cab" -WarningAction Stop -ErrorAction Stop | Out-Null
+			Add-WindowsPackage -Path "$systemTempDir\mountPE" -PackagePath "${Env:ProgramFiles(x86)}\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\WinPE-$thisWinPEpackageToInstall.cab" -WarningAction Stop -ErrorAction Stop | Out-Null
 			# Dism /Add-Package /Image:"C:\WinPE_amd64_PS\mount" /PackagePath:"C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\en-us\WinPE-PACKAGENAME_en-us.cab"
-			Add-WindowsPackage -Path "$systemTempDir\mountPE" -PackagePath "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\en-us\WinPE-$($thisWinPEpackageToInstall)_en-us.cab" -WarningAction Stop -ErrorAction Stop | Out-Null
+			Add-WindowsPackage -Path "$systemTempDir\mountPE" -PackagePath "${Env:ProgramFiles(x86)}\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\amd64\WinPE_OCs\en-us\WinPE-${thisWinPEpackageToInstall}_en-us.cab" -WarningAction Stop -ErrorAction Stop | Out-Null
 			$packageEndDate = Get-Date
 			Write-Output "      Finished Installing at $packageEndDate ($([math]::Round(($packageEndDate - $packageStartDate).TotalMinutes, 2)) Minutes)"
 		} else {
@@ -306,7 +362,7 @@ function Add-WinPECustomizations {
 						$thisDLLPathInWinPE = $thisProcessExplorerLogLine -Replace '^[^:\\]*:\\', "$systemTempDir\mountPE\"
 
 						if (-not (Test-Path $thisDLLPathInWinPE)) {
-							if ($ignoreMissingDLLs.Contains($(Split-Path $thisDLLPathInOS -Leaf))) {
+							if ($ignoreMissingDLLs.Contains((Split-Path $thisDLLPathInOS -Leaf))) {
 								Write-Output "      Ignoring Missing DLL From `"$($_.BaseName)`": $thisDLLPathInOS"
 							} else {
 								Write-Output "      Copying Missing DLL From `"$($_.BaseName)`" Into $winPEname Image: $thisDLLPathInOS"
@@ -331,14 +387,14 @@ function Add-WinPECustomizations {
 		Write-Output "`n  Copying `"W32tm.exe`" Into $winPEname Image..."
 
 		# Install W32tm.exe into WinPE so we can sync time in WinPE to be sure QA Helper can be installed since if time is far off HTTPS will fail.
-		Copy-Item '\Windows\System32\W32tm.exe' "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
+		Copy-Item "$Env:SystemRoot\System32\W32tm.exe" "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
 	}
 
 	if (-not (Test-Path "$systemTempDir\mountPE\Windows\System32\taskkill.exe")) {
 		Write-Output "`n  Copying `"taskkill.exe`" Into $winPEname Image for QA Helper to Use..."
 
 		# Install taskkill.exe into WinPE so we can call it from QA Helper for convenience of not having to rely on killing with PowerShell (which is slower to load).
-		Copy-Item '\Windows\System32\taskkill.exe' "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
+		Copy-Item "$Env:SystemRoot\System32\taskkill.exe" "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
 	}
 
 	if ($winPEoptionalFeatures -contains 'Microsoft-Windows-WinPE-AudioDrivers-Package') {
@@ -347,7 +403,7 @@ function Add-WinPECustomizations {
 		if (-not (Test-Path "$systemTempDir\mountPE\Windows\System32\SndVol.exe")) {
 			Write-Output "`n  Copying `"SndVol.exe`" Into $winPEname Image for QA Helper Audio Test..."
 
-			Copy-Item '\Windows\System32\SndVol.exe' "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
+			Copy-Item "$Env:SystemRoot\System32\SndVol.exe" "$systemTempDir\mountPE\Windows\System32" -Force -ErrorAction Stop
 		}
 
 		if (-not (Test-Path "$systemTempDir\mountPE\Windows\Media")) {
@@ -355,8 +411,8 @@ function Add-WinPECustomizations {
 
 			New-Item -ItemType 'Directory' -Path "$systemTempDir\mountPE\Windows\Media" -ErrorAction Stop | Out-Null
 
-			Copy-Item '\Windows\Media\Windows Foreground.wav' "$systemTempDir\mountPE\Windows\Media" -Force -ErrorAction Stop
-			Copy-Item '\Windows\Media\Windows Exclamation.wav' "$systemTempDir\mountPE\Windows\Media" -Force -ErrorAction Stop
+			Copy-Item "$Env:SystemRoot\Media\Windows Foreground.wav" "$systemTempDir\mountPE\Windows\Media" -Force -ErrorAction Stop
+			Copy-Item "$Env:SystemRoot\Media\Windows Exclamation.wav" "$systemTempDir\mountPE\Windows\Media" -Force -ErrorAction Stop
 		}
 	}
 
@@ -460,18 +516,42 @@ function Add-WinPECustomizations {
 			$installedDriverCount = 0
 			foreach ($thisDriverInfPath in $winPEextraDriverInfPaths) {
 				$thisDriverIndex ++
-				$thisDriverFolderName = (Split-Path (Split-Path $thisDriverInfPath -Parent) -Leaf)
+				$thisDriverInfFilename = (Split-Path $thisDriverInfPath -Leaf)
+				$thisDriverFolderPath = (Split-Path $thisDriverInfPath -Parent)
+				$thisDriverFolderName = (Split-Path $thisDriverFolderPath -Leaf)
 
 				if (-not (Test-Path "$systemTempDir\mountPE\Windows\System32\DriverStore\FileRepository\$thisDriverFolderName")) {
-					try {
-						Write-Output "    Installing Extra Driver $thisDriverIndex of $($winPEextraDriverInfPaths.Count): $thisDriverFolderName ($([math]::Round(((Get-ChildItem -Path "$winPEextraDriversPath\$thisDriverFolderName" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 2)) MB)"
-						Add-WindowsDriver -Path "$systemTempDir\mountPE" -Driver $thisDriverInfPath -ErrorAction Stop | Out-Null
-						$installedDriverCount ++
-					} catch {
-						Write-Host "      ERROR INSTALLING EXTRA DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
+					$thisDriverDisplayName = $thisDriverFolderName
+
+					$foundMatchingDriver = $false
+					if (-not $thisDriverFolderName.Contains('.inf_')) {
+						$thisDriverDisplayName = $thisDriverInfPath.Replace("$winPEextraDriversPath\", '')
+
+						$thisDriverInfHash = (Get-FileHash $thisDriverInfPath).Hash
+						$thisDriverFolderContents = (Get-ChildItem $thisDriverFolderPath -Recurse -File -Exclude '*.PNF') # Exclude ".PNF" when comparing driver contents since they are temporary compiled versions of ".inf" files that may or may not exist in the installed driver path (https://file.org/extension/pnf).
+
+						$installedInfPathsOfSameFilename = (Get-ChildItem "$systemTempDir\mountPE\Windows\System32\DriverStore\FileRepository" -Recurse -File -Include $thisDriverInfFilename).FullName
+						foreach ($thisInstalledInfPathOfSameFilename in $installedInfPathsOfSameFilename) {
+							if ($thisDriverInfHash -eq (Get-FileHash $thisInstalledInfPathOfSameFilename).Hash -and ((Compare-Object $thisDriverFolderContents (Get-ChildItem (Split-Path $thisInstalledInfPathOfSameFilename -Parent) -Recurse -File -Exclude '*.PNF') -Property Name, Length).Count -eq 0)) {
+								$foundMatchingDriver = $true
+								break
+							}
+						}
+					}
+
+					if ($foundMatchingDriver) {
+						Write-Output "    ALREADY INSTALLED Extra Driver $thisDriverIndex of $($winPEextraDriverInfPaths.Count): $thisDriverDisplayName (MATCHED INF HASH & CONTENTS)"
+					} else {
+						try {
+							Write-Output "    Installing Extra Driver $thisDriverIndex of $($winPEextraDriverInfPaths.Count): $thisDriverDisplayName ($([math]::Round(((Get-ChildItem -Path $thisDriverFolderPath -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 2)) MB)"
+							Add-WindowsDriver -Path "$systemTempDir\mountPE" -Driver $thisDriverInfPath -ErrorAction Stop | Out-Null
+							$installedDriverCount ++
+						} catch {
+							Write-Host "      ERROR INSTALLING EXTRA DRIVER `"$thisDriverDisplayName`": $_" -ForegroundColor Red
+						}
 					}
 				} else {
-					Write-Output "    ALREADY INSTALLED Extra Driver $thisDriverIndex of $($winPEextraDriverInfPaths.Count): $thisDriverFolderName"
+					Write-Output "    ALREADY INSTALLED Extra Driver $thisDriverIndex of $($winPEextraDriverInfPaths.Count): $thisDriverDisplayName"
 				}
 			}
 
@@ -480,56 +560,40 @@ function Add-WinPECustomizations {
 		}
 	}
 
-	$win11ProImagesSourcePath = "$basePath\Windows 11 Pro $windows11featureVersion"
+	$windowsExtractedDriversPath = "$winREimagesSourcePath\Extracted Network Drivers"
+	if (Test-Path $windowsExtractedDriversPath) {
+		# NOTE: When using WinPE/WinRE 11 22H2 as the installation environment for both Windows 10 and 11, some network drivers are not available for older systems that don't support Windows 11 (which wasn't an issue with initial WinRE 11 version 21H2/22000).
+		# Having the installation environment be able to establish a network connection is critical for downloading QA Helper, as well as connecting to local SMB shares to retrieve the Windows install images.
+		# Through testing, I found that extracting all the default network drivers from the full Windows 11 image and installing them into the WinRE 11 image allowed all my test systems to properly make network connections (installing all drivers from WinRE 10 did not work).
+		# So, the network drivers will always be extracted from the full Windows images in the "Create Windows Install Image" script, so they can be installed into the WinRE image here.
 
-	if (-not (Test-Path $win11ProImagesSourcePath)) {
-		# NOTE: Windows source folders may have a version suffix ("v1", "v2", etc) from the source ISOs,
-		# so if the folders are not found check for up to 10 version suffix folder names.
+		$windowsExtractedDriverInfPaths = (Get-ChildItem $windowsExtractedDriversPath -Recurse -File -Include '*.inf').FullName
 
-		for ($possibleISOversionSuffix = 10; $possibleISOversionSuffix -ge 1; $possibleISOversionSuffix --) {
-			$win11ProImagesSourcePath = "$basePath\Windows 11 Pro $windows11featureVersion v$possibleISOversionSuffix"
-			if (Test-Path $win11ProImagesSourcePath) {
-				break
-			}
-		}
-	}
+		if ($windowsExtractedDriverInfPaths.Count -gt 0) {
+			$startDriversDate = Get-Date
+			Write-Output "`n  Installing $($windowsExtractedDriverInfPaths.Count) $latestWindowsProFullName Default Network Drivers Into $winPEname Image at $startDriversDate..."
 
-	if (Test-Path $win11ProImagesSourcePath) {
-		$windows11ExtractedDriversPath = "$win11ProImagesSourcePath\Extracted Network Drivers"
-		if (($winPEmajorVersion -eq '11') -and (Test-Path $windows11ExtractedDriversPath)) {
-			# NOTE: When using WinPE/WinRE 11 22H2 as the installation environment for both Windows 10 and 11, some network drivers are not available for older systems that don't support Windows 11 (which wasn't an issue with initial WinRE 11 version 21H2/22000).
-			# Having the installation environment be able to establish a network connection is critical for downloading QA Helper, as well as connecting to local SMB shares to retrieve the Windows install images.
-			# Through testing, I found that extracting all the default network drivers from the full Windows 11 image and installing them into the WinRE 11 image allowed all my test systems to properly make network connections (installing all drivers from WinRE 10 did not work).
-			# So, the network drivers will always be extracted from the full Windows images in the "Create Windows Install Image" script, so they can be installed into the WinRE image here.
+			$thisDriverIndex = 0
+			$installedDriverCount = 0
+			foreach ($thisDriverInfPath in $windowsExtractedDriverInfPaths) {
+				$thisDriverIndex ++
+				$thisDriverFolderName = (Split-Path (Split-Path $thisDriverInfPath -Parent) -Leaf)
 
-			$windows11DriverInfPaths = (Get-ChildItem $windows11ExtractedDriversPath -Recurse -File -Include '*.inf').FullName
-
-			if ($windows11DriverInfPaths.Count -gt 0) {
-				$startDriversDate = Get-Date
-				Write-Output "`n  Installing $($windows11DriverInfPaths.Count) Windows 11 Pro Default Network Drivers Into $winPEname Image at $startDriversDate..."
-
-				$thisDriverIndex = 0
-				$installedDriverCount = 0
-				foreach ($thisDriverInfPath in $windows11DriverInfPaths) {
-					$thisDriverIndex ++
-					$thisDriverFolderName = (Split-Path (Split-Path $thisDriverInfPath -Parent) -Leaf)
-
-					if (-not (Test-Path "$systemTempDir\mountPE\Windows\System32\DriverStore\FileRepository\$thisDriverFolderName")) {
-						try {
-							Write-Output "    Installing Windows 11 Pro Default Network Driver $thisDriverIndex of $($windows11DriverInfPaths.Count): $thisDriverFolderName ($([math]::Round(((Get-ChildItem -Path "$windows11ExtractedDriversPath\$thisDriverFolderName" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 2)) MB)"
-							Add-WindowsDriver -Path "$systemTempDir\mountPE" -Driver $thisDriverInfPath -ErrorAction Stop | Out-Null
-							$installedDriverCount ++
-						} catch {
-							Write-Host "      ERROR INSTALLING WINDOWS 11 PRO DEFAULT NETWORK DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
-						}
-					} else {
-						Write-Output "    ALREADY INSTALLED Windows 11 Pro Default Network Driver $thisDriverIndex of $($windows11DriverInfPaths.Count): $thisDriverFolderName"
+				if (-not (Test-Path "$systemTempDir\mountPE\Windows\System32\DriverStore\FileRepository\$thisDriverFolderName")) {
+					try {
+						Write-Output "    Installing $latestWindowsProFullName Default Network Driver $thisDriverIndex of $($windowsExtractedDriverInfPaths.Count): $thisDriverFolderName ($([math]::Round(((Get-ChildItem -Path (Split-Path $thisDriverInfPath -Parent) -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 2)) MB)"
+						Add-WindowsDriver -Path "$systemTempDir\mountPE" -Driver $thisDriverInfPath -ErrorAction Stop | Out-Null
+						$installedDriverCount ++
+					} catch {
+						Write-Host "      ERROR INSTALLING $latestWindowsProFullName DEFAULT NETWORK DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
 					}
+				} else {
+					Write-Output "    ALREADY INSTALLED $latestWindowsProFullName Default Network Driver $thisDriverIndex of $($windowsExtractedDriverInfPaths.Count): $thisDriverFolderName"
 				}
-
-				$endDriversDate = Get-Date
-				Write-Output "`n  Finished Installing $installedDriverCount Windows 11 Pro Default Network Drivers at $endDriversDate ($([math]::Round(($endDriversDate - $startDriversDate).TotalMinutes, 2)) Minutes)"
 			}
+
+			$endDriversDate = Get-Date
+			Write-Output "`n  Finished Installing $installedDriverCount $latestWindowsProFullName Default Network Drivers at $endDriversDate ($([math]::Round(($endDriversDate - $startDriversDate).TotalMinutes, 2)) Minutes)"
 		}
 	}
 
@@ -547,7 +611,7 @@ function Add-WinPECustomizations {
 				$thisDriverFolderName = (Split-Path (Split-Path $thisDriverInfPath -Parent) -Leaf)
 
 				if (-not (Test-Path "$systemTempDir\mountPE\Windows\System32\DriverStore\FileRepository\$thisDriverFolderName")) {
-					$thisDriverSizeMB = $([math]::Round(((Get-ChildItem -Path "$winREnetDriversPath\$thisDriverFolderName" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 2))
+					$thisDriverSizeMB = $([math]::Round(((Get-ChildItem -Path (Split-Path $thisDriverInfPath -Parent) -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 2))
 					if ($thisDriverSizeMB -lt 10) {
 						try {
 							Write-Output "    Installing Network Driver for USB Install $thisDriverIndex of $($winREnetDriverInfPaths.Count): $thisDriverFolderName ($thisDriverSizeMB MB)"
@@ -581,11 +645,11 @@ function Add-WinPECustomizations {
 		Remove-Item "$systemTempDir\mountPE" -Recurse -Force -ErrorAction Stop
 		Get-WindowsImage -ImagePath "$winPEoutputPath\media\sources\boot.wim" -Index 1 -ErrorAction Stop
 
-		Write-Output "`n  Exporting Compressed $wimImageBaseName Image as `"$winPEname.wim`"..."
+		Write-Output "`n  Exporting Compressed $winPEorRE Image as `"$winPEname.wim`"..."
 		# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-optimize#export-and-then-replace-the-image
 
 		if (Test-Path "$winPEoutputPath\$winPEname.wim") {
-			Write-Output "    Deleting Previous $wimImageBaseName Image `"$winPEname.wim`"..."
+			Write-Output "    Deleting Previous $winPEorRE Image `"$winPEname.wim`"..."
 			Remove-Item "$winPEoutputPath\$winPEname.wim" -Force -ErrorAction Stop
 		}
 
@@ -595,7 +659,7 @@ function Add-WinPECustomizations {
 		Get-WindowsImage -ImagePath "$winPEoutputPath\$winPEname.wim" -Index 1 -ErrorAction Stop
 
 
-		Write-Output "`n  Verifying Exported Updated $winPEname Image Contents Against Source $wimImageBaseName Image Contents..."
+		Write-Output "`n  Verifying Exported Updated $winPEname Image Contents Against Source $winPEorRE Image Contents..."
 		# NOTE: See comments in "Create Windows Install Image" about this manual verification of the exported WinPE/WinRE image.
 
 		$verifyingStartDate = Get-Date
@@ -605,15 +669,15 @@ function Add-WinPECustomizations {
 		if ($updatedWinPeWimSizeBytes -lt $sourceWinPeWimSizeBytes) {
 			$updatedWinPeWimSizeBytesDifference = ($sourceWinPeWimSizeBytes - $updatedWinPeWimSizeBytes)
 			if ($updateResourcesOnly -and ($updatedWinPeWimSizeBytesDifference -lt 1500000)) {
-				Write-Host "`n    NOTICE: UPDATED $winPEname WIM ($updatedWinPeWimSizeBytes) IS *$([math]::Round(($updatedWinPeWimSizeBytesDifference / 1MB), 2)) MB SMALLER THAN* SOURCE $wimImageBaseName WIM ($sourceWinPeWimSizeBytes) - CONTINUING ANYWAY`n" -ForegroundColor Yellow
+				Write-Host "`n    NOTICE: UPDATED $winPEname WIM ($updatedWinPeWimSizeBytes) IS *$([math]::Round(($updatedWinPeWimSizeBytesDifference / 1MB), 2)) MB SMALLER THAN* SOURCE $winPEorRE WIM ($sourceWinPeWimSizeBytes) - CONTINUING ANYWAY`n" -ForegroundColor Yellow
 			} else {
-				Write-Host "`n    ERROR: UPDATED $winPEname WIM ($updatedWinPeWimSizeBytes) IS *$([math]::Round(($updatedWinPeWimSizeBytesDifference / 1MB), 2)) MB SMALLER THAN* SOURCE $wimImageBaseName WIM ($sourceWinPeWimSizeBytes) - THIS SHOULD NOT HAVE HAPPENED" -ForegroundColor Red
+				Write-Host "`n    ERROR: UPDATED $winPEname WIM ($updatedWinPeWimSizeBytes) IS *$([math]::Round(($updatedWinPeWimSizeBytesDifference / 1MB), 2)) MB SMALLER THAN* SOURCE $winPEorRE WIM ($sourceWinPeWimSizeBytes) - THIS SHOULD NOT HAVE HAPPENED" -ForegroundColor Red
 				exit 1
 			}
 		}
 
 		$updatedWinPeWimContentPaths = Get-WindowsImageContent -ImagePath "$winPEoutputPath\$winPEname.wim" -Index 1 | Select-String $excludedCompareWinPeWimContentPaths -SimpleMatch -NotMatch
-		$filePathsRemovedFromUpdatedWinPeWIM = (Compare-Object -ReferenceObject $sourceWinPeWimContentPaths -DifferenceObject $updatedWinPeWimContentPaths | Where-Object SideIndicator -eq '<=').InputObject # Comparing text lists of paths from within the WIMs is MUCH faster than comparing mounted files via "Get-ChildItem -Recurse".
+		$filePathsRemovedFromUpdatedWinPeWIM = (Compare-Object $sourceWinPeWimContentPaths $updatedWinPeWimContentPaths | Where-Object SideIndicator -eq '<=').InputObject # Comparing text lists of paths from within the WIMs is MUCH faster than comparing mounted files via "Get-ChildItem -Recurse".
 		if ($filePathsRemovedFromUpdatedWinPeWIM.Count -gt 0) { # For this WIM, there should NEVER be any files removed.
 			Write-Host "`n    ERROR: THE FOLLOWING $($filePathsRemovedFromUpdatedWinPeWIM.Count) FILES WERE REMOVED FROM THE UPDATED $winPEname WIM - THIS SHOULD NOT HAVE HAPPENED`n      $($filePathsRemovedFromUpdatedWinPeWIM -Join "`n      ")" -ForegroundColor Red
 			exit 1
@@ -623,10 +687,10 @@ function Add-WinPECustomizations {
 		Write-Output "    Finished Verifying Exported Updated $winPEname Image at $verifyingEndDate ($([math]::Round(($verifyingEndDate - $verifyingStartDate).TotalMinutes, 2)) Minutes)"
 
 		Write-Output "`n  Calculating Checksum for $winPEname.wim..."
-		Set-Content "$winPEoutputPath\$winPEname.wim.checksum" (Get-FileHash "$winPEoutputPath\$winPEname.wim" -Algorithm 'SHA256').Hash
+		Set-Content "$winPEoutputPath\$winPEname.wim.checksum" (Get-FileHash "$winPEoutputPath\$winPEname.wim").Hash
 		Get-Content "$winPEoutputPath\$winPEname.wim.checksum"
 
-		Write-Output "`n  Overwriting Original $wimImageBaseName Image with Compressed $winPEname for USB Install..."
+		Write-Output "`n  Overwriting Original $winPEorRE Image with Compressed $winPEname for USB Install..."
 		# Replace boot.wim in sources folder for MakeWinPEMedia script.
 		Copy-Item "$winPEoutputPath\$winPEname.wim" "$winPEoutputPath\media\sources\boot.wim" -Force -ErrorAction Stop
 		Copy-Item "$winPEoutputPath\$winPEname.wim.checksum" "$winPEoutputPath\boot.wim.checksum" -Force -ErrorAction Stop
@@ -640,7 +704,7 @@ function Add-WinPECustomizations {
 			if (-not $winPEname.EndsWith('-NetDriversForUSB')) {
 				$isoName = "$winPEname-NoNetDrivers-$(Get-Date -UFormat '%Y%m%d').iso" # Add "-NoNetDrivers-" so that the filename always sorts AFTER the "-NetDriversForUSB-" ISO (in the boot list when we were momentarily using Ventoy).
 			}
-			$makeWinPEISOExitCode = (Start-Process '\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\MakeWinPEMedia.cmd' -NoNewWindow -Wait -PassThru -ArgumentList '/ISO', '/F', "`"$winPEoutputPath`"", "`"$winPEoutputPath\$isoName`"").ExitCode
+			$makeWinPEISOExitCode = (Start-Process "${Env:ProgramFiles(x86)}\Windows Kits\10\Assessment and Deployment Kit\Windows Preinstallation Environment\MakeWinPEMedia.cmd" -NoNewWindow -Wait -PassThru -ArgumentList '/ISO', '/F', "`"$winPEoutputPath`"", "`"$winPEoutputPath\$isoName`"").ExitCode
 
 			if ($makeWinPEISOExitCode -ne 0) {
 				Write-Host "`n    ERROR: FAILED TO CREATE ISO - EXIT CODE: $makeWinPEISOExitCode" -ForegroundColor Red
@@ -648,7 +712,7 @@ function Add-WinPECustomizations {
 			}
 
 			Write-Output "`n  Calculating Checksum for $isoName..."
-			Set-Content "$winPEoutputPath\$isoName.checksum" (Get-FileHash "$winPEoutputPath\$isoName" -Algorithm 'SHA256').Hash
+			Set-Content "$winPEoutputPath\$isoName.checksum" (Get-FileHash "$winPEoutputPath\$isoName").Hash
 			Get-Content "$winPEoutputPath\$isoName.checksum"
 			Write-Output ''
 		}
@@ -662,7 +726,7 @@ function Add-WinPECustomizations {
 Add-WinPECustomizations
 
 
-if (($wimImageBaseName -eq 'WinRE') -and (-not $winPEname.EndsWith('-NetDriversForUSB')) -and (Test-Path $winREnetDriversPath) -and ((Get-ChildItem $winREnetDriversPath -Recurse -File -Include '*.inf').Count -gt 0)) {
+if (($winPEorRE -eq 'WinRE') -and (-not $winPEname.EndsWith('-NetDriversForUSB')) -and (Test-Path $winREnetDriversPath) -and ((Get-ChildItem $winREnetDriversPath -Recurse -File -Include '*.inf').Count -gt 0)) {
 	# $promptCaption = "  Would you like to ALSO create/update WinRE with network drivers for USB installers?"
 	# $promptChoices = '&Yes', '&No'
 
@@ -711,10 +775,7 @@ if ($includeResourcesInUSB) {
 			}
 
 			foreach ($thisWindowsEdition in $windowsEditions) {
-				$thisWindowsFeatureVersion = $windows11featureVersion
-				if ($thisWindowsMajorVersion -eq '10') {
-					$thisWindowsFeatureVersion = $windows10featureVersion
-				}
+				$thisWindowsFeatureVersion = $windowsFeatureVersionsForMajorVersions[$thisWindowsMajorVersion]
 
 				$thisWindowsImageSourcePath = "$basePath\Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion"
 
@@ -757,10 +818,10 @@ if ($includeResourcesInUSB) {
 							Rename-Item "$winPEoutputPath\media\windows-resources\os-images\$latestWimFilename+.swm" "$winPEoutputPath\media\windows-resources\os-images\$latestWimFilename+1.swm"
 						}
 					} else {
-						Write-Host "    NO WINDOWS $thisWindowsMajorVersion $thisWindowsEdition INSTALL IMAGE FILE FOR $wimImageBaseName USB" -ForegroundColor Yellow
+						Write-Host "    NO WINDOWS $thisWindowsMajorVersion $thisWindowsEdition INSTALL IMAGE FILE FOR $winPEorRE USB" -ForegroundColor Yellow
 					}
 				} else {
-					Write-Host "    NO WINDOWS $thisWindowsMajorVersion $thisWindowsEdition INSTALL IMAGE FOLDER FOR $wimImageBaseName USB" -ForegroundColor Yellow
+					Write-Host "    NO WINDOWS $thisWindowsMajorVersion $thisWindowsEdition INSTALL IMAGE FOLDER FOR $winPEorRE USB" -ForegroundColor Yellow
 				}
 			}
 		}
@@ -771,7 +832,7 @@ if ($includeResourcesInUSB) {
 
 			Copy-Item $setupResourcesSourcePath "$winPEoutputPath\media\windows-resources\setup-resources" -Recurse -ErrorAction Stop
 		} else {
-			Write-Host "    NO SETUP RESOURCES FOLDER FOR $wimImageBaseName USB" -ForegroundColor Yellow
+			Write-Host "    NO SETUP RESOURCES FOLDER FOR $winPEorRE USB" -ForegroundColor Yellow
 		}
 
 
@@ -784,13 +845,13 @@ if ($includeResourcesInUSB) {
 				Copy-Item $_ "$winPEoutputPath\media\windows-resources\app-installers" -Recurse -Force -ErrorAction Stop
 			}
 		} else {
-			Write-Host "    NO APP INSTALLERS FOLDER FOR $wimImageBaseName USB" -ForegroundColor Yellow
+			Write-Host "    NO APP INSTALLERS FOLDER FOR $winPEorRE USB" -ForegroundColor Yellow
 		}
 	} else {
-		Write-Host "`n`n  NO MEDIA FOLDER FOR $wimImageBaseName USB" -ForegroundColor Red
+		Write-Host "`n`n  NO MEDIA FOLDER FOR $winPEorRE USB" -ForegroundColor Red
 	}
 } else {
-	Write-Host "`n`n  NOT ADDING RESOURCES TO BOOT FOLDER FOR STANDALONE $wimImageBaseName USB (WILL BE INCLUDED IN SEPARATE USB PARTITION)" -ForegroundColor Yellow
+	Write-Host "`n`n  NOT ADDING RESOURCES TO BOOT FOLDER FOR STANDALONE $winPEorRE USB (WILL BE INCLUDED IN SEPARATE USB PARTITION)" -ForegroundColor Yellow
 }
 
 

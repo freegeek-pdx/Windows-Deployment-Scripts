@@ -26,40 +26,66 @@
 # Or, use the Fido script (https://github.com/pbatard/Fido) built into Rufus: https://rufus.ie/en/
 
 # Reference (Modify a WIM): https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/mount-and-modify-a-windows-image-using-dism
+# Reference (Install Updates into WIMs): https://learn.microsoft.com/en-us/windows/deployment/update/media-dynamic-update#update-windows-installation-media
 # Reference (Reduce Size of WIM): https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/reduce-the-size-of-the-component-store-in-an-offline-windows-image
 
 # IMPORTANT: "\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat" is run from within the CMD launcher file first for latest "DISM" from the ADK to be used.
 
-# NOTE: There is at least one monthly Cumulative Update that would be time consuming during the setup process, so this script should be run monthly or so to create an updated WIM for the installation process to use instead of needing to rely on Windows Update as much during setup.
-# This script will always install updates on top of the original source image directly from the ISO.
+# NOTE: This script will always install updates on top of the original source image directly from the ISO.
 # Updates ARE NOT added on top of to the last updated WIM because it is not necessary and may just unnecessarily bloat the WIM (but DISM's /Cleanup-Image /StartComponentCleanup /ResetBase and then exporting a new compressed image should take care of any bloat anyway).
 # Previous WIMs (with the updated date in the filename) will be left in the $wimOutputPath folder when newly updated WIMs are created to be deleted at your discretion. I generally keep one previous WIM for quick rollback if necessary and manually delete anything older than that.
 
+#Requires -RunAsAdministrator
+
 $Host.UI.RawUI.WindowTitle = 'Create Windows Install Image'
-
-$ProgressPreference = 'SilentlyContinue' # Not showing progress makes "Invoke-WebRequest" downloads MUCH faster: https://stackoverflow.com/a/43477248
-
-$basePath = "$HOME\Documents\Free Geek"
-if (Test-Path "$HOME\Documents\Free Geek.lnk") {
-	$basePath = (New-Object -ComObject WScript.Shell).CreateShortcut("$HOME\Documents\Free Geek.lnk").TargetPath
-}
-
-$sourceISOchecksums = @{
-	'Win10_22H2_English_x64v1.iso' = 'A6F470CA6D331EB353B815C043E327A347F594F37FF525F17764738FE812852E'
-	'Win11_23H2_English_x64v2.iso' = '36DE5ECB7A0DAA58DCE68C03B9465A543ED0F5498AA8AE60AB45FB7C8C4AE402'
-	'Win11_24H2_English_x64.iso' = 'B56B911BF18A2CEAEB3904D87E7C770BDF92D3099599D61AC2497B91BF190B11'
-	'Win11_25H2_English_x64.iso' = 'D141F6030FED50F75E2B03E1EB2E53646C4B21E5386047CB860AF5223F102A32'
-}
 
 $windowsMajorVersions = @('11', '10')
 $windowsEditions = @('Pro', 'Home')
 
+$windowsFeatureVersionsForMajorVersions = @{
+	'11' = '25H2' # Build 26200
+	# '11' = '24H2' # Build 26100
+	# '11' = '23H2' # Build 22631
+	# '11' = '22H2' # Build 22621
+	# '11' = '21H2' # Build 22000
+
+	'10' = '22H2' # 22H2 is the FINAL feature update for Windows 10: https://techcommunity.microsoft.com/t5/windows-it-pro-blog/windows-client-roadmap-update/ba-p/3805227
+}
+
+$winREfeatureVersionsForWindowsFeatureVersions = @{
+	# NOTE: Some (not all) WinRE version included within Windows 11 are one feature version back,
+	# and WinRE requires specific Safe OS Dynamic Updates for their actual version.
+	# (ie. Windows 25H2 includes WinRE 24H2, and Windows 23H2 includes WinRE 22H2)
+
+	'25H2' = '24H2'
+	'23H2' = '22H2'
+}
+
+$sourceISOchecksums = @{
+	'Win11_25H2_English_x64.iso'	= 'D141F6030FED50F75E2B03E1EB2E53646C4B21E5386047CB860AF5223F102A32' # https://www.microsoft.com/en-us/software-download/windows11 & https://github.com/ventoy/Ventoy/issues/3393
+	'Win11_24H2_English_x64.iso'	= 'B56B911BF18A2CEAEB3904D87E7C770BDF92D3099599D61AC2497B91BF190B11' # https://archive.org/details/win-11-24-h-2-english-x-64_202507 & https://www.techpowerup.com/forums/threads/windows-11-24h2-updated-download-iso.328153/post-5363100
+	'Win11_23H2_English_x64v2.iso'	= '36DE5ECB7A0DAA58DCE68C03B9465A543ED0F5498AA8AE60AB45FB7C8C4AE402' # https://archive.org/details/win11_23h2_english_x64v2_202409 & https://www.reddit.com/r/framework/comments/1cfsvfe/windows_11_sha256_for_win11_23h2_english_x64v2iso/
+	'Win11_22H2_English_x64v1.iso'	= '0DF2F173D84D00743DC08ED824FBD174D972929BD84B87FE384ED950F5BDAB22' # https://archive.org/details/windows11_20220930 & https://learn.microsoft.com/en-us/answers/questions/4182086/what-are-the-checksums-hashes-for-windows-11-versi
+	'Win11_English_x64.iso'			= '667BD113A4DEB717BC49251E7BDC9F09C2DB4577481DDFBCE376436BEB9D1D2F' # https://archive.org/details/Win11_English_x64 & https://www.elevenforum.com/t/21h2-iso-official-name.28423/post-497722
+
+	'Win10_22H2_English_x64v1.iso'	= 'A6F470CA6D331EB353B815C043E327A347F594F37FF525F17764738FE812852E' # https://www.microsoft.com/en-us/software-download/windows10ISO & https://github.com/ventoy/Ventoy/issues/2897#issuecomment-2201166105
+}
+
+$basePath = "$Env:PUBLIC\Windows Deployment"
+if (Test-Path "$Env:PUBLIC\Windows Deployment.lnk") {
+	$basePath = (New-Object -ComObject WScript.Shell).CreateShortcut("$Env:PUBLIC\Windows Deployment.lnk").TargetPath
+}
+
+if (-not (Test-Path $basePath)) {
+	New-Item -ItemType 'Directory' -Path $basePath -ErrorAction Stop | Out-Null
+}
+
 if ($windowsMajorVersions.Count -gt 1) {
 	$promptCaption = '  Which Windows version do you want to create/update?'
-	$promptChoices = '1&1', '1&0', '&Both', 'E&xit'
+	$promptChoices = "1&1 $($windowsFeatureVersionsForMajorVersions['11'])", "1&0 $($windowsFeatureVersionsForMajorVersions['10'])", '&Both', 'E&xit'
 
 	$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-	$promptResponse = $Host.UI.PromptForChoice($promptCaption, "`n", $promptChoices, 2)
+	$promptResponse = $Host.UI.PromptForChoice($promptCaption, "`n", $promptChoices, 0)
 	Write-Output ''
 
 	if ($promptResponse -eq 3) {
@@ -71,8 +97,13 @@ if ($windowsMajorVersions.Count -gt 1) {
 	}
 }
 
-$promptCaption = "  Which Windows $($windowsMajorVersions -Join ', ') edition do you want to create/update?"
-$promptChoices = '&Pro', '&Home', '&Both', '&Exit'
+$windowsVersionsWithFeatureVersions = @()
+foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
+	$windowsVersionsWithFeatureVersions += "$thisWindowsMajorVersion $($windowsFeatureVersionsForMajorVersions[$thisWindowsMajorVersion])"
+}
+
+$promptCaption = "  Which Windows $($windowsVersionsWithFeatureVersions -Join ', ') edition do you want to create/update?"
+$promptChoices = '&Pro', '&Home', '&Both', 'E&xit'
 
 $Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 $promptResponse = $Host.UI.PromptForChoice($promptCaption, "`n", $promptChoices, 2)
@@ -90,176 +121,209 @@ $startDate = Get-Date
 Write-Output "`n  Starting at $startDate..."
 
 foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
-	$windowsFeatureVersions = @()
-	if ($thisWindowsMajorVersion -eq '10') {
-		$windowsFeatureVersions += '22H2' # 22H2 is the FINAL feature update for Windows 10: https://techcommunity.microsoft.com/t5/windows-it-pro-blog/windows-client-roadmap-update/ba-p/3805227
-	} else {
-		# $windowsFeatureVersions += '23H2' # https://www.reddit.com/r/WindowsHelp/comments/1ga0e8h/comment/mcplrzl & https://archive.org/details/win11_23h2_english_x64v2_202409
-		# $windowsFeatureVersions += '24H2' # https://archive.org/details/win-11-24-h-2-english-x-64_202507
-		$windowsFeatureVersions += '25H2'
+	$thisWindowsFeatureVersion = $windowsFeatureVersionsForMajorVersions[$thisWindowsMajorVersion]
+
+	$thisWinREfeatureVersion = $thisWindowsFeatureVersion
+	if ($winREfeatureVersionsForWindowsFeatureVersions.ContainsKey($thisWindowsFeatureVersion)) {
+		$thisWinREfeatureVersion = $winREfeatureVersionsForWindowsFeatureVersions[$thisWindowsFeatureVersion]
 	}
 
-	foreach ($thisWindowsFeatureVersion in $windowsFeatureVersions) {
-		foreach ($thisWindowsEdition in $windowsEditions) {
-			$thisStartDate = Get-Date
+	foreach ($thisWindowsEdition in $windowsEditions) {
+		$thisStartDate = Get-Date
 
-			$wimName = "Windows-$thisWindowsMajorVersion-$thisWindowsEdition-$thisWindowsFeatureVersion-Updated-$(Get-Date -UFormat '%Y%m%d')"
-			$winREwimName = "WinRE-$thisWindowsMajorVersion-$thisWindowsEdition-$thisWindowsFeatureVersion-Updated-$(Get-Date -UFormat '%Y%m%d')"
-			$wimOutputPath = "$basePath\Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion"
+		$wimName = "Windows-$thisWindowsMajorVersion-$thisWindowsEdition-$thisWindowsFeatureVersion-Updated-$(Get-Date -UFormat '%Y%m%d')"
 
-			$sourceISOname = "Win$($thisWindowsMajorVersion)_$($thisWindowsFeatureVersion)_English_x64.iso" # This is the default ISO name when downloaded directly, but when the using with the Media Creation Tool (instead of direct ISO download) the default name is "Windows.iso" when exporting an ISO.
-			$sourceISOpath = "$basePath\$sourceISOname"
+		$winREwimName = "WinRE-$thisWindowsMajorVersion-$thisWindowsEdition-$thisWinREfeatureVersion-Updated-$(Get-Date -UFormat '%Y%m%d')"
+		$wimOutputPath = "$basePath\Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion"
 
+		$sourceISOname = "Win${thisWindowsMajorVersion}_${thisWindowsFeatureVersion}_English_x64.iso" # This is the default ISO name when downloaded directly, but when the using with the Media Creation Tool (instead of direct ISO download) the default name is "Windows.iso" when exporting an ISO.
+		if ($sourceISOname -eq 'Win11_21H2_English_x64.iso') { # The original Windows 11 release was 21H2, but the ISO did not include any feature version in the filename.
+			$sourceISOname = 'Win11_English_x64.iso'
+		}
+
+		$sourceISOpath = "$basePath\Windows ISOs\$sourceISOname"
+
+		if (-not (Test-Path $sourceISOpath)) {
+			# NOTE: Windows ISOs are updated periodically to include recent cumulative updates.
+			# When updated versions are released, they will have "v1", "v2", etc included at the end of the filename.
+			# So, if the source ISO is not found check for up to 10 version suffix ISO names.
+
+			for ($possibleISOversionSuffix = 10; $possibleISOversionSuffix -ge 1; $possibleISOversionSuffix --) {
+				if (Test-Path "$basePath\Windows ISOs\$($sourceISOname.Replace('.iso', "v$possibleISOversionSuffix.iso"))") {
+					$sourceISOversionSuffix = "v$possibleISOversionSuffix"
+					$sourceISOname = $sourceISOname.Replace('.iso', "$sourceISOversionSuffix.iso")
+					$sourceISOpath = "$basePath\Windows ISOs\$sourceISOname"
+					$wimOutputPath += " $sourceISOversionSuffix"
+					break
+				}
+			}
+		}
+
+		$sourceWIMpath = "$wimOutputPath\Windows-$thisWindowsMajorVersion-$thisWindowsEdition-$thisWindowsFeatureVersion-ISO$sourceISOversionSuffix-Source.wim"
+
+		Write-Output "`n  Creating Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image at $thisStartDate..."
+
+		if (Test-Path $sourceISOpath) {
+			while ($previousMountedDiskImage = Get-DiskImage $sourceISOpath | Get-Volume) {
+				Write-Output "`n  Unmounting Previously Mounted $sourceISOname at $($previousMountedDiskImage.DriveLetter):\..."
+				Dismount-DiskImage $sourceISOpath -ErrorAction Stop | Out-Null
+			}
+		}
+
+		$systemTempDir = [System.Environment]::GetEnvironmentVariable('TEMP', 'Machine') # Get SYSTEM (not user) temporary directory, which should be "\Windows\Temp".
+		if (-not (Test-Path $systemTempDir)) {
+			$systemTempDir = "$Env:SystemRoot\Temp"
+
+			# NOTE ABOUT MOUNTING ALL WIM IMAGES IN THE TEMP DIR:
+			# Previously, Windows 11 Cumulative Update KB5010795 (2022-01) and older would install fine, but any newer Cumulative Updates would all fail with with 0x8007007a (ERROR_INSUFFICIENT_BUFFER) and then 0x800f0988 (PSFX_E_INVALID_DELTA_COMBINATION).
+			# At first I thought something was funky with the Cumulative Updates and maybe some pre-requisite was missing, but even installing the working Cumulative Update before the next one would result in the same error.
+			# This same error also happened regardless of using the regular Cumulative Update MSU file or the Dynamic Cumulative Update CAB file.
+			# But, installing newer Cumulative Updates into *WinRE* from Win 11 21H2 works fine, which is kind of odd that this issue only affects the full Windows image and not WinRE.
+			# Then I thought that maybe this was an issue because of trying to update a Win 11 21H2 image on Windows 10, but I got the same exact error when updating the Win 11 21H2 image from within Win 11 21H2 as well.
+			# From more closely examinining the DISM error log, it started to look like is was possibly an issue with path lengths being too long, so I enabled Long Paths on my system, but that also didn't solve the issue and the same error happened.
+			# But, it still seemed like possibly a path issue because some files were copying correctly and then some weren't, so I decided to try mounting the WIM at the root of the drive instead of all the way into the home folder at $basePath.
+			# AND THAT WORKED! I don't quite understand why this worked since if it was a path length issue, enabling Long Paths should have solved it.
+			# Since enabling Long Paths didn't help, I disabled Long Paths again and the latest Cumulative Updates still worked then the WIM was mounted at the root of the drive!
+			# Since mounting at the root of the drive felt a bit sloppy, I decided to try mounting the WIM within the system temporary directory at "\Windows\Temp\" hoping that would not trigger the same path length issue (or whatever it was), and that also worked!
+			# So, I switched all WIM mounting to be within the system temporary directory and now all Cumulative Updates appear to be installing for all WIMs (including Win 10).
+		}
+
+		if ((Test-Path "$systemTempDir\mountOS") -and ((Get-ChildItem "$systemTempDir\mountOS").Count -gt 0)) {
+			Write-Output "`n  Unmounting Previously Mounted Windows Install Image..."
+			Dismount-WindowsImage -Path "$systemTempDir\mountOS" -Discard -ErrorAction Stop | Out-Null
+			Remove-Item "$systemTempDir\mountOS" -Recurse -Force -ErrorAction Stop
+		}
+
+		if ((Test-Path "$systemTempDir\mountRE") -and ((Get-ChildItem "$systemTempDir\mountRE").Count -gt 0)) {
+			Write-Output "`n  Unmounting Previously Mounted WinRE Image..."
+			Dismount-WindowsImage -Path "$systemTempDir\mountRE" -Discard -ErrorAction Stop | Out-Null
+			Remove-Item "$systemTempDir\mountRE" -Recurse -Force -ErrorAction Stop
+		}
+
+		$ProgressPreference = 'SilentlyContinue' # Not showing progress makes "Invoke-WebRequest" downloads MUCH faster: https://stackoverflow.com/a/43477248
+
+		if (($thisWindowsMajorVersion -eq '11') -and ($thisWindowsFeatureVersion -eq "$((Get-Date).AddYears(-1).ToString('yy'))H2")) {
+			$latestWindows11featureVersion = ((Invoke-WebRequest -TimeoutSec 5 -Uri 'https://www.microsoft.com/software-download/windows11').Content | Select-String '\(Current release: Windows 11 202\d Update l Version (2\dH2)\)').Matches[0].Groups[1].Value
+			if ($latestWindows11featureVersion -ne $thisWindowsFeatureVersion) {
+				if (($null -eq $latestWindows11featureVersion) -or ($latestWindows11featureVersion -eq '')) {
+					$latestWindows11featureVersion = 'UNKNOWN'
+				}
+
+				$win11updatePromptCaption = "`n  Windows $thisWindowsMajorVersion $thisWindowsEdition $latestWindows11featureVersion is now available.`n  Create a new Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image anyway?"
+				$win11updatePromptChoices = '&Yes', '&No'
+
+				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+				$win11updatePromptResponse = $Host.UI.PromptForChoice($win11updatePromptCaption, "`n", $win11updatePromptChoices, 1)
+				Write-Output ''
+
+				if ($win11updatePromptResponse -eq 1) {
+					Start-Process 'https://www.microsoft.com/software-download/windows11'
+					continue # Go to next Windows version in loop, if multiple have been selected.
+				}
+			}
+		}
+
+		if (Test-Path "$Env:WINDIR\Logs\DISM\dism.log") {
+			# Delete past DISM log to make it easier to find errors in the log for this run if something goes wrong.
+			Remove-Item "$Env:WINDIR\Logs\DISM\dism.log" -Force -ErrorAction Stop
+		}
+
+		if ((Test-Path $sourceISOpath) -and (-not (Test-Path $sourceWIMpath))) {
+			if ($sourceISOchecksums.ContainsKey($sourceISOname)) {
+				$thisISOsize = "$([math]::Round(((Get-Item $sourceISOpath).Length / 1MB), 2)) MB"
+
+				Write-Output "`n  Verifying $sourceISOname ($thisISOsize - $($sourceISOchecksums[$sourceISOname]))..."
+
+				$thisISOchecksum = (Get-FileHash $sourceISOpath).Hash
+				if ($thisISOchecksum -eq $sourceISOchecksums[$sourceISOname]) {
+					Write-Output "    Successfully Verified Source ISO $sourceISOname ($thisISOsize - $($sourceISOchecksums[$sourceISOname]))"
+				} else {
+					Write-Host "`n  FAILED TO VERIFY SOURCE ISO $sourceISOname ($thisISOchecksum != $($sourceISOchecksums[$sourceISOname]))" -ForegroundColor Red
+
+					exit 1
+				}
+			} else {
+				Write-Output "    WARNING: CANNOT VERIFY SOURCE ISO $sourceISOname (NO SHA256 SPECIFIED IN SCRIPT)" -ForegroundColor Yellow
+			}
+
+			Write-Output "`n  Mounting $sourceISOname..."
+
+			$mountedDiskImageDriveLetter = (Mount-DiskImage $sourceISOpath -ErrorAction Stop | Get-Volume -ErrorAction Stop).DriveLetter
+
+			Write-Output "    Mounted to ${mountedDiskImageDriveLetter}:\"
+
+			if (-not (Test-Path $wimOutputPath)) {
+				New-Item -ItemType 'Directory' -Path $wimOutputPath -ErrorAction Stop | Out-Null
+			}
+
+			Write-Output "`n  Exporting Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image from $sourceISOname..."
+			$isoInstallWimName = "${mountedDiskImageDriveLetter}:\sources\install.esd" # If the ISO is exported by the Media Creation Tool, the install file will be called "install.esd"
+			if (-not (Test-Path $isoInstallWimName)) {
+				$isoInstallWimName = "${mountedDiskImageDriveLetter}:\sources\install.wim" # If the ISO is downloaded directly, the install file will be called "install.wim"
+			}
+			Export-WindowsImage -SourceImagePath $isoInstallWimName -SourceName "Windows $thisWindowsMajorVersion $thisWindowsEdition" -DestinationImagePath $sourceWIMpath -CheckIntegrity -CompressionType 'max' -ErrorAction Stop | Out-Null
+			Get-WindowsImage -ImagePath $sourceWIMpath -Index 1 -ErrorAction Stop
+
+			while ($previousMountedDiskImage = Get-DiskImage $sourceISOpath | Get-Volume) {
+				Write-Output "`n  Unmounting $sourceISOname at $($previousMountedDiskImage.DriveLetter):\..."
+				Dismount-DiskImage $sourceISOpath -ErrorAction Stop | Out-Null
+			}
+		}
+
+		if (Test-Path "$wimOutputPath\$wimName-TEMP.wim") {
+			Remove-Item "$wimOutputPath\$wimName-TEMP.wim" -Force -ErrorAction Stop
+		}
+
+		if (Test-Path "$wimOutputPath\$winREwimName-TEMP.wim") {
+			Remove-Item "$wimOutputPath\$winREwimName-TEMP.wim" -Force -ErrorAction Stop
+		}
+
+
+		if (-not (Test-Path $sourceWIMpath)) {
 			if (-not (Test-Path $sourceISOpath)) {
-				# NOTE: Windows ISOs are updated periodically to include recent cumulative updates.
-				# When updated versions are released, they will have "v1", "v2", etc included at the end of the filename.
-				# So, if the source ISO is not found check for up to 10 version suffix ISO names.
-
-				for ($possibleISOversionSuffix = 10; $possibleISOversionSuffix -ge 1; $possibleISOversionSuffix --) {
-					if (Test-Path "$basePath\$($sourceISOname.Replace('.iso', "v$possibleISOversionSuffix.iso"))") {
-						$sourceISOversionSuffix = "v$possibleISOversionSuffix"
-						$sourceISOname = $sourceISOname.Replace('.iso', "$sourceISOversionSuffix.iso")
-						$sourceISOpath = "$basePath\$sourceISOname"
-						$wimOutputPath += " $sourceISOversionSuffix"
-						break
-					}
-				}
+				Write-Host "`n  SOURCE ISO NOT FOUND AT `"$sourceISOpath`"" -ForegroundColor Red
+			} else {
+				Write-Host "`n  EXTRACTED SOURCE WIM NOT FOUND AT `"$sourceWIMpath`"" -ForegroundColor Red
 			}
 
-			$sourceWIMpath = "$wimOutputPath\Windows-$thisWindowsMajorVersion-$thisWindowsEdition-$thisWindowsFeatureVersion-ISO$sourceISOversionSuffix-Source.wim"
-
-			Write-Output "`n  Creating Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image at $thisStartDate..."
-
-			if (Test-Path $sourceISOpath) {
-				while ($previousMountedDiskImage = Get-DiskImage $sourceISOpath | Get-Volume) {
-					Write-Output "`n  Unmounting Previously Mounted $sourceISOname at $($previousMountedDiskImage.DriveLetter):\..."
-					Dismount-DiskImage $sourceISOpath -ErrorAction Stop | Out-Null
-				}
-			}
-
-			$systemTempDir = [System.Environment]::GetEnvironmentVariable('TEMP', 'Machine') # Get SYSTEM (not user) temporary directory, which should be "\Windows\Temp".
-			if (-not (Test-Path $systemTempDir)) {
-				$systemTempDir = '\Windows\Temp'
-
-				# NOTE ABOUT MOUNTING ALL WIM IMAGES IN THE TEMP DIR:
-				# Previously, Windows 11 Cumulative Update KB5010795 (2022-01) and older would install fine, but any newer Cumulative Updates would all fail with with 0x8007007a (ERROR_INSUFFICIENT_BUFFER) and then 0x800f0988 (PSFX_E_INVALID_DELTA_COMBINATION).
-				# At first I thought something was funky with the Cumulative Updates and maybe some pre-requisite was missing, but even installing the working Cumulative Update before the next one would result in the same error.
-				# This same error also happened regardless of using the regular Cumulative Update MSU file or the Dynamic Cumulative Update CAB file.
-				# But, installing newer Cumulative Updates into *WinRE* from Win 11 21H2 works fine, which is kind of odd that this issue only affects the full Windows image and not WinRE.
-				# Then I thought that maybe this was an issue because of trying to update a Win 11 21H2 image on Windows 10, but I got the same exact error when updating the Win 11 21H2 image from within Win 11 21H2 as well.
-				# From more closely examinining the DISM error log, it started to look like is was possibly an issue with path lengths being too long, so I enabled Long Paths on my system, but that also didn't solve the issue and the same error happened.
-				# But, it still seemed like possibly a path issue because some files were copying correctly and then some weren't, so I decided to try mounting the WIM at the root of the drive instead of all the way into the home folder at $basePath.
-				# AND THAT WORKED! I don't quite understand why this worked since if it was a path length issue, enabling Long Paths should have solved it.
-				# Since enabling Long Paths didn't help, I disabled Long Paths again and the latest Cumulative Updates still worked then the WIM was mounted at the root of the drive!
-				# Since mounting at the root of the drive felt a bit sloppy, I decided to try mounting the WIM within the system temporary directory at "\Windows\Temp\" hoping that would not trigger the same path length issue (or whatever it was), and that also worked!
-				# So, I switched all WIM mounting to be within the system temporary directory and now all Cumulative Updates appear to be installing for all WIMs (including Win 10).
-			}
-
-			if ((Test-Path "$systemTempDir\mountOS") -and ((Get-ChildItem "$systemTempDir\mountOS").Count -gt 0)) {
-				Write-Output "`n  Unmounting Previously Mounted Windows Install Image..."
-				Dismount-WindowsImage -Path "$systemTempDir\mountOS" -Discard -ErrorAction Stop | Out-Null
-				Remove-Item "$systemTempDir\mountOS" -Recurse -Force -ErrorAction Stop
-			}
-
-			if ((Test-Path "$systemTempDir\mountRE") -and ((Get-ChildItem "$systemTempDir\mountRE").Count -gt 0)) {
-				Write-Output "`n  Unmounting Previously Mounted WinRE Image..."
-				Dismount-WindowsImage -Path "$systemTempDir\mountRE" -Discard -ErrorAction Stop | Out-Null
-				Remove-Item "$systemTempDir\mountRE" -Recurse -Force -ErrorAction Stop
-			}
-
-			if (($thisWindowsMajorVersion -eq '11') -and ($thisWindowsFeatureVersion -eq "$((Get-Date).AddYears(-1).ToString('yy'))H2")) {
-				$latestWindows11featureVersion = ((Invoke-WebRequest -TimeoutSec 5 -Uri 'https://www.microsoft.com/software-download/windows11').Content | Select-String '\(Current release: Windows 11 202\d Update l Version (2\dH2)\)').Matches[0].Groups[1].Value
-				if ($latestWindows11featureVersion -ne $thisWindowsFeatureVersion) {
-					if (($null -eq $latestWindows11featureVersion) -or ($latestWindows11featureVersion -eq '')) {
-						$latestWindows11featureVersion = 'UNKNOWN'
-					}
-
-					$win11updatePromptCaption = "`n  Windows $thisWindowsMajorVersion $thisWindowsEdition $latestWindows11featureVersion is now available.`n  Create a new Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image anyway?"
-					$win11updatePromptChoices = '&Yes', '&No'
-
-					$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-					$win11updatePromptResponse = $Host.UI.PromptForChoice($win11updatePromptCaption, "`n", $win11updatePromptChoices, 1)
-					Write-Output ''
-
-					if ($win11updatePromptResponse -eq 1) {
-						Start-Process 'https://www.microsoft.com/software-download/windows11'
-						continue # Go to next Windows version in loop, if multiple have been selected.
-					}
-				}
-			}
-
-			if (Test-Path "$Env:WINDIR\Logs\DISM\dism.log") {
-				# Delete past DISM log to make it easier to find errors in the log for this run if something goes wrong.
-				Remove-Item "$Env:WINDIR\Logs\DISM\dism.log" -Force -ErrorAction Stop
-			}
-
-			if ((Test-Path $sourceISOpath) -and (-not (Test-Path $sourceWIMpath))) {
-				if ($sourceISOchecksums.ContainsKey($sourceISOname)) {
-					Write-Output "`n  Verifying $sourceISOname..."
-					$thisISOchecksum = (Get-FileHash $sourceISOpath -Algorithm 'SHA256').Hash
-
-					if ($thisISOchecksum -eq $sourceISOchecksums[$sourceISOname]) {
-						Write-Output "    Successfully Verified Source ISO $sourceISOname"
-					} else {
-						Write-Host "`n  FAILED TO VERIFY SOURCE ISO $sourceISOname ($thisISOchecksum != $($sourceISOchecksums[$sourceISOname]))" -ForegroundColor Red
-
-						exit 1
-					}
-				} else {
-					Write-Output "    WARNING: CANNOT VERIFY SOURCE ISO $sourceISOname (NO SHA256 SPECIFIED IN SCRIPT)" -ForegroundColor Yellow
-				}
-
-				Write-Output "`n  Mounting $sourceISOname..."
-
-				$mountedDiskImageDriveLetter = (Mount-DiskImage $sourceISOpath -ErrorAction Stop | Get-Volume -ErrorAction Stop).DriveLetter
-
-				Write-Output "    Mounted to $($mountedDiskImageDriveLetter):\"
-
-				if (-not (Test-Path $wimOutputPath)) {
-					New-Item -ItemType 'Directory' -Path $wimOutputPath -ErrorAction Stop | Out-Null
-				}
-
-				Write-Output "`n  Exporting Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image from $sourceISOname..."
-				$isoInstallWimName = "$($mountedDiskImageDriveLetter):\sources\install.esd" # If the ISO is exported by the Media Creation Tool, the install file will be called "install.esd"
-				if (-not (Test-Path $isoInstallWimName)) {
-					$isoInstallWimName = "$($mountedDiskImageDriveLetter):\sources\install.wim" # If the ISO is downloaded directly, the install file will be called "install.wim"
-				}
-				Export-WindowsImage -SourceImagePath $isoInstallWimName -SourceName "Windows $thisWindowsMajorVersion $thisWindowsEdition" -DestinationImagePath $sourceWIMpath -CheckIntegrity -CompressionType 'max' -ErrorAction Stop | Out-Null
-				Get-WindowsImage -ImagePath $sourceWIMpath -Index 1 -ErrorAction Stop
-
-				while ($previousMountedDiskImage = Get-DiskImage $sourceISOpath | Get-Volume) {
-					Write-Output "`n  Unmounting $sourceISOname at $($previousMountedDiskImage.DriveLetter):\..."
-					Dismount-DiskImage $sourceISOpath -ErrorAction Stop | Out-Null
-				}
-			}
-
-			if (Test-Path "$wimOutputPath\$wimName-TEMP.wim") {
-				Remove-Item "$wimOutputPath\$wimName-TEMP.wim" -Force -ErrorAction Stop
-			}
-
-			if (Test-Path "$wimOutputPath\$winREwimName-TEMP.wim") {
-				Remove-Item "$wimOutputPath\$winREwimName-TEMP.wim" -Force -ErrorAction Stop
-			}
+			exit 1
+		}
 
 
-			if (-not (Test-Path $sourceWIMpath)) {
-				if (-not (Test-Path $sourceISOpath)) {
-					Write-Host "`n  SOURCE ISO NOT FOUND AT `"$sourceISOpath`"" -ForegroundColor Red
-				} else {
-					Write-Host "`n  EXTRACTED SOURCE WIM NOT FOUND AT `"$sourceWIMpath`"" -ForegroundColor Red
-				}
+		$osUpdatesToInstallPath = "$wimOutputPath\OS Updates to Install"
+		if (-not (Test-Path $osUpdatesToInstallPath)) {
+			New-Item -ItemType 'Directory' -Path $osUpdatesToInstallPath -ErrorAction Stop | Out-Null
+		}
 
-				exit 1
+		$winREupdatesToInstallPath = "$wimOutputPath\WinRE Updates to Install"
+		if (-not (Test-Path $winREupdatesToInstallPath)) {
+			New-Item -ItemType 'Directory' -Path $winREupdatesToInstallPath -ErrorAction Stop | Out-Null
+		}
+
+		$windowsAndWinREfeatureVersionForUpdates = @{
+			'Windows' = $thisWindowsFeatureVersion
+			'WinRE' = $thisWinREfeatureVersion
+		}
+
+		$windowsUpdatesChangedSinceLastBuild = $false
+		$windowsUpdatesDownloadFailedVerification = $false
+
+		foreach ($windowsOrWinRE in $windowsAndWinREfeatureVersionForUpdates.Keys) {
+			$thisWindowsOrWinREfeatureVersion = $windowsAndWinREfeatureVersionForUpdates[$windowsOrWinRE]
+
+			$updatesDownloadBasePath = $osUpdatesToInstallPath
+			if ($windowsOrWinRE -eq 'WinRE') {
+				$updatesDownloadBasePath = $winREupdatesToInstallPath
 			}
 
 			$downloadUpdatesStartDate = Get-Date
-			Write-Output "`n  Downloading Latest Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Updates at $downloadUpdatesStartDate..."
+			Write-Output "`n  Downloading Latest $windowsOrWinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsOrWinREfeatureVersion Updates at $downloadUpdatesStartDate..."
 
 			# Searching and downloading the regular monthly Cumulative Updates is automated by this script.
 			# IMPORTANT NOTE: Only ".msu" and ".cab" files can be pre-installed into the WIM. Any ".exe" updates (such as anti-virus updates) will have to be done by Windows Update after installation, which is fine because they are usually very small and quick and also get updated frequently.
 
 			# The following automated update search/download uses template strings like "[YYYY-MM] Cumulative Update for Windows [MAJOR VERSION] Version [FEATURE VERSION] for x64" and the following code searches for the newest available update until one is found.
-			# These template strings are stored in the "$windowsUpdatesSearchTemplates" array below, and can be set for all versions of Windows, or can be conditionally appended only for a specific version of Windows.
+			# These template strings are stored as keys in the "$windowsUpdatesSearchTemplates" dictionary below with values to specify the install order index, and can be set for all versions of Windows, or can be conditionally appended only for a specific version of Windows.
 			# For example, if it is January 2024, that template string will result in the following searches being performed for Windows 10 22H2 in order until one is found:
 				# 2024-01 Cumulative Update Preview for Windows 10 Version 22H2 for x64
 				# 2024-01 Cumulative Update for Windows 10 Version 22H2 for x64
@@ -269,25 +333,30 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 			# Also, any instance of "Cumulative Update" in the template string will be replaced with "Cumulative Update Preview" to peform those searches in order as well.
 			# This same template string would also perform the same monthly searches for Windows 11 23H2 by replacing the "[MAJOR VERSION]" and "[FEATURE VERSION]" portions of the template string.
 
-			$osUpdatesToInstallPath = "$wimOutputPath\OS Updates to Install"
-			if (-not (Test-Path $osUpdatesToInstallPath)) {
-				New-Item -ItemType 'Directory' -Path $osUpdatesToInstallPath -ErrorAction Stop | Out-Null
-			}
-
-			$windowsUpdatesChangedSinceLastBuild = $false
-
-			$windowsUpdatesSearchTemplates = @(
-				'[YYYY-MM] Cumulative Update for Windows [MAJOR VERSION] Version [FEATURE VERSION] for x64'
-				'[YYYY-MM] Cumulative Update for .NET Framework 3.5 and 4.8.1 for Windows [MAJOR VERSION] Version [FEATURE VERSION] for x64'
-			)
+			$windowsUpdatesSearchTemplates = @{}
+			$windowsUpdatesSearchTemplates['[YYYY-MM] Cumulative Update for Windows [MAJOR VERSION] Version [FEATURE VERSION] for x64'] = 1
 
 			if ($thisWindowsMajorVersion -eq '10') {
-				$windowsUpdatesSearchTemplates += @(
-					'2023-10 Servicing Stack Update for Windows [MAJOR VERSION] Version [FEATURE VERSION] for x64'
-					'Microsoft .NET Framework 4.8.1 for Windows [MAJOR VERSION] Version [FEATURE VERSION] for x64'
+				$windowsUpdatesSearchTemplates['2023-10 Servicing Stack Update for Windows [MAJOR VERSION] Version [FEATURE VERSION] for x64'] = 0
+			}
+
+			if ($windowsOrWinRE -eq 'Windows') {
+				$windowsUpdatesSearchTemplates['[YYYY-MM] Cumulative Update for .NET Framework 3.5 and 4.8.1 for Windows [MAJOR VERSION] Version [FEATURE VERSION] for x64'] = 3
+
+				if ($thisWindowsMajorVersion -eq '10') {
+					$windowsUpdatesSearchTemplates['Microsoft .NET Framework 4.8.1 for Windows [MAJOR VERSION] Version [FEATURE VERSION] for x64'] = 2
 					# In June 2023, Microsoft started releasing .NET 4.8.1 to all systems via Windows Update, so pre-install this package: https://devblogs.microsoft.com/dotnet/upcoming-availability-of-net-framework-4-8-1-on-windows-update-and-catalog/
 					# When this .NET 4.8.1 package (https://support.microsoft.com/kb/5011048) is pre-installed on Windows 10, the .NET 4.8 monthly Cumulative Updates are no longer needed and only the .NET 4.8.1 updates are needed.
-				)
+				}
+			} elseif ($windowsOrWinRE -eq 'WinRE') {
+				$windowsUpdatesSearchTemplates['[YYYY-MM] Safe OS Dynamic Update for Windows [MAJOR VERSION] Version [FEATURE VERSION] for x64'] = 2
+				# As stated in https://learn.microsoft.com/en-us/windows/deployment/update/media-dynamic-update#update-windows-installation-media
+				# WinRE should be installed with BOTH the regular Cumulative Update AND the WinRE-specific Safe OS Dynamic Update (and .NET updates do not need to be included in WinRE).
+				# NOTE: The WinRE version only gets updated by the Safe OS Dynamic Update and NOT the Cumulative Update.
+
+				# Further clarification from https://learn.microsoft.com/en-us/windows/deployment/update/catalog-checkpoint-cumulative-updates states:
+					# WinRE is serviced by applying the servicing stack update from a cumulative update (latest cumulative update doesn't apply) and SafeOS Dynamic Update.
+				# This means the Cumulative Update is required when updating WinRE, but on the Servicing Stack Update included within it is applied.
 			}
 
 			# Sometimes trying to install only the latest Cumulative Update will result in error 0x800f0823 (CBS_E_NEW_SERVICING_STACK_REQUIRED).
@@ -304,9 +373,11 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 			# For WinRE, some Cumulative Updates will fail with error 0x8007007e (ERROR_MOD_NOT_FOUND) even when the proper Servicing Stack Update is included, and I'm not certain why.
 			# When this happens, the solution is to find the newest *previous* Cumulative Update or Cumulative Update Preview that works.
 			# For example, CU KB5005565 (2021-09) + SSU KB5005260 (19041.1161) errors for WinRE, but using the previous CU KB5005101 (2021-08 Preview) + SSU KB5005260 (19041.1161) works fine.
-			# So, in these cases, seperate older working updates for WinRE can be supplied in a "$wimOutputPath\WinRE Updates to Install" folder which can be manually created and filled and will not be overwritten by this automated update code.
-			# See "PAST NOTES ABOUT MANUALLY DOWNLOADING UPDATES" below about how to manually search/download specific Cumulative Updates in the Microsoft Update Catalog.
-			# NOTE: The "$wimOutputPath\WinRE Updates to Install" folder should be removed if/when those separate updates are no longer needed.
+			# So, in these cases, seperate older working updates for WinRE can be specified in the "$windowsUpdatesSearchTemplates" dictionary for WinRE.
+
+			# UPDATE NOTE ABOUT ERROR 0x8007007e: In the example code in https://learn.microsoft.com/en-us/windows/deployment/update/media-dynamic-update#update-winre-and-each-main-os-windows-edition and https://learn.microsoft.com/en-us/windows/deployment/update/media-dynamic-update#update-winpe
+			# It is stated that when updating WinRE or WinPE, error 0x8007007e "is a known issue with combined cumulative update, we can ignore."
+			# As of October 2025, I haven't see this issue happen in years, but if it ever happens again the error could be caught an ignored (which is not currently being done in the installation code below).
 
 			# PAST NOTES ABOUT MANUALLY DOWNLOADING UPDATES:
 			# IN THE PAST, to find the latest updates to be pre-installed, I just run a Windows installation and take note of any KB#'s that get installed by Windows Update during setup process and pre-install them into an updated WIM using this script instead of leaving Windows Update to do them (to save install/setup time).
@@ -329,9 +400,25 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 			# CONCLUSION: I started using WinRE from Win 11 21H2 as our installation environment and not worry about this TPM detection issue in WinRE from Win 10 anymore since a fully updated WinRE from Win 11 21H2 gets the job done.
 
 			$latestUpdateNames = @()
-			foreach ($thisUpdateSearchTemplate in $windowsUpdatesSearchTemplates) {
+			foreach ($thisUpdateSearchTemplate in $windowsUpdatesSearchTemplates.Keys) {
+				$thisUpdateInstallOrderIndex = $windowsUpdatesSearchTemplates[$thisUpdateSearchTemplate]
+
 				$thisUpdateSearchTemplate = $thisUpdateSearchTemplate.Replace('[MAJOR VERSION]', $thisWindowsMajorVersion)
-				$thisUpdateSearchTemplate = $thisUpdateSearchTemplate.Replace('[FEATURE VERSION]', $thisWindowsFeatureVersion)
+				$thisUpdateSearchTemplate = $thisUpdateSearchTemplate.Replace('[FEATURE VERSION]', $thisWindowsOrWinREfeatureVersion)
+
+				if ($thisUpdateSearchTemplate.Contains(' Safe OS ') -and ($thisUpdateSearchTemplate.Contains(' Windows 10 ') -or $thisUpdateSearchTemplate.Contains(' Windows 11 Version 21H2 '))) {
+					$thisUpdateSearchTemplate = $thisUpdateSearchTemplate.Replace(' Safe OS ', ' ')
+					# The Safe OS Dynamic Updates for Windows 10  and Windows 11 21H2 are just titled "Dynamic Update" instead of "Safe OS Dynamic Update".
+					# https://learn.microsoft.com/en-us/windows/deployment/update/media-dynamic-update#windows-11-version-21h2-dynamic-update-packages
+					# https://www.catalog.update.microsoft.com/Search.aspx?q=%222025-10%20Dynamic%20Update%20for%20Windows%2010%20Version%2022H2%20for%20x64%22
+					# https://support.microsoft.com/en-us/topic/kb5067017-safe-os-dynamic-update-for-windows-10-version-21h2-and-22h2-october-14-2025-788ad1ed-6914-46a6-8a0f-12b07b5e5e4d
+				}
+
+				if ($thisUpdateSearchTemplate.Contains(' Windows 11 Version 21H2 ')) {
+					$thisUpdateSearchTemplate = $thisUpdateSearchTemplate.Replace(' Version 21H2 ', ' ')
+					# The original Windows 11 release was 21H2, but the updates did not include any feature version in their titles.
+				}
+
 				$thisUpdateSearchTemplate = $thisUpdateSearchTemplate.Replace(',', ' ')
 				# NOTE: Replace any commas with spaces since they just treated as a word separator (even when quoted) by "https://www.catalog.update.microsoft.com" in the initial search anyways (which is also case-insensitive),
 				# and will also be manually removed from the search results below when matching the exact result row so that a comma existing or not existing doesn't break the match.
@@ -340,24 +427,36 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 					# 2023-10 Cumulative Update for .NET Framework 3.5 and 4.8.1 for Windows 11, version 22H2 for x64
 				$thisUpdateSearchTemplate = $thisUpdateSearchTemplate.Trim() -Replace '\s+', ' ' # Finally, normalize all spaces.
 
-				$isSearchingCumulativeUpdate = $thisUpdateSearchTemplate.StartsWith('[YYYY-MM] Cumulative Update')
+				$isSearchingCumulativeUpdate = $thisUpdateSearchTemplate.StartsWith('[YYYY-MM] Cumulative Update ')
 				$isSearchingCumulativeUpdatePreview = $isSearchingCumulativeUpdate
-				$relativeCumulativeUpdateSearchMonth = 0
+
+				$isSearchingSafeOSupdate = ($thisUpdateSearchTemplate.StartsWith('[YYYY-MM] Safe OS ') -or $thisUpdateSearchTemplate.StartsWith('[YYYY-MM] Dynamic Update '))
+
+				$relativeUpdateSearchMonth = 0
 
 				$thisUpdateToSearch = $thisUpdateSearchTemplate
 
 				for (;;) {
-					if ($isSearchingCumulativeUpdate) {
-						$thisUpdateSearchTemplate = $thisUpdateSearchTemplate.Replace('Cumulative Update Preview for', 'Cumulative Update for')
-						
-						if ($isSearchingCumulativeUpdatePreview) {
-							$thisUpdateSearchTemplate = $thisUpdateSearchTemplate.Replace('Cumulative Update for', 'Cumulative Update Preview for')
+					if ($isSearchingCumulativeUpdate -or $isSearchingSafeOSupdate) {
+						if ($isSearchingCumulativeUpdate) {
+							$thisUpdateSearchTemplate = $thisUpdateSearchTemplate.Replace('Cumulative Update Preview for', 'Cumulative Update for')
+
+							if ($isSearchingCumulativeUpdatePreview) {
+								$thisUpdateSearchTemplate = $thisUpdateSearchTemplate.Replace('Cumulative Update for', 'Cumulative Update Preview for')
+							}
 						}
 
-						$thisUpdateToSearch = $thisUpdateSearchTemplate.Replace('[YYYY-MM]', (Get-Date).AddMonths($relativeCumulativeUpdateSearchMonth).ToString('yyyy-MM'))
+						$yearAndMonthToSearch = (Get-Date).AddMonths($relativeUpdateSearchMonth).ToString('yyyy-MM')
+
+						if ($yearAndMonthToSearch.startsWith('2020-')) {
+							Write-Host "`n    FAILED TO FIND RECENT WINDOWS UPDATES - MAKE SURE INTERNET IS CONNECTED AND TRY AGAIN" -ForegroundColor Red
+							exit 1
+						}
+
+						$thisUpdateToSearch = $thisUpdateSearchTemplate.Replace('[YYYY-MM]', $yearAndMonthToSearch)
 					}
 
-					Write-Output "`n    Searching for Windows Update `"$thisUpdateToSearch`"..."
+					Write-Output "`n    Searching for $windowsOrWinRE Update `"$thisUpdateToSearch`"..."
 					$thisTruncatedUpdateToSearch = $thisUpdateToSearch
 					while ($thisTruncatedUpdateToSearch.Length -gt 98) {
 						$thisTruncatedUpdateToSearch = $thisTruncatedUpdateToSearch.Substring(0, $thisTruncatedUpdateToSearch.LastIndexOf(' '))
@@ -383,7 +482,7 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 						if ($thisUpdateSearchLinkNormalizedOuterHTML.ToLower().Contains($thisUpdateToSearch.ToLower())) { # NOTE: Using ".ToLower()" for a case-INSENSITIVE match.
 							$thisUpdateID = $thisUpdateSearchLink.id.Split('_')[0]
 							$thisUpdateFullName = ($thisUpdateSearchLink.outerHTML -Split ('>|<'))[2].Trim()
-							$updateSizeMatches = ($theseUpdateSearchSource.Content | Select-String "<span id=`"$($thisUpdateID)_size`">(.+)</span>").Matches
+							$updateSizeMatches = ($theseUpdateSearchSource.Content | Select-String "<span id=`"${thisUpdateID}_size`">(.+)</span>").Matches
 							if ($updateSizeMatches.Count -gt 0) {
 								$thisUpdateSize = $updateSizeMatches[0].Groups[1].Value.Trim()
 							}
@@ -392,7 +491,13 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 					}
 
 					if ($null -ne $thisUpdateID) {
-						Write-Output "      Found Windows Update ID $($thisUpdateID):`n      $thisUpdateFullName"
+						Write-Output "      Found $windowsOrWinRE Update ID ${thisUpdateID}:`n      $thisUpdateFullName"
+
+						$thisKBfromUpdateFullName = $null
+						$kbMatchesUpdateFullName = ($thisUpdateFullName | Select-String '\((KB.+?)\)').Matches
+						if ($kbMatchesUpdateFullName.Count -gt 0) {
+							$thisKBfromUpdateFullName = $kbMatchesUpdateFullName[0].Groups[1].Value.Trim()
+						}
 
 						$downloadPageContent = (Invoke-WebRequest -TimeoutSec 5 -Uri 'https://www.catalog.update.microsoft.com/DownloadDialog.aspx' -Method 'POST' -Body @{updateIDs = "[$(@{updateID = $thisUpdateID} | ConvertTo-Json -Compress)]"} -ErrorAction Stop).Content
 						# Initially, I couldn't figure out on my own what exactly the "Download" button within the "Search.aspx" results was POSTing to the "DownloadDialog.aspx"
@@ -400,16 +505,36 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 						# https://github.com/potatoqualitee/kbupdate/blob/0dcc43ff15ec9275fbbd850af56a307e2fbc438f/public/Get-KbUpdate.ps1#L596-L598
 
 						$updateURLMatches = ($downloadPageContent | Select-String "url = '(.+)'" -AllMatches).Matches
+						$updateSHA256matches = ($downloadPageContent | Select-String "sha256 = '(.+)'" -AllMatches).Matches
+						$updateSHA1matches = ($downloadPageContent | Select-String "digest = '(.+)'" -AllMatches).Matches # Some Windows 10 Updates only have a SHA1 checksum available.
+
 						if ($updateURLMatches.Count -eq 0) {
 							Write-Host "        ERROR: NO DOWNLOAD URLS FOUND FOR UPDATE ID `"$thisUpdateID`"" -ForegroundColor Red
 						} else {
-							foreach ($thisUpdateURLMatch in $updateURLMatches) {
-								$thisUpdateDownloadURL = $thisUpdateURLMatch.Groups[1].Value
+							for ($thisUpdateMatchIndex = 0; $thisUpdateMatchIndex -lt $updateURLMatches.Count; $thisUpdateMatchIndex ++) {
+								$thisUpdateDownloadURL = $updateURLMatches[$thisUpdateMatchIndex].Groups[1].Value.Trim()
+
+								$thisUpdateIntendedSHA256 = $null
+								if ($updateSHA256matches.Count -eq $updateURLMatches.Count) {
+									$thisUpdateIntendedSHA256 = ((([System.Convert]::FromBase64String($updateSHA256matches[$thisUpdateMatchIndex].Groups[1].Value.Trim()) | Format-Hex).Bytes | ForEach-Object { '{0:x2}' -f $_ }) -Join '').ToUpper()
+									# The SHA256 hash from Windows Update Catalog is BASE64 rather than the HEX that "Get-FileHash" outputs, so convert it to HEX.
+									# Code based on: https://learn.microsoft.com/en-us/power-automate/desktop-flows/how-to/convert-base64-hexadecimal-format & https://stackoverflow.com/a/48373145
+								}
+
+								$thisUpdateIntendedSHA1 = $null
+								if ($updateSHA1matches.Count -eq $updateURLMatches.Count) {
+									$thisUpdateIntendedSHA1 = ((([System.Convert]::FromBase64String($updateSHA1matches[$thisUpdateMatchIndex].Groups[1].Value.Trim()) | Format-Hex).Bytes | ForEach-Object { '{0:x2}' -f $_ }) -Join '').ToUpper()
+									# The SHA1 hash from Windows Update Catalog is BASE64 rather than the HEX that "Get-FileHash" outputs, so convert it to HEX.
+									# Code based on: https://learn.microsoft.com/en-us/power-automate/desktop-flows/how-to/convert-base64-hexadecimal-format & https://stackoverflow.com/a/48373145
+								}
+
 								if ($thisUpdateDownloadURL.EndsWith('.cab') -or $thisUpdateDownloadURL.EndsWith('.msu')) {
 									$thisUpdateFilename = ([uri]$thisUpdateDownloadURL).Segments[-1]
 
 									$thisUpdateName = $thisUpdateFilename
-									if ($thisUpdateFilename.Contains('-kb')) {
+									if ($null -ne $thisKBfromUpdateFullName) {
+										$thisUpdateName = $thisKBfromUpdateFullName
+									} elseif ($thisUpdateFilename.Contains('-kb')) {
 										$thisUpdateName = "KB$(($thisUpdateFilename -Split ('-kb'))[1].Split('-')[0])"
 									} elseif ($thisUpdateFilename.Contains('ssu-')) {
 										$thisUpdateName = "SSU $(($thisUpdateFilename -Split ('ssu-'))[1].Split('-')[0])"
@@ -417,66 +542,166 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 										$thisUpdateName = ($thisUpdateFilename -Split ('_'))[0]
 									}
 
-									$thisUpdateName += " - $thisUpdateToSearch"
-									$thisUpdateDownloadPath = "$osUpdatesToInstallPath\$thisUpdateName\$thisUpdateFilename"
-									# Starting with Cumulative Update 2025-04/KB5055523, installing the companion KB5043080 (which has been included with Windows 11 24H2 Cumulative Updates since 2024-09) started failing with 0x80070228.
-									# By examining the logs, I found the following entries which made it appear as though the full Cumulative Update file (KB5058499 in the logs below) was being checked when the KB5043080 file was being installed by itself BEFORE the full Cumulative Update.
+									$thisUpdateName = "$thisUpdateInstallOrderIndex - $thisUpdateName - $thisUpdateToSearch"
+									$thisUpdateDownloadPath = "$updatesDownloadBasePath\$thisUpdateName\$thisUpdateFilename"
 
-									# Info Loading database: \\?\C:\Windows\TEMP\mountRE\Windows\Temp\########-####-####-####-############\metadata\LCUCompDB_KB5043080.xml
-									# Info Loading database: \\?\C:\Windows\TEMP\mountRE\Windows\Temp\########-####-####-####-############\metadata\SSUCompDB_KB5043113.xml
-									# Info Processing metadata source C:\PATH\TO\windows11.0-kb5058499-x64_f633db6acc14132bf74cc1461bd77b8941819d5f.msu.
-									# ... about 30 lines later ...
-									# Info Loading database: \\?\C:\Windows\TEMP\mountRE\Windows\Temp\########-####-####-####-############\metadata\SessionCompDBs\LCUCompDB_KB5058499.xml
-									# ... about 50 lines later ...
-									# Error DISM DISM Package Manager: PID=#### TID=#### Failed to install UUP package. - CMsuPackage::DoInstall(hr:0x80070228)
-									# Error DISM DISM Package Manager: PID=#### TID=#### Failed to execute the install in expanded MSU folder C:\Windows\TEMP\mountRE\Windows\Temp\########-####-####-####-############. - CMsuPackage::ProcessMsu(hr:0x80070228)
-									# Error DISM DISM Package Manager: PID=#### TID=#### Failed to apply the MSU unattend file to the image. - CMsuPackage::Install(hr:0x80070228)
-									# Error DISM API: PID=#### TID=#### Failed to install msu package C:\PATH\TO\windows11.0-kb5043080-x64_953449672073f8fb99badb4cc6d5d7849b9c83e8.msu - CAddPackageCommandObject::InternalExecute(hr:0x80070228)
-									# Error DISM API: PID=#### TID=#### InternalExecute failed - CBaseCommandObject::Execute(hr:0x80070228)
-									# Error DISM API: PID=#### TID=#### CAddPackageCommandObject internal execution failed - DismAddPackageInternal(hr:0x80070228)
+									# THE FOLLOWING INDENTED COMMENTS ARE OUTDATED AND ONLY PRESERVED FOR HISTORICAL CONTEXT (BEFORE I UNDERSTOOD "CHECKPOINT CUMULATIVE UPDATES")
+									# SEE "EXPLANATION OF PREVIOUS ISSUE", QUOTES FROM MICROSOFT DOCUMENTATION, AND "PROPER FIX" BELOW.
+										# Starting with Cumulative Update 2025-04/KB5055523, installing the companion KB5043080 (which has been included with Windows 11 24H2 Cumulative Updates since 2024-09) started failing with 0x80070228.
+										# By examining the logs, I found the following entries which made it appear as though the full Cumulative Update file (KB5058499 in the logs below) was being checked when the KB5043080 file was being installed by itself BEFORE the full Cumulative Update.
 
-									# This was odd and confusing because KB5043080 would install properly with Cumulative Updates 2024-09 through 2025-03 with no error.
-									# In an attempt to isolate each update file, I put them in their own subfolders, and that ended up solving the problem.
-									# I don't fully understand why a separate MSU file (KB5058499 in the logs above) is getting checked when a command is run to only install KB5043080, but this workaround allowed all MSU files to be installed properly.
+										# Info Loading database: \\?\C:\Windows\TEMP\mountRE\Windows\Temp\########-####-####-####-############\metadata\LCUCompDB_KB5043080.xml
+										# Info Loading database: \\?\C:\Windows\TEMP\mountRE\Windows\Temp\########-####-####-####-############\metadata\SSUCompDB_KB5043113.xml
+										# Info Processing metadata source C:\PATH\TO\windows11.0-kb5058499-x64_f633db6acc14132bf74cc1461bd77b8941819d5f.msu.
+										# ... about 30 lines later ...
+										# Info Loading database: \\?\C:\Windows\TEMP\mountRE\Windows\Temp\########-####-####-####-############\metadata\SessionCompDBs\LCUCompDB_KB5058499.xml
+										# ... about 50 lines later ...
+										# Error DISM DISM Package Manager: PID=#### TID=#### Failed to install UUP package. - CMsuPackage::DoInstall(hr:0x80070228)
+										# Error DISM DISM Package Manager: PID=#### TID=#### Failed to execute the install in expanded MSU folder C:\Windows\TEMP\mountRE\Windows\Temp\########-####-####-####-############. - CMsuPackage::ProcessMsu(hr:0x80070228)
+										# Error DISM DISM Package Manager: PID=#### TID=#### Failed to apply the MSU unattend file to the image. - CMsuPackage::Install(hr:0x80070228)
+										# Error DISM API: PID=#### TID=#### Failed to install msu package C:\PATH\TO\windows11.0-kb5043080-x64_953449672073f8fb99badb4cc6d5d7849b9c83e8.msu - CAddPackageCommandObject::InternalExecute(hr:0x80070228)
+										# Error DISM API: PID=#### TID=#### InternalExecute failed - CBaseCommandObject::Execute(hr:0x80070228)
+										# Error DISM API: PID=#### TID=#### CAddPackageCommandObject internal execution failed - DismAddPackageInternal(hr:0x80070228)
 
-									while ("$($thisUpdateDownloadPath)-download".Length -gt 248) { # MAX_PATH (260) minus 12 (248) seems to be the safest path length: https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation
+										# This was odd and confusing because KB5043080 would install properly with Cumulative Updates 2024-09 through 2025-03 with no error.
+										# In an attempt to isolate each update file, I put them in their own subfolders, and that ended up solving the problem.
+										# I don't fully understand why a separate MSU file (KB5058499 in the logs above) is getting checked when a command is run to only install KB5043080, but this workaround allowed all MSU files to be installed properly.
+
+									# EXPLANATION OF PREVIOUS ISSUE: Starting in Windows 11 24H2, Cumulative Updates may include CHECKPOINT Cumulative Updates...
+									# In the errors above, "KB5043080" is the "Checkpoint Cumulative Update" as described in https://learn.microsoft.com/en-us/windows/deployment/update/media-dynamic-update#checkpoint-cumulative-updates
+									# and only the TARGET Cumulative Update ("KB5058499" in the errors above) is intended to be installed with "Add-WindowsPackage"
+									# with the CHECKPOINT Cumulative Update in the SAME FOLDER and it will get referenced as needed during the TARGET Cumulative Update install.
+									# My previous fix of putting each MSU file in their own folders and applying them in order was an acceptable fix (as shown in last line of first quote below),
+									# but not the preferred process as described in quotes below.
+
+									# QUOTE FROM https://learn.microsoft.com/en-us/windows/deployment/update/media-dynamic-update#checkpoint-cumulative-updates:
+									# To install the checkpoint(s) when servicing the Windows OS (steps 9 & 12) and WinPE (steps 17 & 23), call Add-WindowsPackage with the target cumulative update.
+									# The folder from -PackagePath is used to discover and install one or more checkpoints as needed.
+									# Only the target cumulative update and checkpoint cumulative updates should be in the -PackagePath folder. Cumulative update packages with a revision <= the target cumulative update are processed.
+									# If you aren't customizing the image with additional languages and/or optional features, then separate calls to Add-WindowsPackage (checkpoint cumulative updates first) can be used for steps 9 & 17 above. Separate calls can't be used for steps 12 and 23.
+
+									# QUOTE FROM: https://learn.microsoft.com/en-us/windows/deployment/update/catalog-checkpoint-cumulative-updates#update-windows-installation-media
+									# Copy the .msu files of the latest cumulative update (the target) and all prior checkpoint cumulative updates to a local folder.
+									# Make sure there are no other .msu files present. Run DISM /add-package with the latest .msu file as the sole target.
+
+									# PROPER FIX: So, instead of putting each download in their own folder, the CHECKPOINT and TARGET Cumulative Updates will be downloaded into the SAME FOLDER,
+									# but then during installation (in "Add-WindowsPackage" code below) the CHECKPOINT Cumulative Update will be SKIPPED since it is in the SAME FOLDER as the
+									# TARGET Cumulative Update and the CHECKPOINT Cumulative Update will be applied automatically when the TARGET Cumulative Update is installed.
+
+									while ("$thisUpdateDownloadPath-download".Length -gt 248) { # MAX_PATH (260) minus 12 (248) seems to be the safest path length: https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation
 										$thisUpdateName = $thisUpdateName.Substring(0, $thisUpdateName.LastIndexOf(' '))
-										$thisUpdateDownloadPath = "$osUpdatesToInstallPath\$thisUpdateName\$thisUpdateFilename"
+										$thisUpdateDownloadPath = "$updatesDownloadBasePath\$thisUpdateName\$thisUpdateFilename"
 									}
 
-									$latestUpdateNames += $thisUpdateName
-
 									if (Test-Path $thisUpdateDownloadPath) {
-										Write-Output "        Windows Update Already Downloaded `"$thisUpdateFilename`" ($thisUpdateSize)"
-									} else {
-										if (Test-Path "$osUpdatesToInstallPath\$thisUpdateName") {
-											Remove-Item "$osUpdatesToInstallPath\$thisUpdateName" -Recurse -Force -ErrorAction Stop
+										$thisUpdateSizeActual = "$([math]::Round(((Get-Item $thisUpdateDownloadPath).Length / 1MB), 2)) MB"
+
+										Write-Output "        $windowsOrWinRE Update Already Downloaded `"$thisUpdateFilename`" ($thisUpdateSizeActual)"
+
+										if (($null -ne $thisUpdateIntendedSHA256) -or ($null -ne $thisUpdateIntendedSHA1)) {
+											$thisUpdateChecksumAlgorithm = 'SHA256'
+											$thisUpdateIntendedChecksum = $thisUpdateIntendedSHA256
+											if ($null -eq $thisUpdateIntendedChecksum) { # Some Windows 10 Updates only have a SHA1 checksum available.
+												$thisUpdateChecksumAlgorithm = 'SHA1'
+												$thisUpdateIntendedChecksum = $thisUpdateIntendedSHA1
+											}
+
+											Write-Output "          Verifying $windowsOrWinRE Update `"$thisUpdateFilename`" ($thisUpdateSizeActual - $thisUpdateIntendedChecksum)..."
+
+											$thisUpdateActualChecksum = (Get-FileHash $thisUpdateDownloadPath -Algorithm $thisUpdateChecksumAlgorithm).Hash
+											if ($thisUpdateActualChecksum -eq $thisUpdateIntendedChecksum) {
+												Write-Output "            Verified $windowsOrWinRE Update `"$thisUpdateFilename`" ($thisUpdateSizeActual - $thisUpdateIntendedChecksum)"
+
+												$latestUpdateNames += $thisUpdateName
+											} else {
+												Write-Output "            DELETING Invalid $windowsOrWinRE Update `"$thisUpdateFilename`" ($thisUpdateActualChecksum != $thisUpdateIntendedChecksum)"
+												Remove-Item $thisUpdateDownloadPath -Force -ErrorAction Stop
+											}
+										} else {
+											$latestUpdateNames += $thisUpdateName
+										}
+									}
+
+									if (-not (Test-Path $thisUpdateDownloadPath)) {
+										if (-not (Test-Path "$updatesDownloadBasePath\$thisUpdateName")) {
+											New-Item -ItemType 'Directory' -Path "$updatesDownloadBasePath\$thisUpdateName" -ErrorAction Stop | Out-Null
 										}
 
-										New-Item -ItemType 'Directory' -Path "$osUpdatesToInstallPath\$thisUpdateName" -ErrorAction Stop | Out-Null
+										$alternateUpdatesDownloadBasePath = $osUpdatesToInstallPath
+										if ($windowsOrWinRE -eq 'Windows') {
+											$alternateUpdatesDownloadBasePath = $winREupdatesToInstallPath
+										}
+										$thisUpdateDownloadPathFromAlternateWindowsOrWinRE = $thisUpdateDownloadPath.Replace("$updatesDownloadBasePath\", "$alternateUpdatesDownloadBasePath\")
 
 										$alternateWindowsEdition = 'Pro'
 										if ($thisWindowsEdition -eq 'Pro') {
 											$alternateWindowsEdition = 'Home'
 										}
-
 										$alternateWindowsEditionVersionString = "Windows $thisWindowsMajorVersion $alternateWindowsEdition $thisWindowsFeatureVersion"
+										$thisUpdateDownloadPathFromAlternateWindowsEdition = $thisUpdateDownloadPath.Replace("\Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion", "\$alternateWindowsEditionVersionString")
 
-										$thisUpdateDownloadPathFromAlternateWindowsEdition = $thisUpdateDownloadPath.Replace("Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion", $alternateWindowsEditionVersionString)
-										if (Test-Path $thisUpdateDownloadPathFromAlternateWindowsEdition) {
-											Write-Output "        Copying Windows Update `"$thisUpdateFilename`" ($thisUpdateSize) from $alternateWindowsEditionVersionString Updates..."
+										if (Test-Path $thisUpdateDownloadPathFromAlternateWindowsOrWinRE) {
+											$thisUpdateSizeActual = "$([math]::Round(((Get-Item $thisUpdateDownloadPathFromAlternateWindowsOrWinRE).Length / 1MB), 2)) MB"
+
+											$alternateWindowsOrWinRE = 'Windows'
+											if ($windowsOrWinRE -eq 'Windows') {
+												$alternateWindowsOrWinRE = 'WinRE'
+											}
+
+											Write-Output "        Copying $windowsOrWinRE Update `"$thisUpdateFilename`" ($thisUpdateSizeActual) from $alternateWindowsOrWinRE Updates..."
+
+											Copy-Item $thisUpdateDownloadPathFromAlternateWindowsOrWinRE $thisUpdateDownloadPath -Force -ErrorAction Stop
+
+											Write-Output "          Copied $windowsOrWinRE Update `"$thisUpdateFilename`" from $alternateWindowsOrWinRE Updates"
+										} elseif (Test-Path $thisUpdateDownloadPathFromAlternateWindowsEdition) {
+											$thisUpdateSizeActual = "$([math]::Round(((Get-Item $thisUpdateDownloadPathFromAlternateWindowsEdition).Length / 1MB), 2)) MB"
+
+											Write-Output "        Copying $windowsOrWinRE Update `"$thisUpdateFilename`" ($thisUpdateSizeActual) from $alternateWindowsEditionVersionString Updates..."
 
 											Copy-Item $thisUpdateDownloadPathFromAlternateWindowsEdition $thisUpdateDownloadPath -Force -ErrorAction Stop
 
-											Write-Output "          Copied Windows Update `"$thisUpdateFilename`" from $alternateWindowsEditionVersionString Updates"
+											Write-Output "          Copied $windowsOrWinRE Update `"$thisUpdateFilename`" from $alternateWindowsEditionVersionString Updates"
 										} else {
-											Write-Output "        Downloading Windows Update `"$thisUpdateFilename`" ($thisUpdateSize)..."
+											Write-Output "        Downloading $windowsOrWinRE Update `"$thisUpdateFilename`" ($thisUpdateSize)..."
 
-											Invoke-WebRequest $thisUpdateDownloadURL -OutFile "$($thisUpdateDownloadPath)-download" -ErrorAction Stop
+											Invoke-WebRequest $thisUpdateDownloadURL -OutFile "$thisUpdateDownloadPath-download" -ErrorAction Stop
 
-											Move-Item "$($thisUpdateDownloadPath)-download" "$thisUpdateDownloadPath" -Force -ErrorAction Stop
+											Move-Item "$thisUpdateDownloadPath-download" "$thisUpdateDownloadPath" -Force -ErrorAction Stop
 
-											Write-Output "          Downloaded Windows Update `"$thisUpdateFilename`""
+											Write-Output "          Downloaded $windowsOrWinRE Update `"$thisUpdateFilename`""
+										}
+
+										if (Test-Path $thisUpdateDownloadPath) {
+											$thisUpdateSizeActual = "$([math]::Round(((Get-Item $thisUpdateDownloadPath).Length / 1MB), 2)) MB"
+
+											if (($null -ne $thisUpdateIntendedSHA256) -or ($null -ne $thisUpdateIntendedSHA1)) {
+												$thisUpdateChecksumAlgorithm = 'SHA256'
+												$thisUpdateIntendedChecksum = $thisUpdateIntendedSHA256
+												if ($null -eq $thisUpdateIntendedChecksum) { # Some Windows 10 Updates only have a SHA1 checksum available.
+													$thisUpdateChecksumAlgorithm = 'SHA1'
+													$thisUpdateIntendedChecksum = $thisUpdateIntendedSHA1
+												}
+
+												Write-Output "            Verifying $windowsOrWinRE Update `"$thisUpdateFilename`" ($thisUpdateSizeActual - $thisUpdateIntendedChecksum)..."
+
+												$thisUpdateActualChecksum = (Get-FileHash $thisUpdateDownloadPath -Algorithm $thisUpdateChecksumAlgorithm).Hash
+												if ($thisUpdateActualChecksum -eq $thisUpdateIntendedChecksum) {
+													Write-Output "              Verified $windowsOrWinRE Update `"$thisUpdateFilename`" ($thisUpdateSizeActual - $thisUpdateIntendedChecksum)"
+
+													$latestUpdateNames += $thisUpdateName
+												} else {
+													Write-Output "              DELETING Invalid $windowsOrWinRE Update `"$thisUpdateFilename`" ($thisUpdateActualChecksum != $thisUpdateIntendedChecksum)"
+													Remove-Item $thisUpdateDownloadPath -Force -ErrorAction Stop
+
+													$windowsUpdatesDownloadFailedVerification = $true
+												}
+											} else {
+												$latestUpdateNames += $thisUpdateName
+											}
+										} else {
+											Write-Output "            DID NOT FIND $windowsOrWinRE Update `"$thisUpdateFilename`" AFTER DOWNLOAD"
+
+											$windowsUpdatesDownloadFailedVerification = $true
 										}
 
 										$windowsUpdatesChangedSinceLastBuild = $true
@@ -493,10 +718,12 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 
 						if ($isSearchingCumulativeUpdate) {
 							if (-not $isSearchingCumulativeUpdatePreview) {
-								$relativeCumulativeUpdateSearchMonth --
+								$relativeUpdateSearchMonth --
 							}
 
 							$isSearchingCumulativeUpdatePreview = (-not $isSearchingCumulativeUpdatePreview)
+						} elseif ($isSearchingSafeOSupdate) {
+							$relativeUpdateSearchMonth --
 						} else {
 							break
 						}
@@ -504,94 +731,173 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 				}
 			}
 
-			if ($latestUpdateNames.Count -eq 0) {
+			if ($windowsUpdatesDownloadFailedVerification) {
+				Write-Host "`n    SOME WINDOWS UPDATE DOWNLOADS FAILED VERIFICATION - SEE ERRORS ABOVE AND TRY AGAIN" -ForegroundColor Red
+				exit 1
+			} elseif ($latestUpdateNames.Count -eq 0) {
 				Write-Host "`n    FAILED TO FIND ANY WINDOWS UPDATES - MAKE SURE INTERNET IS CONNECTED AND TRY AGAIN" -ForegroundColor Red
 				exit 1
 			}
 
-			Write-Output "`n    Checking for Outdated Previously Downloaded Windows Updates to Delete..."
+			Write-Output "`n    Checking for Outdated Previously Downloaded $windowsOrWinRE Updates to Delete..."
 
 			$deletedOutdatedUpdatesCount = 0
 
-			Get-ChildItem "$osUpdatesToInstallPath" -ErrorAction Stop | ForEach-Object {
+			Get-ChildItem $updatesDownloadBasePath -ErrorAction Stop | ForEach-Object {
 				if (-not $latestUpdateNames.Contains($_.Name)) {
-					Write-Output "      Deleting Outdated Windows Update: $($_.Name)"
+					Write-Output "      Deleting Outdated $windowsOrWinRE Update: $($_.Name)"
 					Remove-Item $_.FullName -Recurse -Force -ErrorAction Stop
 					$deletedOutdatedUpdatesCount ++
 				}
 			}
 
 			if ($deletedOutdatedUpdatesCount -eq 0) {
-				Write-Output '      No Outdated Previously Downloaded Windows Updates to Delete'
+				Write-Output "      No Outdated Previously Downloaded $windowsOrWinRE Updates to Delete"
 			} else {
-				Write-Output "      Deleted $deletedOutdatedUpdatesCount Outdated Previously Downloaded Windows Updates"
+				Write-Output "      Deleted $deletedOutdatedUpdatesCount Outdated Previously Downloaded $windowsOrWinRE Updates"
 				$windowsUpdatesChangedSinceLastBuild = $true
 			}
 
 			$downloadUpdatesEndDate = Get-Date
-			Write-Output "`n  Finished Downloading Latest Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Updates at $downloadUpdatesEndDate ($([math]::Round(($downloadUpdatesEndDate - $downloadUpdatesStartDate).TotalMinutes, 2)) Minutes)"
+			Write-Output "`n  Finished Downloading Latest $windowsOrWinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsOrWinREfeatureVersion Updates at $downloadUpdatesEndDate ($([math]::Round(($downloadUpdatesEndDate - $downloadUpdatesStartDate).TotalMinutes, 2)) Minutes)"
+		}
 
-			if (-not $windowsUpdatesChangedSinceLastBuild) {
-				$noNewUpdatesPromptCaption = "`n  No new Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion updates have been downloaded since the last run.`n  Create a new Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image anyway?"
-				$noNewUpdatesPromptChoices = '&Yes', '&No'
+		$ProgressPreference = 'Continue' # Bring back progress after downloads are done because the following progress bars are useful and doesn't slow things down as much as the "Invoke-WebRequest" progress.
 
-				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-				$noNewUpdatesPromptResponse = $Host.UI.PromptForChoice($noNewUpdatesPromptCaption, "`n", $noNewUpdatesPromptChoices, 1)
-				Write-Output ''
+		if (-not $windowsUpdatesChangedSinceLastBuild) {
+			$noNewUpdatesPromptCaption = "`n  No new Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion updates have been downloaded since the last run.`n  Create a new Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image anyway?"
+			$noNewUpdatesPromptChoices = '&Yes', '&No'
 
-				if ($noNewUpdatesPromptResponse -eq 1) {
-					continue # Go to next Windows version in loop, if multiple have been selected.
+			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+			$noNewUpdatesPromptResponse = $Host.UI.PromptForChoice($noNewUpdatesPromptCaption, "`n", $noNewUpdatesPromptChoices, 1)
+			Write-Output ''
+
+			if ($noNewUpdatesPromptResponse -eq 1) {
+				continue # Go to next Windows version in loop, if multiple have been selected.
+			}
+		}
+
+
+		$updatesToInstallIntoWIM = @()
+		if (Test-Path $osUpdatesToInstallPath) {
+			$updatesToInstallIntoWIM = Get-ChildItem $osUpdatesToInstallPath -Recurse -File -Include '*.msu', '*.cab' # These results are sorted by the parent folder name which start with an install order index to make sure they are installed in the correct order.
+		}
+
+		$updatesToInstallIntoWinRE = @()
+		if (Test-Path $winREupdatesToInstallPath) {
+			$updatesToInstallIntoWinRE = Get-ChildItem $winREupdatesToInstallPath -Recurse -File -Include '*.msu', '*.cab'
+		}
+
+		if ($updatesToInstallIntoWinRE.Count -eq 0) {
+			$updatesToInstallIntoWinRE = $updatesToInstallIntoWIM
+		}
+
+
+		if (($updatesToInstallIntoWinRE.Count -gt 0) -or ($updatesToInstallIntoWIM.Count -gt 0) -or (-not (Test-Path "$wimOutputPath\$winREwimName.wim"))<# -or (-not (Test-Path "$wimOutputPath\Wi-Fi Drivers"))#>) {
+			Write-Output "`n  Mounting Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
+
+			Copy-Item $sourceWIMpath "$wimOutputPath\$wimName-TEMP.wim" -Force -ErrorAction Stop
+
+			if (-not (Test-Path "$systemTempDir\mountOS")) {
+				New-Item -ItemType 'Directory' -Path "$systemTempDir\mountOS" -ErrorAction Stop | Out-Null
+			}
+
+			Mount-WindowsImage -ImagePath "$wimOutputPath\$wimName-TEMP.wim" -Index 1 -Path "$systemTempDir\mountOS" -CheckIntegrity -ErrorAction Stop | Out-Null
+		}
+
+
+		if (Test-Path "$systemTempDir\mountOS\Windows\System32\Recovery\Winre.wim") {
+			Write-Output "`n  Extracting WinRE from Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
+
+			Copy-Item "$systemTempDir\mountOS\Windows\System32\Recovery\Winre.wim" "$wimOutputPath\$winREwimName-TEMP.wim" -Force -ErrorAction Stop
+		} else {
+			Write-Host "`n  WINRE NOT FOUND" -ForegroundColor Red
+			break
+		}
+
+
+		# NOTE: When using WinPE/WinRE 11 22H2 as the installation environment for both Windows 10 and 11, some network drivers are not available for older systems that don't support Windows 11 (which wasn't an issue with initial WinRE 11 version 21H2/22000).
+		# Having the installation environment be able to establish a network connection is critical for downloading QA Helper, as well as connecting to local SMB shares to retrieve the Windows install images.
+		# Through testing, I found that extracting all the default network drivers from the full Windows 11 image and installing them into the WinRE 11 image allowed all my test systems to properly make network connections (installing all drivers from WinRE 10 did not work).
+		# So, the network drivers will always be extracted from the full Windows images in this script and then installed into the WinRE image when creating the installation image in the "Create WinPE Image" script.
+		$extractedNetworkDriversPath = "$wimOutputPath\Extracted Network Drivers"
+		if (-not (Test-Path $extractedNetworkDriversPath)) {
+			Write-Output "`n  Extracting Network Drivers from Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
+
+			New-Item -ItemType 'Directory' -Path $extractedNetworkDriversPath -ErrorAction Stop | Out-Null
+
+			$allPreInstalledDriverInfPaths = (Get-ChildItem "$systemTempDir\mountOS\Windows\System32\DriverStore\FileRepository" -Recurse -File -Include '*.inf').FullName
+
+			# This Driver .inf parsing code is based on code written for "Install Windows.ps1"
+			$thisDriverIndex = 0
+			foreach ($thisDriverInfPath in $allPreInstalledDriverInfPaths) {
+				$thisDriverFolderPath = (Split-Path $thisDriverInfPath -Parent)
+				$thisDriverFolderName = (Split-Path $thisDriverFolderPath -Leaf)
+
+				$thisDriverInfContents = Get-Content $thisDriverInfPath
+
+				foreach ($thisDriverInfLine in $thisDriverInfContents) {
+					if (($lineCommentIndex = $thisDriverInfLine.IndexOf(';')) -gt -1) { # Remove .inf comments from each line before any parsing to avoid matching any text within comments.
+						$thisDriverInfLine = $thisDriverInfLine.Substring(0, $lineCommentIndex)
+					}
+
+					$thisDriverInfLine = $thisDriverInfLine.Trim()
+
+					if ($thisDriverInfLine -ne '') {
+						$thisDriverInfLineUPPER = $thisDriverInfLine.ToUpper()
+
+						if ($thisDriverInfLine.StartsWith('[')) {
+							# https://docs.microsoft.com/en-us/windows-hardware/drivers/install/inf-version-section
+							$wasInfVersionSection = $isInfVersionSection
+							$isInfVersionSection = ($thisDriverInfLineUPPER -eq '[VERSION]')
+
+							if ($wasInfVersionSection -and (-not $isInfVersionSection)) {
+								# If passed Version section and didn't already break from getting a NET class, then we can stop reading lines because we don't want this driver.
+								break
+							}
+						} elseif ($isInfVersionSection -and (($lineEqualsIndex = $thisDriverInfLine.IndexOf('=')) -gt -1) -and $thisDriverInfLineUPPER.Contains('CLASS') -and (-not $thisDriverInfLineUPPER.Contains('CLASSGUID'))) {
+							$thisDriverClass = $thisDriverInfLine.Substring($lineEqualsIndex + 1).Trim().ToUpper() # It appears that the Class Names will never be in quotes or be variables that need to be translated.
+
+							if ($thisDriverClass -eq 'NET') {
+								$thisDriverIndex ++
+								try {
+									Write-Output "    Extracting Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Network Driver ${thisDriverIndex}: $thisDriverFolderName"
+									Copy-Item $thisDriverFolderPath $extractedNetworkDriversPath -Recurse -Force -ErrorAction Stop
+								} catch {
+									Write-Host "      ERROR EXTRACTING WINDOWS $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion NETWORK DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
+								}
+							}
+
+							break
+						}
+					}
 				}
 			}
+		} else {
+			Write-Host "`n  WINDOWS $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion NETWORK DRIVERS ALREADY EXTRACTED" -ForegroundColor Yellow
+		}
 
 
-			$updatesToInstallIntoWIM = @()
-			if (Test-Path $osUpdatesToInstallPath) {
-				$updatesToInstallIntoWIM = Get-ChildItem "$osUpdatesToInstallPath" -Recurse -File -Include '*.msu', '*.cab' | Sort-Object -Property BaseName # Make sure the update files are sorted by file name, not the parent folder name (so that SSUs are always first).
+		if ($updatesToInstallIntoWinRE.Count -gt 0) {
+			Write-Output "`n  Mounting WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion for Updates..."
+
+			if (-not (Test-Path "$systemTempDir\mountRE")) {
+				New-Item -ItemType 'Directory' -Path "$systemTempDir\mountRE" -ErrorAction Stop | Out-Null
 			}
 
-			$updatesToInstallIntoWinRE = @()
-			if (Test-Path "$wimOutputPath\WinRE Updates to Install") {
-				$updatesToInstallIntoWinRE = Get-ChildItem "$wimOutputPath\WinRE Updates to Install" -Recurse -File -Include '*.msu', '*.cab' | Sort-Object -Property BaseName
-			} else {
-				$updatesToInstallIntoWinRE = $updatesToInstallIntoWIM
-			}
+			Mount-WindowsImage -ImagePath "$wimOutputPath\$winREwimName-TEMP.wim" -Index 1 -Path "$systemTempDir\mountRE" -CheckIntegrity -ErrorAction Stop | Out-Null
 
 
-			if (($updatesToInstallIntoWinRE.Count -gt 0) -or ($updatesToInstallIntoWIM.Count -gt 0) -or (-not (Test-Path "$wimOutputPath\$winREwimName.wim"))<# -or (-not (Test-Path "$wimOutputPath\Wi-Fi Drivers"))#>) {
-				Write-Output "`n  Mounting Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
-
-				Copy-Item $sourceWIMpath "$wimOutputPath\$wimName-TEMP.wim" -Force -ErrorAction Stop
-
-				if (-not (Test-Path "$systemTempDir\mountOS")) {
-					New-Item -ItemType 'Directory' -Path "$systemTempDir\mountOS" -ErrorAction Stop | Out-Null
-				}
-
-				Mount-WindowsImage -ImagePath "$wimOutputPath\$wimName-TEMP.wim" -Index 1 -Path "$systemTempDir\mountOS" -CheckIntegrity -ErrorAction Stop | Out-Null
-			}
-
-
-			if (Test-Path "$systemTempDir\mountOS\Windows\System32\Recovery\Winre.wim") {
-				Write-Output "`n  Extracting WinRE from Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
-
-				Copy-Item "$systemTempDir\mountOS\Windows\System32\Recovery\Winre.wim" "$wimOutputPath\$winREwimName-TEMP.wim" -Force -ErrorAction Stop
-			} else {
-				Write-Host "`n  WINRE NOT FOUND" -ForegroundColor Red
-				break
-			}
-
-
-			# NOTE: When using WinPE/WinRE 11 22H2 as the installation environment for both Windows 10 and 11, some network drivers are not available for older systems that don't support Windows 11 (which wasn't an issue with initial WinRE 11 version 21H2/22000).
-			# Having the installation environment be able to establish a network connection is critical for downloading QA Helper, as well as connecting to local SMB shares to retrieve the Windows install images.
-			# Through testing, I found that extracting all the default network drivers from the full Windows 11 image and installing them into the WinRE 11 image allowed all my test systems to properly make network connections (installing all drivers from WinRE 10 did not work).
-			# So, the network drivers will always be extracted from the full Windows images in this script and then installed into the WinRE image when creating the installation image in the "Create WinPE Image" script.
-			$extractedNetworkDriversPath = "$wimOutputPath\Extracted Network Drivers"
+			<#
+			# NOTE: When testing the network driver issues with WinRE 11 22H2 (described above), I also extracted WinRE network drivers to be able to easily compare the driver sets to see what as not included vs the full Windows images as well as between WinRE 10 and 11.
+			# In the end, this code was not needed since only the network drivers from the full Windows image are used, but leaving this code in place but commented out in case it's useful for future needs or just testing or reference.
+			$extractedNetworkDriversPath = "$wimOutputPath\WinRE Extracted Network Drivers"
 			if (-not (Test-Path $extractedNetworkDriversPath)) {
-				Write-Output "`n  Extracting Network Drivers from Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
+				Write-Output "`n  Extracting WinRE Network Drivers from Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
 
 				New-Item -ItemType 'Directory' -Path $extractedNetworkDriversPath -ErrorAction Stop | Out-Null
 
-				$allPreInstalledDriverInfPaths = (Get-ChildItem "$systemTempDir\mountOS\Windows\System32\DriverStore\FileRepository" -Recurse -File -Include '*.inf').FullName
+				$allPreInstalledDriverInfPaths = (Get-ChildItem "$systemTempDir\mountRE\Windows\System32\DriverStore\FileRepository" -Recurse -File -Include '*.inf').FullName
 
 				# This Driver .inf parsing code is based on code written for "Install Windows.ps1"
 				$thisDriverIndex = 0
@@ -626,10 +932,10 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 								if ($thisDriverClass -eq 'NET') {
 									$thisDriverIndex ++
 									try {
-										Write-Output "    Extracting Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Network Driver $($thisDriverIndex): $thisDriverFolderName"
+										Write-Output "    Extracting WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Network Driver ${thisDriverIndex}: $thisDriverFolderName"
 										Copy-Item $thisDriverFolderPath $extractedNetworkDriversPath -Recurse -Force -ErrorAction Stop
 									} catch {
-										Write-Host "      ERROR EXTRACTING WINDOWS $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion NETWORK DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
+										Write-Host "      ERROR EXTRACTING WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion NETWORK DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
 									}
 								}
 
@@ -639,103 +945,33 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 					}
 				}
 			} else {
-				Write-Host "`n  WINDOWS $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion NETWORK DRIVERS ALREADY EXTRACTED" -ForegroundColor Yellow
+				Write-Host "`n  WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion NETWORK DRIVERS ALREADY EXTRACTED" -ForegroundColor Yellow
+			}
+			#>
+
+
+			Write-Output "`n  Increasing WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Scratch Space..."
+			# Increase WinRE Scratch Space: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/oem-deployment-of-windows-10-for-desktop-editions#optimize-winre-part-1
+			# If too manu GUI apps get launched during testing it appears the limited default of 32 MB of scratch space can get used up and then other stuff can fail to load such as required DISM PowerShell modules.
+
+			Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountRE`"", '/Get-ScratchSpace'
+
+			# PowerShell equivalent of DISM's "/Set-ScratchSpace" does not seem to exist.
+			$dismSetScratchSpaceExitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountRE`"", '/Set-ScratchSpace:512').ExitCode
+
+			if ($dismSetScratchSpaceExitCode -ne 0) {
+				Write-Host "`n    ERROR: FAILED TO INCREASE WINRE SCRATCH SPACE - EXIT CODE: $dismSetScratchSpaceExitCode" -ForegroundColor Red
+				break
 			}
 
+			Write-Output "`n  WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Image Info Before Updates:"
+			Get-WindowsImage -ImagePath "$wimOutputPath\$winREwimName-TEMP.wim" -Index 1 -ErrorAction Stop
 
-			if ($updatesToInstallIntoWinRE.Count -gt 0) {
-				Write-Output "`n  Mounting WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion for Updates..."
+			Write-Output "`n  Installing $($updatesToInstallIntoWinRE.Count) Updates Into WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Image..."
+			# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/oem-deployment-of-windows-10-for-desktop-editions#add-update-packages-to-winre
 
-				if (-not (Test-Path "$systemTempDir\mountRE")) {
-					New-Item -ItemType 'Directory' -Path "$systemTempDir\mountRE" -ErrorAction Stop | Out-Null
-				}
-
-				Mount-WindowsImage -ImagePath "$wimOutputPath\$winREwimName-TEMP.wim" -Index 1 -Path "$systemTempDir\mountRE" -CheckIntegrity -ErrorAction Stop | Out-Null
-
-
-				<#
-				# NOTE: When testing the network driver issues with WinRE 11 22H2 (described above), I also extracted WinRE network drivers to be able to easily compare the driver sets to see what as not included vs the full Windows images as well as between WinRE 10 and 11.
-				# In the end, this code was not needed since only the network drivers from the full Windows image are used, but leaving this code in place but commented out in case it's useful for future needs or just testing or reference.
-				$extractedNetworkDriversPath = "$wimOutputPath\WinRE Extracted Network Drivers"
-				if (-not (Test-Path $extractedNetworkDriversPath)) {
-					Write-Output "`n  Extracting WinRE Network Drivers from Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
-
-					New-Item -ItemType 'Directory' -Path $extractedNetworkDriversPath -ErrorAction Stop | Out-Null
-
-					$allPreInstalledDriverInfPaths = (Get-ChildItem "$systemTempDir\mountRE\Windows\System32\DriverStore\FileRepository" -Recurse -File -Include '*.inf').FullName
-
-					# This Driver .inf parsing code is based on code written for "Install Windows.ps1"
-					$thisDriverIndex = 0
-					foreach ($thisDriverInfPath in $allPreInstalledDriverInfPaths) {
-						$thisDriverFolderPath = (Split-Path $thisDriverInfPath -Parent)
-						$thisDriverFolderName = (Split-Path $thisDriverFolderPath -Leaf)
-
-						$thisDriverInfContents = Get-Content $thisDriverInfPath
-
-						foreach ($thisDriverInfLine in $thisDriverInfContents) {
-							if (($lineCommentIndex = $thisDriverInfLine.IndexOf(';')) -gt -1) { # Remove .inf comments from each line before any parsing to avoid matching any text within comments.
-								$thisDriverInfLine = $thisDriverInfLine.Substring(0, $lineCommentIndex)
-							}
-
-							$thisDriverInfLine = $thisDriverInfLine.Trim()
-
-							if ($thisDriverInfLine -ne '') {
-								$thisDriverInfLineUPPER = $thisDriverInfLine.ToUpper()
-
-								if ($thisDriverInfLine.StartsWith('[')) {
-									# https://docs.microsoft.com/en-us/windows-hardware/drivers/install/inf-version-section
-									$wasInfVersionSection = $isInfVersionSection
-									$isInfVersionSection = ($thisDriverInfLineUPPER -eq '[VERSION]')
-
-									if ($wasInfVersionSection -and (-not $isInfVersionSection)) {
-										# If passed Version section and didn't already break from getting a NET class, then we can stop reading lines because we don't want this driver.
-										break
-									}
-								} elseif ($isInfVersionSection -and (($lineEqualsIndex = $thisDriverInfLine.IndexOf('=')) -gt -1) -and $thisDriverInfLineUPPER.Contains('CLASS') -and (-not $thisDriverInfLineUPPER.Contains('CLASSGUID'))) {
-									$thisDriverClass = $thisDriverInfLine.Substring($lineEqualsIndex + 1).Trim().ToUpper() # It appears that the Class Names will never be in quotes or be variables that need to be translated.
-
-									if ($thisDriverClass -eq 'NET') {
-										$thisDriverIndex ++
-										try {
-											Write-Output "    Extracting WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Network Driver $($thisDriverIndex): $thisDriverFolderName"
-											Copy-Item $thisDriverFolderPath $extractedNetworkDriversPath -Recurse -Force -ErrorAction Stop
-										} catch {
-											Write-Host "      ERROR EXTRACTING WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion NETWORK DRIVER `"$thisDriverFolderName`": $_" -ForegroundColor Red
-										}
-									}
-
-									break
-								}
-							}
-						}
-					}
-				} else {
-					Write-Host "`n  WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion NETWORK DRIVERS ALREADY EXTRACTED" -ForegroundColor Yellow
-				}
-				#>
-
-
-				Write-Output "`n  Increasing WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Scratch Space..."
-				# Increase WinRE Scratch Space: https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/oem-deployment-of-windows-10-for-desktop-editions#optimize-winre-part-1
-				# If too manu GUI apps get launched during testing it appears the limited default of 32 MB of scratch space can get used up and then other stuff can fail to load such as required DISM PowerShell modules.
-
-				Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountRE`"", '/Get-ScratchSpace'
-
-				# PowerShell equivalent of DISM's "/Set-ScratchSpace" does not seem to exist.
-				$dismSetScratchSpaceExitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountRE`"", '/Set-ScratchSpace:512').ExitCode
-
-				if ($dismSetScratchSpaceExitCode -ne 0) {
-					Write-Host "`n    ERROR: FAILED TO INCREASE WINRE SCRATCH SPACE - EXIT CODE: $dismSetScratchSpaceExitCode" -ForegroundColor Red
-					break
-				}
-
-				Write-Output "`n  WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image Info Before Updates:"
-				Get-WindowsImage -ImagePath "$wimOutputPath\$winREwimName-TEMP.wim" -Index 1 -ErrorAction Stop
-
-				Write-Output "`n  Installing $($updatesToInstallIntoWinRE.Count) Updates Into WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image..."
-				# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/oem-deployment-of-windows-10-for-desktop-editions#add-update-packages-to-winre
-
-				foreach ($thisUpdateToInstallIntoWinRE in $updatesToInstallIntoWinRE) {
+			foreach ($thisUpdateToInstallIntoWinRE in $updatesToInstallIntoWinRE) {
+				if (Test-Path $thisUpdateToInstallIntoWinRE) {
 					$updateStartDate = Get-Date
 
 					$updateName = $thisUpdateToInstallIntoWinRE.Name
@@ -747,155 +983,171 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 						$updateName = ($thisUpdateToInstallIntoWinRE.Name -Split ('_'))[0]
 					}
 
-					Write-Output "    Installing $updateName ($([math]::Round(($thisUpdateToInstallIntoWinRE.Length / 1MB), 2)) MB) Into WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image at $updateStartDate..."
-					try {
-						Add-WindowsPackage -Path "$systemTempDir\mountRE" -PackagePath $thisUpdateToInstallIntoWinRE.FullName -WarningAction Stop -ErrorAction Stop | Out-Null
-					} catch {
-						notepad.exe "$Env:WINDIR\Logs\DISM\dism.log"
-						throw $_
-					}
-					$updateEndDate = Get-Date
-					Write-Output "      Finished Installing at $updateEndDate ($([math]::Round(($updateEndDate - $updateStartDate).TotalMinutes, 2)) Minutes)"
-				}
+					$thisUpdateParentFolderName = $thisUpdateToInstallIntoWinRE.Directory.BaseName
+					Write-Output "    Installing $updateName of `"$thisUpdateParentFolderName`" ($([math]::Round(($thisUpdateToInstallIntoWinRE.Length / 1MB), 2)) MB) Into WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Image at $updateStartDate..."
+					if ($updateName.StartsWith('KB') -and (-not $thisUpdateParentFolderName.Contains(" - $updateName - ")) -and ((Get-ChildItem $thisUpdateToInstallIntoWinRE.DirectoryName -Recurse -File -Include '*.msu').Count -gt 1)) {
+						# As stated in https://learn.microsoft.com/en-us/windows/deployment/update/catalog-checkpoint-cumulative-updates#update-windows-installation-media
+							# Copy the .msu files of the latest cumulative update (the target) and all prior checkpoint cumulative updates to a local folder.
+							# Make sure there are no other .msu files present. Run DISM /add-package with the latest .msu file as the sole target.
+						# So, SKIP any CHECKPOINT Cumulative Update since it is in the same folder as the TARGET Cumulative Update and will be applied when the TARGET Cumulative Update is installed next.
 
-				Write-Output "`n  Superseded Packages in WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image After Updates:"
-				Get-WindowsPackage -Path "$systemTempDir\mountRE" | Where-Object -Property PackageState -Eq -Value Superseded
-
-
-				# NOTHING EXCEPT UPDATES SHOULD BE PRE-INSTALLED OR ADDED INTO THE WINRE WIM!
-
-
-				Write-Output "`n  Cleaning Up WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image After Updates..."
-				# PowerShell equivalent of DISM's "/Cleanup-Image /StartComponentCleanup /ResetBase" does not seem to exist.
-				$dismCleanupREexitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountRE`"", '/Cleanup-Image', '/StartComponentCleanup', '/ResetBase').ExitCode
-
-				if ($dismCleanupREexitCode -eq 0) {
-					Write-Output "`n  Superseded Packages for WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image After Cleanup (Nothing Should Be Listed This Time):"
-					Get-WindowsPackage -Path "$systemTempDir\mountRE" | Where-Object -Property PackageState -Eq -Value Superseded
-
-
-					Write-Output "`n  Unmounting and Saving Updated WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image..."
-					# Dism /Unmount-Image /MountDir:C:\test\offline /Commit
-					Dismount-WindowsImage -Path "$systemTempDir\mountRE" -CheckIntegrity -Save -ErrorAction Stop | Out-Null
-					Remove-Item "$systemTempDir\mountRE" -Recurse -Force -ErrorAction Stop
-					Get-WindowsImage -ImagePath "$wimOutputPath\$winREwimName-TEMP.wim" -Index 1 -ErrorAction Stop
-
-					if (Test-Path "$wimOutputPath\$winREwimName.wim") {
-						Write-Output "`n  Deleting Previous WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image With The Same Name ($winREwimName.wim)..."
-						Remove-Item "$wimOutputPath\$winREwimName.wim" -Force -ErrorAction Stop
-					}
-
-
-					Write-Output "`n  Exporting Compressed WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image as `"$winREwimName.wim`"..."
-					# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/oem-deployment-of-windows-10-for-desktop-editions#optimize-final-image
-					Export-WindowsImage -SourceImagePath "$wimOutputPath\$winREwimName-TEMP.wim" -SourceIndex 1 -DestinationImagePath "$wimOutputPath\$winREwimName.wim" -CheckIntegrity -CompressionType 'max' -ErrorAction Stop | Out-Null
-					Get-WindowsImage -ImagePath "$wimOutputPath\$winREwimName.wim" -Index 1 -ErrorAction Stop
-
-					# Delete the TEMP WIM which can be considerably larger than the exported compressed WIM.
-					# This is because the TEMP WIM will have a "[DELETED]" folder within it with all the old junk from the update process. This "[DELETED]" folder is not included when exporting a WIM.
-					Remove-Item "$wimOutputPath\$winREwimName-TEMP.wim" -Force -ErrorAction Stop
-
-					Write-Output "`n  Verifying Exported Updated WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image Contents Against Source WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image Contents..."
-					# IMPORTANT: When creating WinRE 10 22H2 images (from Windows 10 22H2), I ran into an issue I had never run into before where critical system files could end up being removed from the final exported WinRE/Windows images.
-					# I am not sure exactly how or why this happened, and it only happened rarely, but I was able to reproduce the issue after many reattempts of creating the updated Windows 10 images.
-					# In all my testing, this issue never seemed to happen to Windows 11 images, but since it is so inconsistent/rare I'm not sure that it couldn't happen on Windows 11 images as well, so they will also be verified.
-					# Also, I was previously using the older built-in version of DISM located at "/Windows/System32/Dism.exe" rather than the latest version of DISM from the ADK (https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install#choose-the-right-adk-for-your-scenario), which is now being used by running "DandISetEnv.bat" before this script is launched.
-					# Since switching to the using the latest DISM in the latest Window 11 22H2 ADK I have not seen this issue, but since it was so inconsistent I'm unsure whether or not using the latest DISM actually avoids the issue.
-					# I'm also unsure whether using the latest DISM from the ADK affects the PowerShell cmdlets such as "Export-WindowsImage", but I'm also unsure whether the issue happened at that step or before that at the "DISM /Cleanup-Image /StartComponentCleanup /ResetBase" step.
-					# It's possible the files were being removed because they became corrupted, which may actually indicate some issue with my SSD and not with any of the software being used, but that is just speculation since my SSD appears to be perfectly healthy when checked with "Hard Disk Sentinel".
-					# Since I'm unsure exactly where or why the issue was actually happening, I decided to just manually verify the exported images contents to make sure they contain all the expected system files that are present in the original image.
-					# I also noticed that when this happened usually many files were removed resulting in the exported image being smaller than the source image, so the file sizes are compared first as an initial fast way to detect the issue without having to do the longer file comparison.
-					# If the exported image is larger than the source image, the system file lists are still compared, excluding all the paths that are expected to be different.
-					# Excluding the paths that are expected to be different makes the file path comparison much faster, and still ensures that all the critical System32 contents (etc) are present in the exported image.
-					# Since it could be possible that some files are removed from the paths that are expected to be different (which aren't being checked), this verification should not be considered to be 100% thorough,
-					# but in my testing when the issue happens many files get removed and this verification was able to detect the issue to stop the process and alert that the exported image should not be used.
-					# If this verification fails, there is no way to correct the problem from this point and the script should just be run again to re-create the updated images from scrach, which should usually work fine the next time.
-
-					$verifyingStartDate = Get-Date
-
-					$sourceWinReWimSizeBytes = (Get-Item "$systemTempDir\mountOS\Windows\System32\Recovery\Winre.wim").Length
-					$updatedWinReWimSizeBytes = (Get-Item "$wimOutputPath\$winREwimName.wim").Length
-
-					if ($updatedWinReWimSizeBytes -lt $sourceWinReWimSizeBytes) {
-						$updatedWinReWimSizeBytesDifference = ($sourceWinReWimSizeBytes - $updatedWinReWimSizeBytes)
-						if ($updatedWinReWimSizeBytesDifference -ge 1500000) {
-							Write-Host "`n    ERROR: UPDATED WINRE WIM ($updatedWinReWimSizeBytes) IS *$([math]::Round(($updatedWinReWimSizeBytesDifference / 1MB), 2)) MB SMALLER THAN* SOURCE WINRE WIM ($sourceWinReWimSizeBytes) - THIS SHOULD NOT NORMALLY HAPPENED" -ForegroundColor Red
-
-							$smallerUpdatedWinReWimPromptCaption = '    Continue anyway?'
-							$smallerUpdatedWinReWimPromptChoices = '&No', '&Yes'
-
-							$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-							$smallerUpdatedWinReWimPromptResponse = $Host.UI.PromptForChoice($smallerUpdatedWinReWimPromptCaption, "`n", $smallerUpdatedWinReWimPromptChoices, 0)
-							Write-Output ''
-
-							if ($smallerUpdatedWinReWimPromptResponse -eq 0) {
-								break
-							}
-						} else {
-							Write-Host "`n    NOTICE: UPDATED WINRE WIM ($updatedWinReWimSizeBytes) IS *$([math]::Round(($updatedWinReWimSizeBytesDifference / 1MB), 2)) MB SMALLER THAN* SOURCE WINRE WIM ($sourceWinReWimSizeBytes) - CONTINUING ANYWAY`n" -ForegroundColor Yellow
+						Write-Output '      Skipping Checkpoint Cumulative Update (Will Be Applied During the Following Target Cumulative Update)'
+					} else {
+						try {
+							Add-WindowsPackage -Path "$systemTempDir\mountRE" -PackagePath $thisUpdateToInstallIntoWinRE.FullName -WarningAction Stop -ErrorAction Stop | Out-Null
+						} catch {
+							notepad.exe "$Env:WINDIR\Logs\DISM\dism.log"
+							throw $_
 						}
+
+						$updateEndDate = Get-Date
+						Write-Output "      Finished Installing at $updateEndDate ($([math]::Round(($updateEndDate - $updateStartDate).TotalMinutes, 2)) Minutes)"
 					}
-
-					$excludedCompareWinReWimContentPaths = @('\Windows\servicing\', '\Windows\System32\CatRoot\', '\Windows\System32\DriverStore\FileRepository\', '\Windows\WinSxS\') # Exclude these paths from the difference comparison because these are the paths we expect to be different.
-					if (($thisWindowsMajorVersion -eq '10') -and ($thisWindowsFeatureVersion -eq '22H2')) { # NOTE: The following added exclusions are only relevant to each feature version since a new feature version will not contain stuff remove in previous cumulative updates to the prior feature version.
-						$excludedCompareWinReWimContentPaths += '\Users\Default\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Accessories\' # This one folder outside of the previously excluded paths will be moved to "\ProgramData\Microsoft\Windows\Start Menu\Programs\Accessories\" within the updated WinRE 10 image (but not the WinRE 11 image), so don't error when it doesn't exist.
-					}
-
-					$sourceWinReWimContentPaths = Get-WindowsImageContent -ImagePath "$systemTempDir\mountOS\Windows\System32\Recovery\Winre.wim" -Index 1 | Select-String $excludedCompareWinReWimContentPaths -SimpleMatch -NotMatch # Exclude paths from the source lists since it's more efficient than letting them be compared and ignoring them from the results.
-					$updatedWinReWimContentPaths = Get-WindowsImageContent -ImagePath "$wimOutputPath\$winREwimName.wim" -Index 1 | Select-String $excludedCompareWinReWimContentPaths -SimpleMatch -NotMatch
-					$filePathsRemovedFromUpdatedWinReWIM = (Compare-Object -ReferenceObject $sourceWinReWimContentPaths -DifferenceObject $updatedWinReWimContentPaths | Where-Object SideIndicator -eq '<=').InputObject # Comparing text lists of paths from within the WIMs is MUCH faster than comparing mounted files via "Get-ChildItem -Recurse".
-					$verifyingEndDate = Get-Date
-
-					if ($filePathsRemovedFromUpdatedWinReWIM.Count -gt 0) { # It is NOT COMMON for ANY files to be removed by an update for WinPE/RE, but still make it a prompt (defaulting to "No") just in case that changes in the future.
-						Write-Host "`n    ERROR: THE FOLLOWING $($filePathsRemovedFromUpdatedWinReWIM.Count) FILES WERE REMOVED FROM THE UPDATED WINRE WIM`n      $($filePathsRemovedFromUpdatedWinReWIM -Join "`n      ")" -ForegroundColor Red
-
-						$filePathsRemovedFromUpdatedWinReWimPromptCaption = '    Continue anyway?'
-						$filePathsRemovedFromUpdatedWinReWimPromptChoices = '&No', '&Yes'
-
-						$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-						$filePathsRemovedFromUpdatedWinReWimPromptResponse = $Host.UI.PromptForChoice($filePathsRemovedFromUpdatedWinReWimPromptCaption, "`n", $filePathsRemovedFromUpdatedWinReWimPromptChoices, 0)
-						Write-Output ''
-
-						if ($filePathsRemovedFromUpdatedWinReWimPromptResponse -eq 0) {
-							break
-						}
-					}
-
-					Write-Output "    Finished Verifying Exported Updated WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image at $verifyingEndDate ($([math]::Round(($verifyingEndDate - $verifyingStartDate).TotalMinutes, 2)) Minutes)"
-
-					Write-Output "`n  Replacing Original WinRE with Updated WinRE in Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
-					Remove-Item "$systemTempDir\mountOS\Windows\System32\Recovery\Winre.wim" -Force -ErrorAction Stop
-					Copy-Item "$wimOutputPath\$winREwimName.wim" "$systemTempDir\mountOS\Windows\System32\Recovery\Winre.wim" -Force -ErrorAction Stop
 				} else {
-					Write-Host "`n    ERROR: FAILED TO DISM CLEANUP FOR WINRE - EXIT CODE: $dismCleanupExitCode" -ForegroundColor Red
-					break
-				}
-			} else {
-				Write-Host "`n  NO UPDATE FILES (IN `"WinRE Updates to Install`" FOLDER) TO INSTALL" -ForegroundColor Yellow
-
-				if (Test-Path "$systemTempDir\mountRE") {
-					Write-Output "`n  Unmounting and Discarding Un-Updated WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image..."
-					Dismount-WindowsImage -Path "$systemTempDir\mountRE" -Discard -ErrorAction Stop | Out-Null
-					Remove-Item "$systemTempDir\mountRE" -Recurse -Force -ErrorAction Stop
-				}
-
-				if (Test-Path "$wimOutputPath\$winREwimName-TEMP.wim") {
-					Move-Item "$wimOutputPath\$winREwimName-TEMP.wim" "$wimOutputPath\WinRE-$thisWindowsMajorVersion-$thisWindowsFeatureVersion-ISO$sourceISOversionSuffix-Source.wim" -Force -ErrorAction Stop
+					Write-Host "    WARNING: UPDATE FILE NOT FOUND AT INSTALL TIME ($($thisUpdateToInstallIntoWinRE.Directory.BaseName)\$($thisUpdateToInstallIntoWinRE.Name))" -ForegroundColor Yellow
 				}
 			}
 
+			Write-Output "`n  Superseded Packages in WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Image After Updates:"
+			Get-WindowsPackage -Path "$systemTempDir\mountRE" | Where-Object -Property PackageState -Eq -Value Superseded
 
-			if ($updatesToInstallIntoWIM.Count -gt 0) {
-				Write-Output "`n  Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image Info Before Updates:"
-				Get-WindowsImage -ImagePath "$wimOutputPath\$wimName-TEMP.wim" -Index 1 -ErrorAction Stop
 
-				Write-Output "`n  Installing $($updatesToInstallIntoWIM.Count) Updates Into Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
-				# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/oem-deployment-of-windows-10-for-desktop-editions#add-windows-updates-to-your-image
-				# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/oem-deployment-of-windows-desktop-editions#add-windows-updates-to-your-image
+			# NOTHING EXCEPT UPDATES SHOULD BE PRE-INSTALLED OR ADDED INTO THE WINRE WIM!
 
-				$installedUpdateNames = @()
 
-				foreach ($thisUpdateToInstallIntoWIM in $updatesToInstallIntoWIM) {
+			Write-Output "`n  Cleaning Up WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Image After Updates..."
+			# PowerShell equivalent of DISM's "/Cleanup-Image /StartComponentCleanup /ResetBase" does not seem to exist.
+			$dismCleanupREexitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountRE`"", '/Cleanup-Image', '/StartComponentCleanup', '/ResetBase').ExitCode
+
+			if ($dismCleanupREexitCode -eq 0) {
+				Write-Output "`n  Superseded Packages for WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Image After Cleanup (Nothing Should Be Listed This Time):"
+				Get-WindowsPackage -Path "$systemTempDir\mountRE" | Where-Object -Property PackageState -Eq -Value Superseded
+
+
+				Write-Output "`n  Unmounting and Saving Updated WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Image..."
+				# Dism /Unmount-Image /MountDir:C:\test\offline /Commit
+				Dismount-WindowsImage -Path "$systemTempDir\mountRE" -CheckIntegrity -Save -ErrorAction Stop | Out-Null
+				Remove-Item "$systemTempDir\mountRE" -Recurse -Force -ErrorAction Stop
+				Get-WindowsImage -ImagePath "$wimOutputPath\$winREwimName-TEMP.wim" -Index 1 -ErrorAction Stop
+
+				if (Test-Path "$wimOutputPath\$winREwimName.wim") {
+					Write-Output "`n  Deleting Previous WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Image With The Same Name ($winREwimName.wim)..."
+					Remove-Item "$wimOutputPath\$winREwimName.wim" -Force -ErrorAction Stop
+				}
+
+
+				Write-Output "`n  Exporting Compressed WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Image as `"$winREwimName.wim`"..."
+				# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/oem-deployment-of-windows-10-for-desktop-editions#optimize-final-image
+				Export-WindowsImage -SourceImagePath "$wimOutputPath\$winREwimName-TEMP.wim" -SourceIndex 1 -DestinationImagePath "$wimOutputPath\$winREwimName.wim" -CheckIntegrity -CompressionType 'max' -ErrorAction Stop | Out-Null
+				Get-WindowsImage -ImagePath "$wimOutputPath\$winREwimName.wim" -Index 1 -ErrorAction Stop
+
+				# Delete the TEMP WIM which can be considerably larger than the exported compressed WIM.
+				# This is because the TEMP WIM will have a "[DELETED]" folder within it with all the old junk from the update process. This "[DELETED]" folder is not included when exporting a WIM.
+				Remove-Item "$wimOutputPath\$winREwimName-TEMP.wim" -Force -ErrorAction Stop
+
+				Write-Output "`n  Verifying Exported Updated WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Image Contents Against Source WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Image Contents..."
+				# IMPORTANT: When creating WinRE 10 22H2 images (from Windows 10 22H2), I ran into an issue I had never run into before where critical system files could end up being removed from the final exported WinRE/Windows images.
+				# I am not sure exactly how or why this happened, and it only happened rarely, but I was able to reproduce the issue after many reattempts of creating the updated Windows 10 images.
+				# In all my testing, this issue never seemed to happen to Windows 11 images, but since it is so inconsistent/rare I'm not sure that it couldn't happen on Windows 11 images as well, so they will also be verified.
+				# Also, I was previously using the older built-in version of DISM located at "/Windows/System32/Dism.exe" rather than the latest version of DISM from the ADK (https://learn.microsoft.com/en-us/windows-hardware/get-started/adk-install#choose-the-right-adk-for-your-scenario), which is now being used by running "DandISetEnv.bat" before this script is launched.
+				# Since switching to the using the latest DISM in the latest Window 11 22H2 ADK I have not seen this issue, but since it was so inconsistent I'm unsure whether or not using the latest DISM actually avoids the issue.
+				# I'm also unsure whether using the latest DISM from the ADK affects the PowerShell cmdlets such as "Export-WindowsImage", but I'm also unsure whether the issue happened at that step or before that at the "DISM /Cleanup-Image /StartComponentCleanup /ResetBase" step.
+				# It's possible the files were being removed because they became corrupted, which may actually indicate some issue with my SSD and not with any of the software being used, but that is just speculation since my SSD appears to be perfectly healthy when checked with "Hard Disk Sentinel".
+				# Since I'm unsure exactly where or why the issue was actually happening, I decided to just manually verify the exported images contents to make sure they contain all the expected system files that are present in the original image.
+				# I also noticed that when this happened usually many files were removed resulting in the exported image being smaller than the source image, so the file sizes are compared first as an initial fast way to detect the issue without having to do the longer file comparison.
+				# If the exported image is larger than the source image, the system file lists are still compared, excluding all the paths that are expected to be different.
+				# Excluding the paths that are expected to be different makes the file path comparison much faster, and still ensures that all the critical System32 contents (etc) are present in the exported image.
+				# Since it could be possible that some files are removed from the paths that are expected to be different (which aren't being checked), this verification should not be considered to be 100% thorough,
+				# but in my testing when the issue happens many files get removed and this verification was able to detect the issue to stop the process and alert that the exported image should not be used.
+				# If this verification fails, there is no way to correct the problem from this point and the script should just be run again to re-create the updated images from scrach, which should usually work fine the next time.
+
+				$verifyingStartDate = Get-Date
+
+				$sourceWinReWimSizeBytes = (Get-Item "$systemTempDir\mountOS\Windows\System32\Recovery\Winre.wim").Length
+				$updatedWinReWimSizeBytes = (Get-Item "$wimOutputPath\$winREwimName.wim").Length
+
+				if ($updatedWinReWimSizeBytes -lt $sourceWinReWimSizeBytes) {
+					$updatedWinReWimSizeBytesDifference = ($sourceWinReWimSizeBytes - $updatedWinReWimSizeBytes)
+					if ($updatedWinReWimSizeBytesDifference -ge 1500000) {
+						Write-Host "`n    ERROR: UPDATED WINRE WIM ($updatedWinReWimSizeBytes) IS *$([math]::Round(($updatedWinReWimSizeBytesDifference / 1MB), 2)) MB SMALLER THAN* SOURCE WINRE WIM ($sourceWinReWimSizeBytes) - THIS SHOULD NOT NORMALLY HAPPENED" -ForegroundColor Red
+
+						$smallerUpdatedWinReWimPromptCaption = '    Continue anyway?'
+						$smallerUpdatedWinReWimPromptChoices = '&No', '&Yes'
+
+						$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+						$smallerUpdatedWinReWimPromptResponse = $Host.UI.PromptForChoice($smallerUpdatedWinReWimPromptCaption, "`n", $smallerUpdatedWinReWimPromptChoices, 0)
+						Write-Output ''
+
+						if ($smallerUpdatedWinReWimPromptResponse -eq 0) {
+							break
+						}
+					} else {
+						Write-Host "`n    NOTICE: UPDATED WINRE WIM ($updatedWinReWimSizeBytes) IS *$([math]::Round(($updatedWinReWimSizeBytesDifference / 1MB), 2)) MB SMALLER THAN* SOURCE WINRE WIM ($sourceWinReWimSizeBytes) - CONTINUING ANYWAY`n" -ForegroundColor Yellow
+					}
+				}
+
+				$excludedCompareWinReWimContentPaths = @('\Windows\servicing\', '\Windows\System32\CatRoot\', '\Windows\System32\DriverStore\FileRepository\', '\Windows\WinSxS\') # Exclude these paths from the difference comparison because these are the paths we expect to be different.
+				if (($thisWindowsMajorVersion -eq '10') -and ($thisWindowsFeatureVersion -eq '22H2')) { # NOTE: The following added exclusions are only relevant to each feature version since a new feature version will not contain stuff remove in previous cumulative updates to the prior feature version.
+					$excludedCompareWinReWimContentPaths += '\Users\Default\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Accessories\' # This one folder outside of the previously excluded paths will be moved to "\ProgramData\Microsoft\Windows\Start Menu\Programs\Accessories\" within the updated WinRE 10 image (but not the WinRE 11 image), so don't error when it doesn't exist.
+				}
+
+				$sourceWinReWimContentPaths = Get-WindowsImageContent -ImagePath "$systemTempDir\mountOS\Windows\System32\Recovery\Winre.wim" -Index 1 | Select-String $excludedCompareWinReWimContentPaths -SimpleMatch -NotMatch # Exclude paths from the source lists since it's more efficient than letting them be compared and ignoring them from the results.
+				$updatedWinReWimContentPaths = Get-WindowsImageContent -ImagePath "$wimOutputPath\$winREwimName.wim" -Index 1 | Select-String $excludedCompareWinReWimContentPaths -SimpleMatch -NotMatch
+				$filePathsRemovedFromUpdatedWinReWIM = (Compare-Object $sourceWinReWimContentPaths $updatedWinReWimContentPaths | Where-Object SideIndicator -eq '<=').InputObject # Comparing text lists of paths from within the WIMs is MUCH faster than comparing mounted files via "Get-ChildItem -Recurse".
+				$verifyingEndDate = Get-Date
+
+				if ($filePathsRemovedFromUpdatedWinReWIM.Count -gt 0) { # It is NOT COMMON for ANY files to be removed by an update for WinPE/RE, but still make it a prompt (defaulting to "No") just in case that changes in the future.
+					Write-Host "`n    ERROR: THE FOLLOWING $($filePathsRemovedFromUpdatedWinReWIM.Count) FILES WERE REMOVED FROM THE UPDATED WINRE WIM`n      $($filePathsRemovedFromUpdatedWinReWIM -Join "`n      ")" -ForegroundColor Red
+
+					$filePathsRemovedFromUpdatedWinReWimPromptCaption = '    Continue anyway?'
+					$filePathsRemovedFromUpdatedWinReWimPromptChoices = '&No', '&Yes'
+
+					$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+					$filePathsRemovedFromUpdatedWinReWimPromptResponse = $Host.UI.PromptForChoice($filePathsRemovedFromUpdatedWinReWimPromptCaption, "`n", $filePathsRemovedFromUpdatedWinReWimPromptChoices, 0)
+					Write-Output ''
+
+					if ($filePathsRemovedFromUpdatedWinReWimPromptResponse -eq 0) {
+						break
+					}
+				}
+
+				Write-Output "    Finished Verifying Exported Updated WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Image at $verifyingEndDate ($([math]::Round(($verifyingEndDate - $verifyingStartDate).TotalMinutes, 2)) Minutes)"
+
+				Write-Output "`n  Replacing Original WinRE with Updated WinRE in Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
+				Remove-Item "$systemTempDir\mountOS\Windows\System32\Recovery\Winre.wim" -Force -ErrorAction Stop
+				Copy-Item "$wimOutputPath\$winREwimName.wim" "$systemTempDir\mountOS\Windows\System32\Recovery\Winre.wim" -Force -ErrorAction Stop
+			} else {
+				Write-Host "`n    ERROR: FAILED TO DISM CLEANUP FOR WINRE - EXIT CODE: $dismCleanupExitCode" -ForegroundColor Red
+				break
+			}
+		} else {
+			Write-Host "`n  NO UPDATE FILES (IN `"WinRE Updates to Install`" FOLDER) TO INSTALL" -ForegroundColor Yellow
+
+			if (Test-Path "$systemTempDir\mountRE") {
+				Write-Output "`n  Unmounting and Discarding Un-Updated WinRE $thisWindowsMajorVersion $thisWindowsEdition $thisWinREfeatureVersion Image..."
+				Dismount-WindowsImage -Path "$systemTempDir\mountRE" -Discard -ErrorAction Stop | Out-Null
+				Remove-Item "$systemTempDir\mountRE" -Recurse -Force -ErrorAction Stop
+			}
+
+			if (Test-Path "$wimOutputPath\$winREwimName-TEMP.wim") {
+				Move-Item "$wimOutputPath\$winREwimName-TEMP.wim" "$wimOutputPath\WinRE-$thisWindowsMajorVersion-$thisWindowsEdition-$thisWinREfeatureVersion-ISO$sourceISOversionSuffix-Source.wim" -Force -ErrorAction Stop
+			}
+		}
+
+
+		if ($updatesToInstallIntoWIM.Count -gt 0) {
+			Write-Output "`n  Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Image Info Before Updates:"
+			Get-WindowsImage -ImagePath "$wimOutputPath\$wimName-TEMP.wim" -Index 1 -ErrorAction Stop
+
+			Write-Output "`n  Installing $($updatesToInstallIntoWIM.Count) Updates Into Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
+			# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/oem-deployment-of-windows-10-for-desktop-editions#add-windows-updates-to-your-image
+			# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/oem-deployment-of-windows-desktop-editions#add-windows-updates-to-your-image
+			# https://learn.microsoft.com/en-us/windows/deployment/update/media-dynamic-update#update-windows-installation-media
+
+			$installedUpdateNames = @()
+
+			foreach ($thisUpdateToInstallIntoWIM in $updatesToInstallIntoWIM) {
+				if (Test-Path $thisUpdateToInstallIntoWIM) {
 					$updateStartDate = Get-Date
 
 					$updateName = $thisUpdateToInstallIntoWIM.Name
@@ -909,133 +1161,162 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 
 					$installedUpdateNames += $updateName
 
-					Write-Output "    Installing $updateName ($([math]::Round(($thisUpdateToInstallIntoWIM.Length / 1MB), 2)) MB) Into Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image at $updateStartDate..."
-					# Dism /Image:C:\test\offline /Add-Package /PackagePath:C:\packages\package1.cab (https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/add-or-remove-packages-offline-using-dism)
-					try {
-						Add-WindowsPackage -Path "$systemTempDir\mountOS" -PackagePath $thisUpdateToInstallIntoWIM.FullName -WarningAction Stop -ErrorAction Stop | Out-Null
-					} catch {
-						notepad.exe "$Env:WINDIR\Logs\DISM\dism.log"
-						throw $_
-					}
-					$updateEndDate = Get-Date
-					Write-Output "      Finished Installing at $updateEndDate ($([math]::Round(($updateEndDate - $updateStartDate).TotalMinutes, 2)) Minutes)"
-				}
+					$thisUpdateParentFolderName = $thisUpdateToInstallIntoWIM.Directory.BaseName
+					$thisUpdateIsCumulativeUpdate = ($thisUpdateParentFolderName.Contains('Cumulative Update for Windows') -or $thisUpdateParentFolderName.Contains('Cumulative Update Preview for Windows'))
+					Write-Output "    Installing $updateName of `"$thisUpdateParentFolderName`" ($([math]::Round(($thisUpdateToInstallIntoWIM.Length / 1MB), 2)) MB) Into Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image at $updateStartDate..."
+					if ($thisUpdateIsCumulativeUpdate -and $updateName.StartsWith('KB') -and (-not $thisUpdateParentFolderName.Contains(" - $updateName - ")) -and ((Get-ChildItem $thisUpdateToInstallIntoWIM.DirectoryName -Recurse -File -Include '*.msu').Count -gt 1)) {
+						# As stated in https://learn.microsoft.com/en-us/windows/deployment/update/catalog-checkpoint-cumulative-updates#update-windows-installation-media
+							# Copy the .msu files of the latest cumulative update (the target) and all prior checkpoint cumulative updates to a local folder.
+							# Make sure there are no other .msu files present. Run DISM /add-package with the latest .msu file as the sole target.
+						# So, SKIP any CHECKPOINT Cumulative Update since it is in the same folder as the TARGET Cumulative Update and will be applied when the TARGET Cumulative Update is installed next.
 
-				Write-Output "`n  Superseded Packages in Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image After Updates:"
-				Get-WindowsPackage -Path "$systemTempDir\mountOS" | Where-Object -Property PackageState -Eq -Value Superseded
+						Write-Output '      Skipping Checkpoint Cumulative Update (Will Be Applied During the Following Target Cumulative Update)'
+					} else {
+						# Dism /Image:C:\test\offline /Add-Package /PackagePath:C:\packages\package1.cab (https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/add-or-remove-packages-offline-using-dism)
+						try {
+							Add-WindowsPackage -Path "$systemTempDir\mountOS" -PackagePath $thisUpdateToInstallIntoWIM.FullName -WarningAction Stop -ErrorAction Stop | Out-Null
 
+							if ($thisUpdateIsCumulativeUpdate) {
+								# As shown in example code on https://learn.microsoft.com/en-us/windows/deployment/update/media-dynamic-update#update-windows-installation-media
+								# install Windows 11 Cumulative Updates TWICE (in full Windows but NOT WinRE since ONLY the SSU included in the CU is applied in WinRE),
+								# first for the included Servicing Stack Update and then the second time for the full Windows Cumulative Update.
+								# I'm not certain this is actually necessary since it seems that only installing it once updates the version number, but doesn't hurt to be thorough.
 
-				# NOTHING EXCEPT UPDATES SHOULD BE PRE-INSTALLED OR ADDED INTO THE WINDOWS INSTALL WIM!
-				# ALL NECESSARY WINDOWS INSTALL SETUP FILES ARE ADDED FROM SERVER OR USB DURING THE INSTALLATION PROCESS.
+								$updateEndDate = Get-Date
+								Write-Output "      Finished Installing at $updateEndDate ($([math]::Round(($updateEndDate - $updateStartDate).TotalMinutes, 2)) Minutes)"
 
+								$updateStartDate = Get-Date
+								Write-Output "    Re-Installing $updateName of `"$thisUpdateParentFolderName`" ($([math]::Round(($thisUpdateToInstallIntoWIM.Length / 1MB), 2)) MB) Into Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image at $updateStartDate..."
+								Write-Output "      (To Be Sure Full Cumulative Update Is Installed and NOT ONLY the Included Servicing Stack Update)"
 
-				Write-Output "`n  Cleaning Up Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image After Updates..."
-				# PowerShell equivalent of DISM's "/Cleanup-Image /StartComponentCleanup /ResetBase" does not seem to exist.
-				$dismCleanupOSexitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountOS`"", '/Cleanup-Image', '/StartComponentCleanup', '/ResetBase').ExitCode
-
-				if ($dismCleanupOSexitCode -eq 0) {
-					Write-Output "`n  Superseded Packages for Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image After Cleanup (Nothing Should Be Listed This Time):"
-					Get-WindowsPackage -Path "$systemTempDir\mountOS" | Where-Object -Property PackageState -Eq -Value Superseded
-
-
-					Write-Output "`n  Unmounting and Saving Updated Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
-					# Dism /Unmount-Image /MountDir:C:\test\offline /Commit
-					Dismount-WindowsImage -Path "$systemTempDir\mountOS" -CheckIntegrity -Save -ErrorAction Stop | Out-Null
-					Remove-Item "$systemTempDir\mountOS" -Recurse -Force -ErrorAction Stop
-					Get-WindowsImage -ImagePath "$wimOutputPath\$wimName-TEMP.wim" -Index 1 -ErrorAction Stop
-
-					if (Test-Path "$wimOutputPath\$wimName.wim") {
-						Write-Output "`n  Deleting Previous Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image With The Same Name ($wimName.wim)..."
-						Remove-Item "$wimOutputPath\$wimName.wim" -Force -ErrorAction Stop
-					}
-
-
-					Write-Output "`n  Exporting Compressed Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image as `"$wimName.wim`"..."
-					# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/oem-deployment-of-windows-10-for-desktop-editions#optimize-final-image
-					Export-WindowsImage -SourceImagePath "$wimOutputPath\$wimName-TEMP.wim" -SourceIndex 1 -DestinationImagePath "$wimOutputPath\$wimName.wim" -CheckIntegrity -CompressionType 'max' -ErrorAction Stop | Out-Null
-					Get-WindowsImage -ImagePath "$wimOutputPath\$wimName.wim" -Index 1 -ErrorAction Stop
-
-					# Delete the TEMP WIM which can be considerably larger than the exported compressed WIM.
-					# This is because the TEMP WIM will have a "[DELETED]" folder within it with all the old junk from the update process. This "[DELETED]" folder is not included when exporting a WIM.
-					Remove-Item "$wimOutputPath\$wimName-TEMP.wim" -Force -ErrorAction Stop
-
-
-					Write-Output "`n  Verifying Exported Updated Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image Contents Against Source Windows Image Contents..."
-					# NOTE: See comments above when verifying the WinRE image which also apply to this manual verification of the exported Windows image.
-
-					$verifyingStartDate = Get-Date
-
-					$sourceWinInstallWimSizeBytes = (Get-Item $sourceWIMpath).Length
-					$updatedWinInstallWimSizeBytes = (Get-Item "$wimOutputPath\$wimName.wim").Length
-
-					if ($updatedWinInstallWimSizeBytes -lt $sourceWinInstallWimSizeBytes) {
-						Write-Host "`n    ERROR: UPDATED WINDOWS INSTALL WIM ($updatedWinInstallWimSizeBytes) IS *$([math]::Round((($sourceWinInstallWimSizeBytes - $updatedWinInstallWimSizeBytes) / 1MB), 2)) MB SMALLER THAN* SOURCE WINDOWS INSTALL WIM ($sourceWinInstallWimSizeBytes) - THIS SHOULD NOT HAVE HAPPENED`n    $($filePathsRemovedFromUpdatedWinInstallWIM -Join "`n    ")" -ForegroundColor Red
-						break
-					}
-
-					$excludedCompareWinInstallWimContentPaths = @('\Windows\servicing\', '\Windows\System32\CatRoot\', '\Windows\System32\DriverStore\FileRepository\', '\Windows\WinSxS\') # Exclude these paths from the difference comparison because these are the paths we expect to be different.
-
-					$winInstallWimFilesRemovedByUpdatesFilePath = "$wimOutputPath\Windows Files Removed By Updates.txt"
-					if (Test-Path $winInstallWimFilesRemovedByUpdatesFilePath) {
-						# When Cumulative updates are installed, files can be removed by the update.
-						# To not prompt about these past removals with each new update, a list of approved removals is saved to ignore for future updates.
-						# So, read this list and add it to the excludedCompareWinInstallWimContentPaths variable to ignore these already approved removed files.
-
-						$excludedCompareWinInstallWimContentPaths += Get-Content $winInstallWimFilesRemovedByUpdatesFilePath | Select-String '\' -SimpleMatch
-					}
-
-					$sourceWinInstallWimContentPaths = Get-WindowsImageContent -ImagePath $sourceWIMpath -Index 1 | Select-String $excludedCompareWinInstallWimContentPaths -SimpleMatch -NotMatch # Exclude paths from the source lists since it's more efficient than letting them be compared and ignoring them from the results.
-					$updatedWinInstallWimContentPaths = Get-WindowsImageContent -ImagePath "$wimOutputPath\$wimName.wim" -Index 1 | Select-String $excludedCompareWinInstallWimContentPaths -SimpleMatch -NotMatch
-					$filePathsRemovedFromUpdatedWinInstallWIM = (Compare-Object -ReferenceObject $sourceWinInstallWimContentPaths -DifferenceObject $updatedWinInstallWimContentPaths | Where-Object SideIndicator -eq '<=').InputObject # Comparing text lists of paths from within the WIMs is MUCH faster than comparing mounted files via "Get-ChildItem -Recurse".
-					$verifyingEndDate = Get-Date
-
-					if ($filePathsRemovedFromUpdatedWinInstallWIM.Count -gt 0) {
-						Write-Host "`n    ERROR: THE FOLLOWING $($filePathsRemovedFromUpdatedWinInstallWIM.Count) FILES WERE REMOVED FROM THE UPDATED WINDOWS INSTALL WIM`n    $($filePathsRemovedFromUpdatedWinInstallWIM -Join "`n    ")" -ForegroundColor Red
-
-						$filePathsRemovedFromUpdatedWinInstallWimPromptCaption = '    Continue anyway?'
-						$filePathsRemovedFromUpdatedWinInstallWimPromptMessage = "`n    If you continue, these removed files will be added to a list of files to ignore during future updates so you will not be prompted about them again.`n`n"
-						$filePathsRemovedFromUpdatedWinInstallWimPromptChoices = '&No', '&Yes'
-
-						$filePathsRemovedFromUpdatedWinInstallWimPromptChoicesDefaultOption = 1
-						if ($filePathsRemovedFromUpdatedWinInstallWIM.Count -gt 10) { # It is not uncommon for 10 or so files to be removed by an update, but any more is likely an issue.
-							$filePathsRemovedFromUpdatedWinInstallWimPromptChoicesDefaultOption = 0
+								Add-WindowsPackage -Path "$systemTempDir\mountOS" -PackagePath $thisUpdateToInstallIntoWIM.FullName -WarningAction Stop -ErrorAction Stop | Out-Null
+							}
+						} catch {
+							notepad.exe "$Env:WINDIR\Logs\DISM\dism.log"
+							throw $_
 						}
-
-						$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-						$filePathsRemovedFromUpdatedWinInstallWimPromptResponse = $Host.UI.PromptForChoice($filePathsRemovedFromUpdatedWinInstallWimPromptCaption, $filePathsRemovedFromUpdatedWinInstallWimPromptMessage, $filePathsRemovedFromUpdatedWinInstallWimPromptChoices, $filePathsRemovedFromUpdatedWinInstallWimPromptChoicesDefaultOption)
-						Write-Output ''
-
-						if ($filePathsRemovedFromUpdatedWinInstallWimPromptResponse -eq 0) {
-							break
-						} else {
-							Add-Content $winInstallWimFilesRemovedByUpdatesFilePath "Removed By $($installedUpdateNames -Join ' + '):"
-							Add-Content $winInstallWimFilesRemovedByUpdatesFilePath $filePathsRemovedFromUpdatedWinInstallWIM
-						}
+						$updateEndDate = Get-Date
+						Write-Output "      Finished Installing at $updateEndDate ($([math]::Round(($updateEndDate - $updateStartDate).TotalMinutes, 2)) Minutes)"
 					}
-
-					Write-Output "    Finished Verifying Exported Updated Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image at $verifyingEndDate ($([math]::Round(($verifyingEndDate - $verifyingStartDate).TotalMinutes, 2)) Minutes)"
-
-					Write-Output "`n  Calculating Checksum for $wimName.wim..."
-					Set-Content "$wimOutputPath\$wimName.wim.checksum" (Get-FileHash "$wimOutputPath\$wimName.wim" -Algorithm 'SHA256').Hash
-					Get-Content "$wimOutputPath\$wimName.wim.checksum"
 				} else {
-					Write-Host "`n    ERROR: FAILED TO DISM CLEANUP FOR OS - EXIT CODE: $dismCleanupExitCode" -ForegroundColor Red
-					break
-				}
-			} else {
-				Write-Host "`n  NO UPDATE FILES (IN `"OS Updates to Install`" FOLDER) TO INSTALL" -ForegroundColor Yellow
-
-				if (Test-Path "$systemTempDir\mountOS") {
-					Write-Output "`n  Unmounting and Discarding Un-Updated Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
-					Dismount-WindowsImage -Path "$systemTempDir\mountOS" -Discard -ErrorAction Stop | Out-Null
-					Remove-Item "$systemTempDir\mountOS" -Recurse -Force -ErrorAction Stop
-					Remove-Item "$wimOutputPath\$wimName-TEMP.wim" -Force -ErrorAction Stop
+					Write-Host "    WARNING: UPDATE FILE NOT FOUND AT INSTALL TIME ($($thisUpdateToInstallIntoWIM.Directory.BaseName)\$($thisUpdateToInstallIntoWIM.Name))" -ForegroundColor Yellow
 				}
 			}
 
-			$thisEndDate = Get-Date
-			Write-Output "`n  Finished Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion at $thisEndDate ($([math]::Round(($thisEndDate - $thisStartDate).TotalMinutes, 2)) Minutes)"
+			Write-Output "`n  Superseded Packages in Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image After Updates:"
+			Get-WindowsPackage -Path "$systemTempDir\mountOS" | Where-Object -Property PackageState -Eq -Value Superseded
+
+
+			# NOTHING EXCEPT UPDATES SHOULD BE PRE-INSTALLED OR ADDED INTO THE WINDOWS INSTALL WIM!
+			# ALL NECESSARY WINDOWS INSTALL SETUP FILES ARE ADDED FROM SERVER OR USB DURING THE INSTALLATION PROCESS.
+
+
+			Write-Output "`n  Cleaning Up Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image After Updates..."
+			# PowerShell equivalent of DISM's "/Cleanup-Image /StartComponentCleanup /ResetBase" does not seem to exist.
+			$dismCleanupOSexitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountOS`"", '/Cleanup-Image', '/StartComponentCleanup', '/ResetBase').ExitCode
+
+			if ($dismCleanupOSexitCode -eq 0) {
+				Write-Output "`n  Superseded Packages for Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image After Cleanup (Nothing Should Be Listed This Time):"
+				Get-WindowsPackage -Path "$systemTempDir\mountOS" | Where-Object -Property PackageState -Eq -Value Superseded
+
+
+				Write-Output "`n  Unmounting and Saving Updated Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
+				# Dism /Unmount-Image /MountDir:C:\test\offline /Commit
+				Dismount-WindowsImage -Path "$systemTempDir\mountOS" -CheckIntegrity -Save -ErrorAction Stop | Out-Null
+				Remove-Item "$systemTempDir\mountOS" -Recurse -Force -ErrorAction Stop
+				Get-WindowsImage -ImagePath "$wimOutputPath\$wimName-TEMP.wim" -Index 1 -ErrorAction Stop
+
+				if (Test-Path "$wimOutputPath\$wimName.wim") {
+					Write-Output "`n  Deleting Previous Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image With The Same Name ($wimName.wim)..."
+					Remove-Item "$wimOutputPath\$wimName.wim" -Force -ErrorAction Stop
+				}
+
+
+				Write-Output "`n  Exporting Compressed Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image as `"$wimName.wim`"..."
+				# https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/oem-deployment-of-windows-10-for-desktop-editions#optimize-final-image
+				Export-WindowsImage -SourceImagePath "$wimOutputPath\$wimName-TEMP.wim" -SourceIndex 1 -DestinationImagePath "$wimOutputPath\$wimName.wim" -CheckIntegrity -CompressionType 'max' -ErrorAction Stop | Out-Null
+				Get-WindowsImage -ImagePath "$wimOutputPath\$wimName.wim" -Index 1 -ErrorAction Stop
+
+				# Delete the TEMP WIM which can be considerably larger than the exported compressed WIM.
+				# This is because the TEMP WIM will have a "[DELETED]" folder within it with all the old junk from the update process. This "[DELETED]" folder is not included when exporting a WIM.
+				Remove-Item "$wimOutputPath\$wimName-TEMP.wim" -Force -ErrorAction Stop
+
+
+				Write-Output "`n  Verifying Exported Updated Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image Contents Against Source Windows Image Contents..."
+				# NOTE: See comments above when verifying the WinRE image which also apply to this manual verification of the exported Windows image.
+
+				$verifyingStartDate = Get-Date
+
+				$sourceWinInstallWimSizeBytes = (Get-Item $sourceWIMpath).Length
+				$updatedWinInstallWimSizeBytes = (Get-Item "$wimOutputPath\$wimName.wim").Length
+
+				if ($updatedWinInstallWimSizeBytes -lt $sourceWinInstallWimSizeBytes) {
+					Write-Host "`n    ERROR: UPDATED WINDOWS INSTALL WIM ($updatedWinInstallWimSizeBytes) IS *$([math]::Round((($sourceWinInstallWimSizeBytes - $updatedWinInstallWimSizeBytes) / 1MB), 2)) MB SMALLER THAN* SOURCE WINDOWS INSTALL WIM ($sourceWinInstallWimSizeBytes) - THIS SHOULD NOT HAVE HAPPENED`n    $($filePathsRemovedFromUpdatedWinInstallWIM -Join "`n    ")" -ForegroundColor Red
+					break
+				}
+
+				$excludedCompareWinInstallWimContentPaths = @('\Windows\servicing\', '\Windows\System32\CatRoot\', '\Windows\System32\DriverStore\FileRepository\', '\Windows\WinSxS\') # Exclude these paths from the difference comparison because these are the paths we expect to be different.
+
+				$winInstallWimFilesRemovedByUpdatesFilePath = "$wimOutputPath\Windows Files Removed By Updates.txt"
+				if (Test-Path $winInstallWimFilesRemovedByUpdatesFilePath) {
+					# When Cumulative updates are installed, files can be removed by the update.
+					# To not prompt about these past removals with each new update, a list of approved removals is saved to ignore for future updates.
+					# So, read this list and add it to the excludedCompareWinInstallWimContentPaths variable to ignore these already approved removed files.
+
+					$excludedCompareWinInstallWimContentPaths += Get-Content $winInstallWimFilesRemovedByUpdatesFilePath | Select-String '\' -SimpleMatch
+				}
+
+				$sourceWinInstallWimContentPaths = Get-WindowsImageContent -ImagePath $sourceWIMpath -Index 1 | Select-String $excludedCompareWinInstallWimContentPaths -SimpleMatch -NotMatch # Exclude paths from the source lists since it's more efficient than letting them be compared and ignoring them from the results.
+				$updatedWinInstallWimContentPaths = Get-WindowsImageContent -ImagePath "$wimOutputPath\$wimName.wim" -Index 1 | Select-String $excludedCompareWinInstallWimContentPaths -SimpleMatch -NotMatch
+				$filePathsRemovedFromUpdatedWinInstallWIM = (Compare-Object $sourceWinInstallWimContentPaths $updatedWinInstallWimContentPaths | Where-Object SideIndicator -eq '<=').InputObject # Comparing text lists of paths from within the WIMs is MUCH faster than comparing mounted files via "Get-ChildItem -Recurse".
+				$verifyingEndDate = Get-Date
+
+				if ($filePathsRemovedFromUpdatedWinInstallWIM.Count -gt 0) {
+					Write-Host "`n    ERROR: THE FOLLOWING $($filePathsRemovedFromUpdatedWinInstallWIM.Count) FILES WERE REMOVED FROM THE UPDATED WINDOWS INSTALL WIM`n    $($filePathsRemovedFromUpdatedWinInstallWIM -Join "`n    ")" -ForegroundColor Red
+
+					$filePathsRemovedFromUpdatedWinInstallWimPromptCaption = '    Continue anyway?'
+					$filePathsRemovedFromUpdatedWinInstallWimPromptMessage = "`n    If you continue, these removed files will be added to a list of files to ignore during future updates so you will not be prompted about them again.`n`n"
+					$filePathsRemovedFromUpdatedWinInstallWimPromptChoices = '&No', '&Yes'
+
+					$filePathsRemovedFromUpdatedWinInstallWimPromptChoicesDefaultOption = 1
+					if ($filePathsRemovedFromUpdatedWinInstallWIM.Count -gt 10) { # It is not uncommon for 10 or so files to be removed by an update, but any more is likely an issue.
+						$filePathsRemovedFromUpdatedWinInstallWimPromptChoicesDefaultOption = 0
+					}
+
+					$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+					$filePathsRemovedFromUpdatedWinInstallWimPromptResponse = $Host.UI.PromptForChoice($filePathsRemovedFromUpdatedWinInstallWimPromptCaption, $filePathsRemovedFromUpdatedWinInstallWimPromptMessage, $filePathsRemovedFromUpdatedWinInstallWimPromptChoices, $filePathsRemovedFromUpdatedWinInstallWimPromptChoicesDefaultOption)
+					Write-Output ''
+
+					if ($filePathsRemovedFromUpdatedWinInstallWimPromptResponse -eq 0) {
+						break
+					} else {
+						Add-Content $winInstallWimFilesRemovedByUpdatesFilePath "Removed By $($installedUpdateNames -Join ' + '):"
+						Add-Content $winInstallWimFilesRemovedByUpdatesFilePath $filePathsRemovedFromUpdatedWinInstallWIM
+					}
+				}
+
+				Write-Output "    Finished Verifying Exported Updated Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image at $verifyingEndDate ($([math]::Round(($verifyingEndDate - $verifyingStartDate).TotalMinutes, 2)) Minutes)"
+
+				Write-Output "`n  Calculating Checksum for $wimName.wim..."
+				Set-Content "$wimOutputPath\$wimName.wim.checksum" (Get-FileHash "$wimOutputPath\$wimName.wim").Hash
+				Get-Content "$wimOutputPath\$wimName.wim.checksum"
+			} else {
+				Write-Host "`n    ERROR: FAILED TO DISM CLEANUP FOR OS - EXIT CODE: $dismCleanupExitCode" -ForegroundColor Red
+				break
+			}
+		} else {
+			Write-Host "`n  NO UPDATE FILES (IN `"OS Updates to Install`" FOLDER) TO INSTALL" -ForegroundColor Yellow
+
+			if (Test-Path "$systemTempDir\mountOS") {
+				Write-Output "`n  Unmounting and Discarding Un-Updated Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image..."
+				Dismount-WindowsImage -Path "$systemTempDir\mountOS" -Discard -ErrorAction Stop | Out-Null
+				Remove-Item "$systemTempDir\mountOS" -Recurse -Force -ErrorAction Stop
+				Remove-Item "$wimOutputPath\$wimName-TEMP.wim" -Force -ErrorAction Stop
+			}
 		}
+
+		$thisEndDate = Get-Date
+		Write-Output "`n  Finished Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion at $thisEndDate ($([math]::Round(($thisEndDate - $thisStartDate).TotalMinutes, 2)) Minutes)"
 	}
 }
 

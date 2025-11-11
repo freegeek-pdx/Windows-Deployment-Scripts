@@ -21,14 +21,16 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2025.10.2-1
+# Version: 2025.11.10-1
 
 # PowerShell must be installed in WinPE to run this script (which will be taken care of automatically if WinPE is built with "Create WinPE Image.ps1"):
 # https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-adding-powershell-support-to-windows-pe
 
+#Requires -RunAsAdministrator
+
 $Host.UI.RawUI.WindowTitle = 'Install Windows'
 
-if (((-not (Test-Path '\Windows\System32\startnet.cmd')) -and (-not (Test-Path '\Windows\System32\winpeshl.ini'))) -or (-not (Get-ItemProperty 'HKLM:\SYSTEM\Setup').FactoryPreInstallInProgress)) {
+if (((-not (Test-Path "$Env:SystemRoot\System32\startnet.cmd")) -and (-not (Test-Path "$Env:SystemRoot\System32\winpeshl.ini"))) -or (-not (Get-ItemProperty 'HKLM:\SYSTEM\Setup').FactoryPreInstallInProgress)) {
 	Write-Host "`n  ERROR: `"Install Windows`" Can Only Run In Windows Preinstallation Environment`n`n  EXITING IN 5 SECONDS..." -ForegroundColor Red
 	Start-Sleep 5
 	exit 1
@@ -53,8 +55,8 @@ function FocusScriptWindow {
 	(New-Object -ComObject Wscript.Shell).AppActivate($Host.UI.RawUI.WindowTitle) | Out-Null # Also try "AppActivate" since "SetForegroundWindow" seems to maybe not work as well on Windows 11.
 }
 
-$testMode = (Test-Path '\Windows\System32\fgFLAG-TEST') # Use System32 folder for flags so that modes can be set dynamically by iPXE/wimboot without needing separate WinPE images.
-$ipdtMode = (Test-Path '\Windows\System32\fgFLAG-IPDT') # This mode will launch auto-launch "Intel Processor Diagnostic Tool" instead of "QA Helper" in the installed OS (for Hardware Testing).
+$testMode = (Test-Path "$Env:SystemRoot\System32\fgFLAG-TEST") # Use System32 folder for flags so that modes can be set dynamically by iPXE/wimboot without needing separate WinPE images.
+$ipdtMode = (Test-Path "$Env:SystemRoot\System32\fgFLAG-IPDT") # This mode will launch auto-launch "Intel Processor Diagnostic Tool" instead of "QA Helper" in the installed OS (for Hardware Testing).
 
 FocusScriptWindow
 
@@ -191,14 +193,14 @@ if (-not $didSetPowerPlan) {
 }
 
 
-if ((Test-Path '\Install\Scripts\Wi-Fi Profiles\') -and (Test-Path '\sources\recovery\RecEnv.exe')) {
+if ((Test-Path "$Env:SystemDrive\Install\Scripts\Wi-Fi Profiles\") -and (Test-Path "$Env:SystemDrive\sources\recovery\RecEnv.exe")) {
 	# Wi-Fi *IS NOT* supported in a regular WinPE image, but we are now using a WinRE-based image, which can support Wi-Fi when the necessary drivers are pre-installed: https://msendpointmgr.com/2018/03/06/build-a-winpe-with-wireless-support/
 
 	# Wi-Fi Profiles must be exported with: netsh wlan export profile name="Name" key=clear folder="C:\Path\"
 	# The "key=clear" argument is very important because it seems that while the profile with an encrypted password (key) can be successfully imported on another computer,
 	# the encrypted password will not actually work and the computer will not connect to the Wi-Fi network.
 
-	$wiFiProfileFiles = Get-ChildItem '\Install\Scripts\Wi-Fi Profiles\*' -Include '*.xml' -ErrorAction SilentlyContinue
+	$wiFiProfileFiles = Get-ChildItem "$Env:SystemDrive\Install\Scripts\Wi-Fi Profiles\*" -Include '*.xml' -ErrorAction SilentlyContinue
 
 	if (($null -ne $wiFiProfileFiles) -and ($wiFiProfileFiles.Count -gt 0)) {
 		Write-Output "`n`n  Adding Wi-Fi Network Profiles...`n"
@@ -256,7 +258,7 @@ $didSyncSystemTime = $false
 Write-Output "`n`n  Syncing System Time..."
 # W32tm.exe is not included in WinPE by default, but "Create WinPE Image.ps1" will install it and then time can be synced in WinPE (to be sure QA Helper can be installed since if time is far off HTTPS will fail).
 
-if (Test-Path '\Windows\System32\W32tm.exe') {
+if (Test-Path "$Env:SystemRoot\System32\W32tm.exe") {
 	try {
 		Start-Service 'W32Time' -ErrorAction Stop # This DOES work in WinPE by default even though W32tm.exe is not included by default.
 
@@ -290,17 +292,17 @@ if (-not $didSyncSystemTime) {
 }
 
 
-if (Test-Path '\Install\Scripts\Windows 11 Supported Processors Lists\SupportedProcessorsIntel.txt') {
+if (Test-Path "$Env:SystemDrive\Install\Scripts\Windows 11 Supported Processors Lists\SupportedProcessorsIntel.txt") {
 	Write-Output "`n`n  Updating Windows 11 Supported Processors Lists for WhyNotWin11..."
 
-	$whyNotWin11LocalAppDataFolderPath = '\Windows\System32\config\systemprofile\AppData\Local\WhyNotWin11' # This path is what WhyNotWin11 will in WinPE/RE, but $Env:LOCALAPPDATA is empty in WinPE/RE so must set the path manually.
+	$whyNotWin11LocalAppDataFolderPath = "$Env:SystemRoot\System32\config\systemprofile\AppData\Local\WhyNotWin11" # This path is what WhyNotWin11 will in WinPE/RE, but $Env:LOCALAPPDATA is empty in WinPE/RE so must set the path manually.
 	if (Test-Path $whyNotWin11LocalAppDataFolderPath) {
 		Remove-Item $whyNotWin11LocalAppDataFolderPath -Recurse -Force -ErrorAction Stop
 	}
 
 	New-Item -ItemType 'Directory' -Path $whyNotWin11LocalAppDataFolderPath -ErrorAction Stop | Out-Null
 
-	Copy-Item '\Install\Scripts\Windows 11 Supported Processors Lists\SupportedProcessors*.txt' $whyNotWin11LocalAppDataFolderPath -Force -ErrorAction Stop
+	Copy-Item "$Env:SystemDrive\Install\Scripts\Windows 11 Supported Processors Lists\SupportedProcessors*.txt" $whyNotWin11LocalAppDataFolderPath -Force -ErrorAction Stop
 
 	New-Item -ItemType 'Directory' -Path "$whyNotWin11LocalAppDataFolderPath\Langs" -ErrorAction Stop | Out-Null # If the "Langs" folder doesn't exist, WhyNotWin11 will overwrite the supported processor lists with its older embedded lists.
 	Set-Content "$whyNotWin11LocalAppDataFolderPath\Langs\version" '0' # The language version file must exist for WhyNotWin11 to copy in the language files. Setting the value to "0" so it will be a version that will always be outdated so WhyNotWin11 will update the language files.
@@ -313,11 +315,11 @@ $didDetectExistingDPK = $false
 
 Write-Output "`n`n  Checking for Existing Digital Product Key (DPK) in SMBIOS..."
 
-if (Test-Path '\Install\DPK\oa3tool.exe') {
+if (Test-Path "$Env:SystemDrive\Install\DPK\oa3tool.exe") {
 	try {
 		Remove-Item "$Env:TEMP\fgInstall-*.txt" -Force -ErrorAction SilentlyContinue
 
-		$oa3toolValidateExitCode = (Start-Process '\Install\DPK\oa3tool.exe' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-oa3tool-Validate-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-oa3tool-Validate-Error.txt" -ArgumentList '/Validate' -ErrorAction Stop).ExitCode
+		$oa3toolValidateExitCode = (Start-Process "$Env:SystemDrive\Install\DPK\oa3tool.exe" -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$Env:TEMP\fgInstall-oa3tool-Validate-Output.txt" -RedirectStandardError "$Env:TEMP\fgInstall-oa3tool-Validate-Error.txt" -ArgumentList '/Validate' -ErrorAction Stop).ExitCode
 		$oa3toolValidateError = Get-Content -Raw "$Env:TEMP\fgInstall-oa3tool-Validate-Error.txt"
 
 		if (($oa3toolValidateExitCode -eq 0) -and ($null -eq $oa3toolValidateError)) {
@@ -444,20 +446,20 @@ for ( ; ; ) {
 		}
 	}
 
-	$javaPath = '\Install\QA Helper\java-jre\bin\javaw.exe'
+	$javaPath = "$Env:SystemDrive\Install\QA Helper\java-jre\bin\javaw.exe"
 
 	if ($testMode) {
-		$javaPath = '\Install\QA Helper\java-jre\bin\java.exe' # This java executable with log output when in test mode.
+		$javaPath = "$Env:SystemDrive\Install\QA Helper\java-jre\bin\java.exe" # This java executable with log output when in test mode.
 	}
 
-	if ((Test-Path $javaPath) -and (Test-Path '\Install\QA Helper\QA_Helper.jar')) {
+	if ((Test-Path $javaPath) -and (Test-Path "$Env:SystemDrive\Install\QA Helper\QA_Helper.jar")) {
 		Write-Output "`n`n  Launching QA Helper - PLEASE WAIT, THIS MAY TAKE A MOMENT..."
 
 		# To be able to run Java in WinPE, a handful of missing DLLs must be added into WinPE.
 		# Create the WinPE image with the "SetupWinPE.ps1" script to deal with this automatically.
 		# See "SetupWinPE.ps1" source for info about using Process Explorer to find missing DLLs for an executable (such as javaw.exe).
 
-		Start-Process $javaPath -NoNewWindow -ArgumentList '-jar', '"\Install\QA Helper\QA_Helper.jar"' -ErrorAction SilentlyContinue
+		Start-Process $javaPath -NoNewWindow -ArgumentList '-jar', "`"$Env:SystemDrive\Install\QA Helper\QA_Helper.jar`"" -ErrorAction SilentlyContinue
 
 		# Don't use "-Wait" in Start-Process because there's like a 5 second or so lag before continuing after closing the QA Helper window.
 		# Instead, manually detect if the QA Helper window is visible and continue after it's closed for a quicker response time.
@@ -477,8 +479,8 @@ for ( ; ; ) {
 			Start-Sleep 1
 		}
 
-		if ((-not $testMode) -and (Test-Path '\Install\QA Helper Log.txt')) { # Also set installation to Test Mode if QA Helper was logged in Test Mode.
-			foreach ($thisQAhelperLogLine in (Get-Content '\Install\QA Helper Log.txt')) {
+		if ((-not $testMode) -and (Test-Path "$Env:SystemDrive\Install\QA Helper Log.txt")) { # Also set installation to Test Mode if QA Helper was logged in Test Mode.
+			foreach ($thisQAhelperLogLine in (Get-Content "$Env:SystemDrive\Install\QA Helper Log.txt")) {
 				if ($thisQAhelperLogLine.StartsWith('ID: ')) {
 					$testMode = $thisQAhelperLogLine.Contains('(Test Mode)')
 					# Continue check entire QA Helper Log to be sure FINAL login was in Test Mode.
@@ -617,135 +619,6 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 	Write-Host "`n  ERROR: No Install Drive Selected`n`n  !!! THIS SHOULD NOT HAVE HAPPENED !!!`n`n  Rebooting This Computer in 15 Seconds..." -ForegroundColor Red
 	Start-Sleep 15
 } else {
-	$isSnapInstall = $false
-	$isNoAppsInstall = $false
-	$isBaseInstall = $false
-
-	if (-not $ipdtMode) { # Do not bother prompting to install SNAP apps when in IPDT mode.
-		$lastChooseInstallTypeError = ''
-
-		for ( ; ; ) {
-			Clear-Host
-			Write-Output "`n  Choose Windows Installation Type for $installDriveName...`n"
-
-			if ($lastChooseInstallTypeError -ne '') {
-				Write-Host $lastChooseInstallTypeError -ForegroundColor Red
-			}
-
-			Write-Host "`n    R: Regular Install with Standard Apps" -ForegroundColor Cyan
-			Write-Host "`n    S: SNAP Install with Extra Apps" -ForegroundColor Cyan
-			Write-Host "`n    N: Base Install with NO Apps" -NoNewline -ForegroundColor Cyan
-			Write-Host " (Useful When Only Wanting to Run Firmware Updates)" -ForegroundColor Yellow
-
-			if ($testMode) {
-				Write-Host "`n    B: Base Install With NO Apps and NO Testing" -NoNewline -ForegroundColor Cyan
-				Write-Host " (Boot Into Windows Setup After Install)" -ForegroundColor Yellow
-			}
-
-			Write-Host "`n    C: Cancel Windows Installation and Reboot This Computer" -ForegroundColor Cyan
-			Write-Host "`n    X: Cancel Windows Installation and Shut Down This Computer" -ForegroundColor Cyan
-
-			FocusScriptWindow
-			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-			$installationTypeChoice = Read-Host "`n`n  Enter the Letter for Desired Windows Installation Type"
-
-			if ($installationTypeChoice.ToUpper() -eq 'R') {
-				Write-Host "`n  Regular Windows Installation Will Be Performed..." -ForegroundColor Green
-
-				Start-Sleep 2
-				break
-			} elseif ($installationTypeChoice.ToUpper() -eq 'S') {
-				Write-Host "`n  SNAP Windows Installation Will Be Performed..." -ForegroundColor Green
-
-				$isSnapInstall = $true
-
-				Start-Sleep 2
-				break
-			} elseif ($installationTypeChoice.ToUpper() -eq 'N') {
-				FocusScriptWindow
-				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-				$confirmNoAppsInstall = Read-Host "`n  Enter `"N`" Again to Confirm Performing Base Windows Installation With NO Apps"
-
-				if ($confirmNoAppsInstall.ToUpper() -eq 'N') {
-					Write-Host "`n  Base Windows Installation With NO Apps Will Be Performed..." -ForegroundColor Green
-
-					$isNoAppsInstall = $true
-
-					Start-Sleep 2
-					break
-				} else {
-					$lastChooseInstallTypeError = "`n    ERROR: Did Not Confirm Performing Base Windows Installation With NO Apps - CHOOSE AGAIN`n"
-				}
-			} elseif ($installationTypeChoice.ToUpper() -eq 'B') { # Allow choosing "B" when NOT in Test Mode as a HIDDEN OPTION.
-				FocusScriptWindow
-				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-				$confirmBaseInstall = Read-Host "`n  Enter `"B`" Again to Confirm Performing Base Windows Installation With NO Apps and NO Testing"
-
-				if ($confirmBaseInstall.ToUpper() -eq 'B') {
-					Write-Host "`n  Base Windows Installation With NO Apps and NO Testing Will Be Performed..." -ForegroundColor Green
-
-					$isBaseInstall = $true
-
-					Start-Sleep 2
-					break
-				} else {
-					$lastChooseInstallTypeError = "`n    ERROR: Did Not Confirm Performing Base Windows Installation With NO Apps and NO Testing - CHOOSE AGAIN`n"
-				}
-			} elseif ($installationTypeChoice.ToUpper() -eq 'IPDT') { # Allow specifying "IPDT" when NOT already in IPDT as a HIDDEN OPTION to also be able to get into IPDT mode dynamically if flag doesn't exist on boot.
-				FocusScriptWindow
-				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-				$confirmIPDTmode = Read-Host "`n  Type `"IPDT`" Again to Confirm `"Intel Processor Diagnostic Tool`" Mode"
-
-				if ($confirmIPDTmode.ToUpper() -eq 'IPDT') {
-					Write-Host "`n  Windows Installation in `"Intel Processor Diagnostic Tool`" Mode Will Be Performed..." -ForegroundColor Green
-
-					$ipdtMode = $true
-
-					Start-Sleep 2
-					break
-				} else {
-					$lastChooseInstallTypeError = "`n    ERROR: Did Not Confirm `"Intel Processor Diagnostic Tool`" Mode - CHOOSE AGAIN`n"
-				}
-			} elseif ($installationTypeChoice.ToUpper() -eq 'C') {
-				FocusScriptWindow
-				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-				$confirmQuit = Read-Host "`n  Enter `"C`" Again to Confirm Canceling Windows Installation and Rebooting This Computer"
-
-				if ($confirmQuit.ToUpper() -eq 'C') {
-					Clear-Host
-					Write-Host "`n  CANCELED WINDOWS INSTALLATION`n`n  Rebooting This Computer in 5 Seconds..." -ForegroundColor Yellow
-					Start-Sleep 5
-
-					exit 7
-				} else {
-					$lastChooseInstallTypeError = "`n    ERROR: Did Not Confirm Canceling Windows Installation and Rebooting This Computer - CHOOSE AGAIN`n"
-				}
-			} elseif ($installationTypeChoice.ToUpper() -eq 'X') {
-				FocusScriptWindow
-				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-				$confirmShutDown = Read-Host "`n  Enter `"X`" Again to Confirm Canceling Windows Installation and Shutting Down This Computer"
-
-				if ($confirmShutDown.ToUpper() -eq 'X') {
-					Clear-Host
-					Write-Host "`n  CANCELED WINDOWS INSTALLATION`n`n  Shutting Down This Computer in 5 Seconds..." -ForegroundColor Yellow
-					Start-Sleep 5
-					Stop-Computer
-					Start-Sleep 60 # Sleep for 1 minute after executing "Stop-Computer" because if the script exits before "Stop-Computer" shut's down, the computer will be rebooted instead.
-
-					exit 8
-				} else {
-					$lastChooseInstallTypeError = "`n    ERROR: Did Not Confirm Canceling Windows Installation and Shutting Down This Computer - CHOOSE AGAIN`n"
-				}
-			} else {
-				if ($installationTypeChoice) {
-					$lastChooseInstallTypeError = "`n    ERROR: `"$installationTypeChoice`" Is Not a Valid Choice - CHOOSE AGAIN`n"
-				} else {
-					$lastChooseInstallTypeError = ''
-				}
-			}
-		}
-	}
-
 	# SMB Shares in WinPE Notes:
 	# To connect to a guest/anonymous SMB Share in WinPE, a dummy username and password must be supplied or the connection will always fail. This is only an issue in WinPE, not in a full Windows installation.
 	# Although, even with a dummy username and password, WinPE seemed to fail more often when connecting to a guest/anonymous SMB Share, so using a password protected SMB Share in WinPE is recommended.
@@ -753,7 +626,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 	[xml]$smbCredentialsXML = $null
 
 	try {
-		[xml]$smbCredentialsXML = Get-Content '\Install\Scripts\smb-credentials.xml' -ErrorAction Stop
+		[xml]$smbCredentialsXML = Get-Content "$Env:SystemDrive\Install\Scripts\smb-credentials.xml" -ErrorAction Stop
 
 		if ($null -eq $smbCredentialsXML.smbCredentials.resourcesReadOnlyShare.ip) {
 			throw 'NO RESOURCES SHARE IP'
@@ -779,7 +652,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 		$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 		Read-Host '  Press ENTER to Exit' | Out-Null
 
-		exit 9
+		exit 7
 	}
 
 	$smbServerIP = $smbCredentialsXML.smbCredentials.resourcesReadOnlyShare.ip
@@ -814,6 +687,27 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 	$biosOrUEFI = $null
 
+	$isExtraAppsInstall = $false
+	$isNoAppsInstall = $false
+	$isBaseInstall = $false
+
+	$driversCacheModelNameFilePath = "$Env:SystemDrive\Install\Drivers Cache Model Name.txt" # This file is created by QA Helper using its detailed model info.
+	if (-not (Test-Path $driversCacheModelNameFilePath)) {
+		$driversCacheModelNameFilePath = "$Env:SystemDrive\Install\Drivers Cache Model Path.txt" # This is the old filename from when paths were specified instead of a filename.
+	}
+
+	$driversCacheModelNameFileContents = ''
+	if (Test-Path $driversCacheModelNameFilePath) {
+		$driversCacheModelNameFileContents = Get-Content $driversCacheModelNameFilePath -First 1
+
+		if (($null -ne $driversCacheModelNameFileContents) -and $driversCacheModelNameFileContents.Contains('\')) {
+			# Drivers Cache used to store drivers for each model in their own folder with the path specified by "Drivers Cache Model Path.txt".
+			# Now, all drivers are stored in a "Unique Drivers" folder and each specific model is just a text file whose contents are a list of the drivers that were cached for that model.
+			# Therefore, if an old "Drivers Cache Model Path.txt" from an old "QA Helper" was read, we must replace backslashes with spaces to be used as a filename instead of a folder path.
+			$driversCacheModelNameFileContents = $driversCacheModelNameFileContents.Replace('\', ' ')
+		}
+	}
+
 	for ( ; ; ) {
 		Clear-Host
 		FocusScriptWindow
@@ -826,16 +720,19 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 		$osImagesUSBpath = $null
 		$setupResourcesUSBpath = $null
+		$appInstallersUSBpath = $null
 		# Check all drives for "windows-resources" folder (a better version of https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-identify-drive-letters)
 		# Do these checks within the loop because it seems that sometimes the USB isn't mounted on boot and needs to be unplugged and replugged and the technician needs to be able to try again.
 		$allVolumes = Get-Volume # DO NOT USE " | Where-Object DriveType -eq 'Removable'" because NVMe M.2 enclosures mount as "Fixed" drives (and when we were momentarily using Ventoy to boot from ISO, the ISO volume was "CD-ROM" instead of "Removable")
 		foreach ($thisVolume in $allVolumes) {
 			$thisPossibleOSimagesUSBpath = "$($thisVolume.DriveLetter):\windows-resources\os-images"
 			$thisPossibleSetupResourcesUSBpath = "$($thisVolume.DriveLetter):\windows-resources\setup-resources"
+			$thisPossibleAppInstallersUSBpath = "$($thisVolume.DriveLetter):\windows-resources\app-installers"
 
-			if ((Test-Path $thisPossibleOSimagesUSBpath) -and (Test-Path $thisPossibleSetupResourcesUSBpath) -and ((Get-ChildItem "$thisPossibleOSimagesUSBpath\*" -Include 'Windows-*.wim', 'Windows-*+1.swm').Count -gt 0)) {
+			if ((Test-Path $thisPossibleOSimagesUSBpath) -and (Test-Path $thisPossibleSetupResourcesUSBpath) -and (Test-Path $thisPossibleAppInstallersUSBpath) -and ((Get-ChildItem "$thisPossibleOSimagesUSBpath\*" -Include 'Windows-*.wim', 'Windows-*+1.swm').Count -gt 0)) {
 				$osImagesUSBpath = $thisPossibleOSimagesUSBpath
 				$setupResourcesUSBpath = $thisPossibleSetupResourcesUSBpath
+				$appInstallersUSBpath = $thisPossibleAppInstallersUSBpath
 
 				break
 			}
@@ -845,14 +742,16 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 
 		$osImagesPath = "$osImagesSMBbasePath\production"
 		$setupResourcesPath = "$setupResourcesSMBbasePath\production"
+		$appInstallersPath = "$smbShare\windows-resources\app-installers"
 
 		$usbResourcesAccessible = $false
 
-		if (($null -ne $osImagesUSBpath) -and ($null -ne $setupResourcesUSBpath)) {
+		if (($null -ne $osImagesUSBpath) -and ($null -ne $setupResourcesUSBpath) -and ($null -ne $appInstallersUSBpath)) {
 			Write-Host "`n  Installing Windows via USB" -ForegroundColor Green
 
 			$osImagesPath = $osImagesUSBpath
 			$setupResourcesPath = $setupResourcesUSBpath
+			$appInstallersPath = $appInstallersUSBpath
 
 			$usbResourcesAccessible = $true
 		}
@@ -1054,32 +953,33 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 						$win11compatibleStorage = $true
 					}
 
-					$eleventhGenIntelCPUorNewer = $false
+					$eleventhToThirteenthGenIntelCPU = $false
 					$cpuInfo = (Get-CimInstance 'Win32_Processor' -Property 'Manufacturer', 'Name' -ErrorAction SilentlyContinue)
 					if ($cpuInfo.Manufacturer -and $cpuInfo.Name -and $cpuInfo.Manufacturer.ToUpper().Contains('INTEL') -and $cpuInfo.Name.ToUpper().Contains(' GEN ')) {
 						# "Manufacturer" should be "GenuineIntel" for all Intel processors, but do a case-insenstive check anything that contains "INTEL" just to be safe.
-						# Only 11th Gen Intel CPUs contain " Gen " in their model name strings, and they will always be compatible with Windows 11.
+						# Only 11th-13th Gen Intel CPUs contain " Gen " in their model name strings, and they will always be compatible with Windows 11.
 						# This boolean will be used as a fallback to the "win11compatibleCPUmodel" check done by WhyNotWin11 below in case WhyNotWin11
 						# is not updated promptly and we run into a newer CPU that is not yet in the WhyNotWin11 list of compatible CPUs.
-						$eleventhGenIntelCPUorNewer = $true
+						$eleventhToThirteenthGenIntelCPU = $true
 					}
 
-					if (Test-Path '\Install\Diagnostic Tools\WhyNotWin11.exe') { # Use WhyNotWin11 to help detect if the exact CPU model is compatible and more: https://github.com/rcmaehl/WhyNotWin11
-						Remove-Item '\Install\WhyNotWin11 Log.csv' -Force -ErrorAction SilentlyContinue
-						Start-Process '\Install\Diagnostic Tools\WhyNotWin11.exe' -NoNewWindow -Wait -ArgumentList '/export', 'CSV', '"X:\Install\WhyNotWin11 Log.csv"', '/skip', 'CPUFreq,DirectX,Disk,Storage', '/silent', '/force' -ErrorAction SilentlyContinue
+					if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\WhyNotWin11.exe") { # Use WhyNotWin11 to help detect if the exact CPU model is compatible and more: https://github.com/rcmaehl/WhyNotWin11
+						Remove-Item "$Env:SystemDrive\Install\WhyNotWin11 Log.csv" -Force -ErrorAction SilentlyContinue
+						Start-Process "$Env:SystemDrive\Install\Diagnostic Tools\WhyNotWin11.exe" -NoNewWindow -Wait -ArgumentList '/export', 'CSV', "`"$Env:SystemDrive\Install\WhyNotWin11 Log.csv`"", '/skip', 'CPUFreq,Disk,Storage', '/silent', '/force' -ErrorAction SilentlyContinue
 					}
 
 					$win11compatibleArchitecture = $false
 					$win11compatibleBootMethod = $false
 					$win11compatibleCPUmodel = $false
 					$win11compatibleCPUcores = $false
+					$win11compatibleGPU = $false
 					$win11compatibleRAM = $false
 					$win11compatibleSecureBoot = $false
 					$win11compatibleTPMfromWhyNotWin11 = $false
 					$checkedWithWhyNotWin11 = $false
 
-					if (Test-Path '\Install\WhyNotWin11 Log.csv') {
-						$whyNotWin11LogLastLine = Get-Content '\Install\WhyNotWin11 Log.csv' -Last 1
+					if (Test-Path "$Env:SystemDrive\Install\WhyNotWin11 Log.csv") {
+						$whyNotWin11LogLastLine = Get-Content "$Env:SystemDrive\Install\WhyNotWin11 Log.csv" -Last 1
 
 						if ($null -ne $whyNotWin11LogLastLine) {
 							$whyNotWin11LogValues = $whyNotWin11LogLastLine.Split(',')
@@ -1091,11 +991,11 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 								$win11compatibleCPUmodel = ($whyNotWin11LogValues[3] -eq 'True')
 								$win11compatibleCPUcores = ($whyNotWin11LogValues[4] -eq 'True')
 								# Index 5 is "CPU Frequency" which we are ignoring (and also SKIPPED with arguments in the command above) because sometimes the detected speed is inaccurate and under 1 Ghz which causes this check to fail even though the CPU is in the compatible list and is actually faster.
-								# Index 6 is "DirectX + WDDM2" which is undetectable in WinPE (and also SKIPPED with arguments in the command above) and would always fail since it requires drivers, but we can pretty safely assume compatibility if everything else passes.
-								# Index 7 is "Disk Partition Type" which will be inaccurate (and also SKIPPED with arguments in the command above) since will be checking the partition type of the booted RAM disk, but the drive formatting in this script will only ever create compatible GPT partitions when in UEFI mode.
+								$win11compatibleGPU = ($whyNotWin11LogValues[6] -eq 'True') # Since WhyNotWin11 v2.7, "DirectX + WDDM2" can be detected in WinPE since it checks PCI IDs directly and will only do a driver check in fully installed OS if PCI ID check fails.
+								# Index 7 is "Disk Partition Type" which will be inaccurate (and also SKIPPED with arguments in the command above) since will be checking the partition type of the booted RAM disk, but the drive formatting in this script will only ever create compatible GPT partitions when in UEFI mode. (Starting in WhyNotWin11 v2.7, this check would always PASS in WinPE which is correct for us, but means we still don't need to check it.)
 								$win11compatibleRAM = ($whyNotWin11LogValues[8] -eq 'True')
 								$win11compatibleSecureBoot = ($whyNotWin11LogValues[9] -eq 'True')
-								# Index 10 is "Storage Available" which will be inaccurate (and also SKIPPED with arguments in the command above) since will be checking the storage of the booted RAM disk, but the install drive size is checked manually above to be sure it's 64 GB or more. (WhyNotWin11 2.4.3.2 does add a way to specify a different Drive Letter to check, but that doesn't help since the install drive may not be formatted yet.)
+								# Index 10 is "Storage Available" which will be inaccurate (and also SKIPPED with arguments in the command above) since will be checking the storage of the booted RAM disk, but the install drive size is checked manually above to be sure it's 64 GB or more. (Starting in WhyNotWin11 v2.7, ALL available drives will be checked when in WinPE and PASS if any suitable drive is found, which is useful for the WhyNotWin11 GUI, but for this script we will still manually check the size of specifically selected install drive.)
 								$win11compatibleTPMfromWhyNotWin11 = ($whyNotWin11LogValues[11] -eq 'True') # We already manually checked TPM version, but doesn't hurt to confirm that WinNotWin11 agrees.
 
 								$checkedWithWhyNotWin11 = $true
@@ -1114,7 +1014,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 							# This incompatibility should never happen since we only refurbish 64-bit processors and only have 64-bit Windows installers.
 							Write-Host 'NO (64-bit REQUIRED)' -ForegroundColor Red
 						} elseif (-not $win11compatibleCPUmodel) {
-							if ($eleventhGenIntelCPUorNewer) {
+							if ($eleventhToThirteenthGenIntelCPU) {
 								Write-Host 'YES' -NoNewline -ForegroundColor Green
 								Write-Host ' (Fallback Check Passed)' -ForegroundColor Yellow
 							} else {
@@ -1150,16 +1050,21 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 					}
 
 					Write-Host '    GPU Compatible: ' -NoNewline
-					Write-Host 'WILL DETECT AFTER INSTALLATION' -ForegroundColor Yellow
-					Write-Host '      DIRECTX 12 OR LATER WITH WDDM 2.0 DRIVER IS REQUIRED' -ForegroundColor Yellow
-					Write-Host '      BUT CANNOT DETECT THAT UNTIL GPU DRIVERS ARE INSTALLED' -ForegroundColor Yellow
+					if ($win11compatibleGPU) { # Show compatibility if passes,
+						Write-Host 'YES' -ForegroundColor Green
+					} else { # but only show warning if failed to check again in installed OS (which will check with the GPU drivers) and DO NOT block installation.
+						Write-Host 'WILL DETECT AFTER INSTALLATION' -ForegroundColor Yellow
+						Write-Host '      DIRECTX 12 OR LATER WITH WDDM 2.0 DRIVER IS REQUIRED' -ForegroundColor Yellow
+						Write-Host '      BUT CANNOT DETECT THAT UNTIL GPU DRIVERS ARE INSTALLED' -ForegroundColor Yellow
+					}
 
 					Write-Host '    UEFI Enabled: ' -NoNewline
 					if ($biosOrUEFI -ne 'UEFI') {
 						Write-Host 'NO (Booted in Legacy BIOS Mode)' -ForegroundColor Red
 						Write-Host '      YOU MAY BE ABLE TO ENABLE UEFI BOOTING IN THE UEFI/BIOS SETUP' -ForegroundColor Yellow
 					} elseif (-not $win11compatibleSecureBoot) {
-						# Secure Boot DOES NOT need to be enabled, the computer just needs to be Secure Boot capable: https://support.microsoft.com/en-us/windows/windows-11-and-secure-boot-a8ff1202-c0d9-42f5-940f-843abef64fad
+						# Secure Boot DOES NOT need to be enabled, the computer just needs to be Secure Boot capable (following quote from: https://support.microsoft.com/en-us/windows/windows-11-and-secure-boot-a8ff1202-c0d9-42f5-940f-843abef64fad):
+						# "While the requirement to upgrade a Windows 10 device to Windows 11 is only that the PC be Secure Boot capable by having UEFI/BIOS enabled, you may also consider enabling or turning Secure Boot on for better security."
 						# And WhyNotWin11 only verifies that the computer is Secure Boot capable, not that it is enabled: https://github.com/rcmaehl/WhyNotWin11/blob/16123e4e891e9ba90c23cffccd5876d7ab2cfef3/includes/_Checks.au3#L219 & https://github.com/rcmaehl/WhyNotWin11/blob/1a2459a8cfc754644af7e94f33762eaaca544a07/includes/WhyNotWin11_accessibility.au3#L223
 						Write-Host 'NO (NOT Secure Boot Capable)' -ForegroundColor Red
 						Write-Host '      YOU MAY BE ABLE TO ENABLE SECURE BOOT CAPABILITY IN THE UEFI/BIOS SETUP' -ForegroundColor Yellow
@@ -1196,7 +1101,10 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 						}
 
 						Write-Host "`n    1: Install Windows 11" -ForegroundColor Cyan
+
 						Write-Host "`n    0: Install Windows 10" -ForegroundColor Cyan
+						Write-Host "       CANNOT Be Licensed or Sold - ONLY Use for Testing or Firmware Updates" -ForegroundColor Yellow
+
 						Write-Host "`n    C: Cancel Windows Installation and Reboot This Computer" -ForegroundColor Cyan
 						Write-Host "`n    X: Cancel Windows Installation and Shut Down This Computer" -ForegroundColor Cyan
 
@@ -1261,7 +1169,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 								$lastChooseWindowsVersionError = ''
 							}
 						}
-					} elseif ($checkedWithWhyNotWin11 -and ($win11compatibleCPUmodel -or $eleventhGenIntelCPUorNewer) -and $win11compatibleArchitecture -and $win11compatibleCPUcores -and $win11compatibleSSE4dot2 -and $win11compatibleRAM -and $win11compatibleStorage -and ($biosOrUEFI -eq 'UEFI') -and $win11compatibleBootMethod -and $win11compatibleSecureBoot -and $win11compatibleTPM -and $win11compatibleTPMfromWhyNotWin11) {
+					} elseif ($checkedWithWhyNotWin11 -and ($win11compatibleCPUmodel -or $eleventhToThirteenthGenIntelCPU) -and $win11compatibleArchitecture -and $win11compatibleCPUcores -and $win11compatibleSSE4dot2 -and $win11compatibleRAM -and $win11compatibleStorage -and ($biosOrUEFI -eq 'UEFI') -and $win11compatibleBootMethod -and $win11compatibleSecureBoot -and $win11compatibleTPM -and $win11compatibleTPMfromWhyNotWin11) {
 						Write-Host "`n  This Computer Is Compatible With Window 11" -ForegroundColor Green
 
 						if ($latestWindowsWims.ContainsKey('11')) {
@@ -1277,7 +1185,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 						}
 
 						break
-					} elseif (((-not $checkedWithWhyNotWin11) -or (($win11compatibleCPUmodel -or $eleventhGenIntelCPUorNewer) -and $win11compatibleArchitecture -and $win11compatibleCPUcores -and $win11compatibleSSE4dot2)) -and ((-not $win11compatibleRAM) -or (-not $win11compatibleStorage) -or (-not $win11compatibleTPM) -or (-not $win11compatibleTPMfromWhyNotWin11) -or ($biosOrUEFI -ne 'UEFI') -or (-not $win11compatibleBootMethod) -or (-not $win11compatibleSecureBoot))) {
+					} elseif (((-not $checkedWithWhyNotWin11) -or (($win11compatibleCPUmodel -or $eleventhToThirteenthGenIntelCPU) -and $win11compatibleArchitecture -and $win11compatibleCPUcores -and $win11compatibleSSE4dot2)) -and ((-not $win11compatibleRAM) -or (-not $win11compatibleStorage) -or (-not $win11compatibleTPM) -or (-not $win11compatibleTPMfromWhyNotWin11) -or ($biosOrUEFI -ne 'UEFI') -or (-not $win11compatibleBootMethod) -or (-not $win11compatibleSecureBoot))) {
 						Write-Host "`n  This Computer Is NOT Currently Compatible With Window 11" -ForegroundColor Red
 						Write-Host "`n  But, some of the compatibilty issues listed above may be fixable.`n  You should cancel the installation and try to fix them before installing Windows 10.`n  Our TPR contract with Microsoft states that if a computer supports Windows 11, then it MUST have Windows 11 installed onto it.`n  Therefore, if these compatibilty issues CAN be fixed they MUST be fixed.`n  Windows 10 should only be installed if it is NOT POSSIBLE BY ANY MEANS to fix these compatibilty issues." -ForegroundColor Yellow
 
@@ -1288,6 +1196,8 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 						}
 
 						Write-Host "`n    0: Install Windows 10" -ForegroundColor Cyan
+						Write-Host "       CANNOT Be Licensed or Sold - ONLY Use for Testing or Firmware Updates" -ForegroundColor Yellow
+
 						Write-Host "`n    C: Cancel Windows Installation and Reboot This Computer" -ForegroundColor Cyan
 						Write-Host "`n    X: Cancel Windows Installation and Shut Down This Computer" -ForegroundColor Cyan
 
@@ -1341,6 +1251,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 
 						if ($latestWindowsWims.ContainsKey('10')) {
 							Write-Host "`n  Windows 10 Will Be Installed..." -ForegroundColor Green
+							Write-Host "  Windows 10 CANNOT Be Licensed or Sold - ONLY Use for Testing or Firmware Updates" -ForegroundColor Yellow
 
 							Start-Sleep 3 # Sleep for a few seconds to be able to see Windows 11 compatibility notes before clearing screen.
 						} else {
@@ -1367,6 +1278,9 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 							$installWindowsEdition = $latestWindowsWims["$installWindowsVersion"].Keys | Select-Object -First 1
 
 							Write-Host "`n  Windows $installWindowsVersion $installWindowsEdition Will Be Installed..." -ForegroundColor Green
+							if ($installWindowsVersion -eq 10) {
+								Write-Host "  Windows 10 CANNOT Be Licensed or Sold - ONLY Use for Testing or Firmware Updates" -ForegroundColor Yellow
+							}
 
 							$installWimPath = $latestWindowsWims["$installWindowsVersion"]["$installWindowsEdition"].Path
 							$installWimDisplayName = $latestWindowsWims["$installWindowsVersion"]["$installWindowsEdition"].DisplayName
@@ -1376,15 +1290,24 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 						} else {
 							Clear-Host
 							Write-Output "`n  Choose Windows $installWindowsVersion Edition for $installDriveName...`n"
+							if ($installWindowsVersion -eq 10) {
+								Write-Host "  Windows 10 CANNOT Be Licensed or Sold - ONLY Use for Testing or Firmware Updates`n" -ForegroundColor Yellow
+							}
 
 							if ($lastChooseWindowsEditionError -ne '') {
 								Write-Host $lastChooseWindowsEditionError -ForegroundColor Red
 							}
 
-							Write-Host "`n    H: Install Windows $installWindowsVersion Home" -NoNewline -ForegroundColor Cyan
-							Write-Host " (ONLY Commercial Refurb DPKs Allowed)" -ForegroundColor Yellow
-							Write-Host "`n    P: Install Windows $installWindowsVersion Pro" -NoNewline -ForegroundColor Cyan
-							Write-Host " (Commercial OR Citizenship Refurb DPKs Allowed)" -ForegroundColor Yellow
+							Write-Host "`n    H: Install Windows $installWindowsVersion Home" -ForegroundColor Cyan
+							if ($installWindowsVersion -ne 10) {
+								Write-Host "       ONLY Commercial Refurb DPKs Allowed" -ForegroundColor Blue
+							}
+
+							Write-Host "`n    P: Install Windows $installWindowsVersion Pro" -ForegroundColor Cyan
+							if ($installWindowsVersion -ne 10) {
+								Write-Host "       Commercial OR Citizenship Refurb DPKs Allowed" -ForegroundColor Blue
+							}
+
 							Write-Host "`n    C: Cancel Windows Installation and Reboot This Computer" -ForegroundColor Cyan
 							Write-Host "`n    X: Cancel Windows Installation and Shut Down This Computer" -ForegroundColor Cyan
 
@@ -1462,7 +1385,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 					Write-Host "`n  CANCELED WINDOWS INSTALLATION`n`n  Rebooting This Computer in 5 Seconds..." -ForegroundColor Yellow
 					Start-Sleep 5
 
-					exit 10
+					exit 8
 				} elseif ($shouldShutDown) {
 					Clear-Host
 					Write-Host "`n  CANCELED WINDOWS INSTALLATION`n`n  Shutting Down This Computer in 5 Seconds..." -ForegroundColor Yellow
@@ -1470,13 +1393,209 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 					Stop-Computer
 					Start-Sleep 60 # Sleep for 1 minute after executing "Stop-Computer" because if the script exits before "Stop-Computer" shut's down, the computer will be rebooted instead.
 
-					exit 11
+					exit 9
 				}
 
 				if ($lastTaskSucceeded -and (($null -eq $installWimDisplayName) -or ($null -eq $installWimPath) -or (-not (Test-Path $installWimPath)))) {
 					Write-Host "`n  ERROR: FAILED TO SET WINDOWS INSTALLATION IMAGE - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T." -ForegroundColor Red
 
 					$lastTaskSucceeded = $false
+				}
+			}
+
+			if ($lastTaskSucceeded -and (-not $ipdtMode)) { # Do not bother prompting to install extra apps when in IPDT mode.
+				Clear-Host
+				Write-Output "`n  Locating App Installer Files..."
+
+				$standardAppInstallersPath = "$appInstallersPath\Standard"
+				if (-not (Test-Path $standardAppInstallersPath)) {
+					$standardAppInstallersPath = $appInstallersPath
+				}
+
+				$appInstallerFiles = Get-ChildItem "$standardAppInstallersPath\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
+
+				$manufacturerName = ''
+				if ($driversCacheModelNameFileContents.Contains(' ')) {
+					$manufacturerName = $driversCacheModelNameFileContents.Split(' ')[0]
+					$appInstallersPathForManufacturer = "$appInstallersPath\$manufacturerName"
+
+					if (Test-Path $appInstallersPathForManufacturer) { # Check for and include manufacturer specific apps.
+						$appInstallerFiles += Get-ChildItem "$appInstallersPathForManufacturer\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
+					}
+				}
+
+				if ($cpuInfo.Manufacturer -and $cpuInfo.Manufacturer.ToUpper().Contains('INTEL') -and ($manufacturerName -ne 'Intel') -and (Test-Path "$appInstallersPath\Intel")) {
+					# "Manufacturer" should be "GenuineIntel" for all Intel processors, but do a case-insenstive check anything that contains "INTEL" just to be safe.
+					# Also, skip this if computer manufacturer/brand is "Intel" (such as for NUCs) since the "$appInstallersPath\Intel" folder would already have been added above.
+					# FUTURE NOTE: If there is ever an issue where different apps need to be installed for Intel brand systems vs any system with an Intel CPU this could be adjusted to be an "Intel CPU" folder instead of just and "Intel" folder which could be just for Intel brand systems.
+
+					# Always install "Intel Processor Diagnostic Tool" (IPDT) on any computers with Intel processors (which is the only app the "Intel" folder currently contains).
+					# This app is *installed* instead of included in "Diagnostic Tools" because even if the custom working directory is set correctly, the main app will launch and start,
+					# BUT the individual test exe's will fail with "could not load DetectUtils64.dll" which is in the working directory and it should be checking in, but seem to instead be checking for a hardcoded path within "Program Files".
+					# Also, IPDT will always be *uninstalled* in "Complete Windows" script if it was installed.
+					# NOTE: If in "ipdtMode", then IPDT will be launched instead of "QA Helper" when this script is finished (and on each boot).
+
+					$appInstallerFiles += Get-ChildItem "$appInstallersPath\Intel\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
+				}
+
+				$extraAppInstallerFiles = Get-ChildItem "$appInstallersPath\Extra\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
+
+				$extraAppInstallerNames = @()
+				if (($null -ne $extraAppInstallerFiles) -and ($extraAppInstallerFiles.Count -gt 0)) {
+					foreach ($thisExtraAppInstallerFile in $extraAppInstallerFiles) {
+						$thisExtraInstallerNameParts = $thisExtraAppInstallerFile.BaseName.Split('_')
+						$extraAppInstallerNames += $thisExtraInstallerNameParts[0]
+					}
+				}
+
+				$appInstallerNames = @()
+				if (($null -ne $appInstallerFiles) -and ($appInstallerFiles.Count -gt 0)) {
+					foreach ($thisAppInstallerFile in $appInstallerFiles) {
+						$thisInstallerNameParts = $thisAppInstallerFile.BaseName.Split('_')
+						$appInstallerNames += $thisInstallerNameParts[0]
+					}
+
+					Write-Host "`n  Successfully Located App Installer Files" -ForegroundColor Green
+				} else {
+					Write-Host "`n  Failed to Locate App Installer Files - CONTINUING ANYWAY" -ForegroundColor Yellow
+				}
+
+				$lastChooseInstallTypeError = ''
+
+				for ( ; ; ) {
+					$isExtraAppsInstall = $false
+					$isNoAppsInstall = $false
+					$isBaseInstall = $false
+
+					Clear-Host
+					Write-Output "`n  Choose Windows $installWindowsVersion App Installations for $installDriveName...`n"
+					if ($installWindowsVersion -eq 10) {
+						Write-Host "  Windows 10 CANNOT Be Licensed or Sold - ONLY Use for Testing or Firmware Updates`n" -ForegroundColor Yellow
+					}
+
+					if ($lastChooseInstallTypeError -ne '') {
+						Write-Host $lastChooseInstallTypeError -ForegroundColor Red
+					}
+
+					Write-Host "`n    S: Install Standard Apps" -ForegroundColor Cyan
+					if ($appInstallerNames.Count -gt 0) {
+						Write-Host "       $($appInstallerNames -Join ', ')" -ForegroundColor Blue
+					}
+
+					Write-Host "`n    E: Install Extra Apps" -ForegroundColor Cyan
+					if ($extraAppInstallerNames.Count -gt 0) {
+						Write-Host "       Standard Apps + $($extraAppInstallerNames -Join ', ')" -ForegroundColor Blue
+					}
+
+					Write-Host "`n    N: Install NO Apps" -ForegroundColor Cyan
+					Write-Host "       Useful When Only Wanting to Run Firmware Updates" -ForegroundColor Blue
+
+					if ($testMode) {
+						Write-Host "`n    B: Base Install With NO Apps and NO Testing" -ForegroundColor Cyan
+						Write-Host "       Boot Into Windows Setup After Install" -ForegroundColor Blue
+					}
+
+					Write-Host "`n    C: Cancel Windows Installation and Reboot This Computer" -ForegroundColor Cyan
+					Write-Host "`n    X: Cancel Windows Installation and Shut Down This Computer" -ForegroundColor Cyan
+
+					FocusScriptWindow
+					$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+					$installationTypeChoice = Read-Host "`n`n  Enter the Letter for Desired App Installations"
+
+					if ($installationTypeChoice.ToUpper() -eq 'S') {
+						Write-Host "`n  Standard Apps Will Be Installed..." -ForegroundColor Green
+
+						Start-Sleep 2
+						break
+					} elseif ($installationTypeChoice.ToUpper() -eq 'E') {
+						Write-Host "`n  Extra Apps Will Be Installed..." -ForegroundColor Green
+
+						$isExtraAppsInstall = $true
+
+						Start-Sleep 2
+						break
+					} elseif ($installationTypeChoice.ToUpper() -eq 'N') {
+						FocusScriptWindow
+						$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+						$confirmNoAppsInstall = Read-Host "`n  Enter `"N`" Again to Confirm Performing Base Windows Installation With NO Apps"
+
+						if ($confirmNoAppsInstall.ToUpper() -eq 'N') {
+							Write-Host "`n  Base Windows Installation With NO Apps Will Be Performed..." -ForegroundColor Green
+
+							$isNoAppsInstall = $true
+
+							Start-Sleep 2
+							break
+						} else {
+							$lastChooseInstallTypeError = "`n    ERROR: Did Not Confirm Performing Base Windows Installation With NO Apps - CHOOSE AGAIN`n"
+						}
+					} elseif ($installationTypeChoice.ToUpper() -eq 'B') { # Allow choosing "B" when NOT in Test Mode as a HIDDEN OPTION.
+						FocusScriptWindow
+						$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+						$confirmBaseInstall = Read-Host "`n  Enter `"B`" Again to Confirm Performing Base Windows Installation With NO Apps and NO Testing"
+
+						if ($confirmBaseInstall.ToUpper() -eq 'B') {
+							Write-Host "`n  Base Windows Installation With NO Apps and NO Testing Will Be Performed..." -ForegroundColor Green
+
+							$isBaseInstall = $true
+
+							Start-Sleep 2
+							break
+						} else {
+							$lastChooseInstallTypeError = "`n    ERROR: Did Not Confirm Performing Base Windows Installation With NO Apps and NO Testing - CHOOSE AGAIN`n"
+						}
+					} elseif ($installationTypeChoice.ToUpper() -eq 'IPDT') { # Allow specifying "IPDT" when NOT already in IPDT as a HIDDEN OPTION to also be able to get into IPDT mode dynamically if flag doesn't exist on boot.
+						FocusScriptWindow
+						$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+						$confirmIPDTmode = Read-Host "`n  Type `"IPDT`" Again to Confirm `"Intel Processor Diagnostic Tool`" Mode"
+
+						if ($confirmIPDTmode.ToUpper() -eq 'IPDT') {
+							Write-Host "`n  Windows Installation in `"Intel Processor Diagnostic Tool`" Mode Will Be Performed..." -ForegroundColor Green
+
+							$ipdtMode = $true
+
+							Start-Sleep 2
+							break
+						} else {
+							$lastChooseInstallTypeError = "`n    ERROR: Did Not Confirm `"Intel Processor Diagnostic Tool`" Mode - CHOOSE AGAIN`n"
+						}
+					} elseif ($installationTypeChoice.ToUpper() -eq 'C') {
+						FocusScriptWindow
+						$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+						$confirmQuit = Read-Host "`n  Enter `"C`" Again to Confirm Canceling Windows Installation and Rebooting This Computer"
+
+						if ($confirmQuit.ToUpper() -eq 'C') {
+							Clear-Host
+							Write-Host "`n  CANCELED WINDOWS INSTALLATION`n`n  Rebooting This Computer in 5 Seconds..." -ForegroundColor Yellow
+							Start-Sleep 5
+
+							exit 10
+						} else {
+							$lastChooseInstallTypeError = "`n    ERROR: Did Not Confirm Canceling Windows Installation and Rebooting This Computer - CHOOSE AGAIN`n"
+						}
+					} elseif ($installationTypeChoice.ToUpper() -eq 'X') {
+						FocusScriptWindow
+						$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+						$confirmShutDown = Read-Host "`n  Enter `"X`" Again to Confirm Canceling Windows Installation and Shutting Down This Computer"
+
+						if ($confirmShutDown.ToUpper() -eq 'X') {
+							Clear-Host
+							Write-Host "`n  CANCELED WINDOWS INSTALLATION`n`n  Shutting Down This Computer in 5 Seconds..." -ForegroundColor Yellow
+							Start-Sleep 5
+							Stop-Computer
+							Start-Sleep 60 # Sleep for 1 minute after executing "Stop-Computer" because if the script exits before "Stop-Computer" shut's down, the computer will be rebooted instead.
+
+							exit 11
+						} else {
+							$lastChooseInstallTypeError = "`n    ERROR: Did Not Confirm Canceling Windows Installation and Shutting Down This Computer - CHOOSE AGAIN`n"
+						}
+					} else {
+						if ($installationTypeChoice) {
+							$lastChooseInstallTypeError = "`n    ERROR: `"$installationTypeChoice`" Is Not a Valid Choice - CHOOSE AGAIN`n"
+						} else {
+							$lastChooseInstallTypeError = ''
+						}
+					}
 				}
 			}
 
@@ -1649,6 +1768,9 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 				Start-Sleep 3 # Sleep for a few seconds to be able to see last results before clearing screen.
 				Clear-Host
 				Write-Output "`n  Installing Windows Onto $installDriveName...`n`n`n`n`n`n  Version: $installWimDisplayName" # Add empty lines for PowerShell progress UI
+				if ($installWindowsVersion -eq 10) {
+					Write-Host "`n  Windows 10 CANNOT Be Licensed or Sold - ONLY Use for Testing or Firmware Updates" -ForegroundColor Yellow
+				}
 
 				try {
 					# Would like to use Expand-WindowsImage's "-CheckIntegrity" parameter, but it generally takes too long.
@@ -1661,7 +1783,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 
 					Clear-Host
 					Write-Host "`n  Successfully Installed Windows Onto $installDriveName" -ForegroundColor Green
-					Add-Content '\Install\Windows Install Log.txt' "Installed Windows ($installWimDisplayName) Onto $installDriveName (Drive ID $installDriveID) in $biosOrUEFI Mode - $(Get-Date)" -ErrorAction SilentlyContinue
+					Add-Content "$Env:SystemDrive\Install\Windows Install Log.txt" "Installed Windows ($installWimDisplayName) Onto $installDriveName (Drive ID $installDriveID) in $biosOrUEFI Mode - $(Get-Date)" -ErrorAction SilentlyContinue
 
 					$didInstallWindowsImage = $true
 				} catch {
@@ -1685,46 +1807,30 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 		}
 
 		if ($lastTaskSucceeded -and (-not $didInstallDrivers)) {
+			$driversSource = 'UNKNOWN'
+			$allAvailableDriverInfPathsForModel = @()
+
 			if (-not $localServerResourcesAccessible) {
-				Write-Host "`n`n  Driver Installation Not Available Without Local Server Access - WINDOWS UPDATE WILL INSTALL DRIVERS IN OS" -ForegroundColor Yellow
-				Add-Content '\Install\Windows Install Log.txt' "Driver Installation Not Available Without Local Server Access - $(Get-Date)" -ErrorAction SilentlyContinue
+				Write-Host "`n`n  Full Driver Installation Not Available Without Local Server Access - WINDOWS UPDATE WILL INSTALL ALL DRIVERS IN OS" -ForegroundColor Yellow
+				Add-Content "$Env:SystemDrive\Install\Windows Install Log.txt" "Full Driver Installation Not Available Without Local Server Access - $(Get-Date)" -ErrorAction SilentlyContinue
 			} else {
 				Write-Output "`n`n  Locating Drivers for This Computer Model..."
 
 				$driversModelPath = $null
 				$isInstallingDriverPack = $false
 
-				$driversCacheModelNameFilePath = '\Install\Drivers Cache Model Name.txt' # This file is created by QA Helper using its detailed model info.
-				if (-not (Test-Path $driversCacheModelNameFilePath)) {
-					$driversCacheModelNameFilePath = '\Install\Drivers Cache Model Path.txt' # This is the old filename from when paths were specified instead of a filename.
-				}
+				if ($driversCacheModelNameFileContents.Contains(' ')) {
+					$driversCacheModelPathUniqueDriversPointerFilePath = "$driversCacheBasePath\$driversCacheModelNameFileContents.txt"
 
-				if (Test-Path $driversCacheModelNameFilePath) {
-					$driversCacheModelNameFileContents = Get-Content $driversCacheModelNameFilePath -First 1
+					if (Test-Path $driversCacheModelPathUniqueDriversPointerFilePath) {
+						$driversCacheModelPathUniqueDriversPointerFileContents = Get-Content -Raw $driversCacheModelPathUniqueDriversPointerFilePath -ErrorAction SilentlyContinue
 
-					if ($null -ne $driversCacheModelNameFileContents) {
-						if ($driversCacheModelNameFileContents.Contains('\')) {
-							# Drivers Cache used to store drivers for each model in their own folder with the path specified by "Drivers Cache Model Path.txt".
-							# Now, all drivers are stored in a "Unique Drivers" folder and each specific model is just a text file whose contents are a list of the drivers that were cached for that model.
-							# Therefore, if an old "Drivers Cache Model Path.txt" from an old "QA Helper" was read, we must replace backslashes with spaces to be used as a filename instead of a folder path.
-							$driversCacheModelNameFileContents = $driversCacheModelNameFileContents.Replace('\', ' ')
-						}
-
-						if ($driversCacheModelNameFileContents.Contains(' ')) {
-							$driversCacheModelPathUniqueDriversPointerFilePath = "$driversCacheBasePath\$driversCacheModelNameFileContents.txt"
-
-							if (Test-Path $driversCacheModelPathUniqueDriversPointerFilePath) {
-								$driversCacheModelPathUniqueDriversPointerFileContents = Get-Content -Raw $driversCacheModelPathUniqueDriversPointerFilePath -ErrorAction SilentlyContinue
-
-								if (($null -ne $driversCacheModelPathUniqueDriversPointerFileContents) -and ($driversCacheModelPathUniqueDriversPointerFileContents -ne '')) {
-									$driversModelPath = $driversCacheModelPathUniqueDriversPointerFilePath
-								}
-							}
+						if (($null -ne $driversCacheModelPathUniqueDriversPointerFileContents) -and ($driversCacheModelPathUniqueDriversPointerFileContents -ne '')) {
+							$driversSource = 'Cached'
+							$driversModelPath = $driversCacheModelPathUniqueDriversPointerFilePath
 						}
 					}
 				}
-
-				$driversSource = 'Cached'
 
 				if ($null -eq $driversModelPath) {
 					# If no Cached Drivers exists, check for Driver Pack in $driverPacksBasePath
@@ -1816,7 +1922,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 								}
 
 								if ((($thisPossibleModelForDriverPacks.length -eq 4) -and ($thisPossibleModelForDriverPacks -match '^[a-z0-9]+$')) -or ($null -eq $fallbackDriversModelPath)) {
-									$driverPackPointerFilePath = "$driverPacksBasePath\$manufacturerForDriverPacks\$($thisPossibleModelForDriverPacks).txt"
+									$driverPackPointerFilePath = "$driverPacksBasePath\$manufacturerForDriverPacks\$thisPossibleModelForDriverPacks.txt"
 
 									if (Test-Path $driverPackPointerFilePath) {
 										$driverPackPointerFileContents = Get-Content $driverPackPointerFilePath -First 1
@@ -1832,9 +1938,9 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 														Write-Host "`n    LOCATED DRIVER PACK:`n      $manufacturerForDriverPacks\$thisPossibleModelForDriverPacks`n      $driverPackPointerFileContents" -ForegroundColor Yellow
 													}
 
-													$driversModelPath = $possibleDriversModelPath
 													$isInstallingDriverPack = $true
 													$driversSource = $manufacturerForDriverPacks
+													$driversModelPath = $possibleDriversModelPath
 
 													break
 												} elseif ($null -eq $fallbackDriversModelPath) {
@@ -1858,9 +1964,9 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 								Write-Host "`n    USING FALLBACK DRIVER PACK" -ForegroundColor Yellow
 							}
 
-							$driversModelPath = $fallbackDriversModelPath
 							$isInstallingDriverPack = $true
 							$driversSource = $manufacturerForDriverPacks
+							$driversModelPath = $fallbackDriversModelPath
 						}
 					}
 				} elseif ($testMode) {
@@ -1868,8 +1974,6 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 				}
 
 				if (($null -ne $driversModelPath) -and (Test-Path $driversModelPath)) {
-					$allAvailableDriverInfPathsForModel = @()
-
 					if ($isInstallingDriverPack) {
 						# Retrieve all .inf files recursively instead of using "Add-WindowsDriver -Recurse" to be able to show installation progess.
 						# Also, Driver Packs can contain TONS of drivers which may not actually be necessary for the specified model, so confirm compatibility for each driver and only install compatible drivers.
@@ -1910,358 +2014,390 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 						}
 					}
 
-					# Parse each .inf to confirm compatibility with current hardware and only install compatible drivers.
-					# Tried using "Get-WindowsDriver -Path 'W:\' -Driver $thisDriverInfPath" to get compatibility details and driver name instead parsing the .inf myself, but it was TOO SLOW (2-3 seconds per driver VS 0.01-0.6 seconds per driver when parsing manually).
-					# ALSO, I would still had to parse some of the .inf manually anyway to get the Compatible Software ID matching that is done below since that is not included in the output of "Get-WindowsDriver -Path 'W:\' -Driver $thisDriverInfPath".
+					Add-Content "$Env:SystemDrive\Install\Windows Install Log.txt" "Located $($allAvailableDriverInfPathsForModel.Count) $driversSource Drivers in `"$($driversModelPath.Replace("$driversCacheBasePath\", '').Replace('.txt', '').Replace("$driverPacksBasePath\", ''))`" - $(Get-Date)" -ErrorAction SilentlyContinue
+				} else {
+					Write-Host "`n  No $driversSource Drivers to Install - WINDOWS UPDATE WILL INSTALL ALL DRIVERS IN OS" -ForegroundColor Yellow
+					Add-Content "$Env:SystemDrive\Install\Windows Install Log.txt" "No $driversSource Drivers to Install - $(Get-Date)" -ErrorAction SilentlyContinue
+				}
+			}
 
-					if ($testMode) {
-						Write-Host "`n    CHECKING $($allAvailableDriverInfPathsForModel.Count) $($driversSource.ToUpper()) DRIVERS FOR COMPATIBILITY..." -ForegroundColor Yellow
-					}
+			if ($allAvailableDriverInfPathsForModel.Count -eq 0) {
+				Write-Output "`n`n  Locating Required Storage Drivers to Install Into Windows..."
 
-					Add-Content '\Install\Windows Install Log.txt' "Located $($allAvailableDriverInfPathsForModel.Count) $driversSource Drivers in `"$($driversModelPath.Replace("$driversCacheBasePath\", '').Replace('.txt', '').Replace("$driverPacksBasePath\", ''))`" - $(Get-Date)" -ErrorAction SilentlyContinue
+				# NOTE: If Cached Drivers or a Manufacturer Driver Pack are not available, it is important to install any required Intel RST VMD storage drivers (which are pre-installed into the
+				# booted WinRE intaller to detect SSDs on some newer Dell laptops) from the booted WinRE installer into the full Windows installation since those drivers are required to boot Windows.
+				# If the required Intel RST VMD storage drivers DO NOT get installed before booting the full Windows installation, booting will fail with "Skip code: INACCESSIBLE_BOOT_DEVICE (0x78)".
+					# https://www.dell.com/support/kbdoc/en-us/000188116/intel-11th-generation-processors-no-drives-can-be-found-during-windows-10-installation
+					# https://www.intel.com/content/www/us/en/support/articles/000092508/technologies.html
+					# https://www.intel.com/content/www/us/en/support/articles/000057787/memory-and-storage/intel-optane-memory.html
 
-					$driverDetailsForCompatibleInfs = @{}
+				# IMPORTANT: But, only install the required Intel RST VMD storage drivers from the booted WinRE installer into the full Windows installation if Cached Drivers or a Manufacturer Driver Pack
+				# (which should include the required storage drivers) are not available since Intel states on the RST VMD driver download pages (which are the versions pre-installed into the booted WinRE installer):
+					# Intel recommends that end users utilize driver updates provided by their system manufacturer/provider or via Windows Update to eliminate the potential impact caused by loading non-customized drivers.
+					# System manufacturers regularly customize Intel generic drivers to meet the needs of their specific system design. In such cases, use of the Intel generic driver update is not recommended.
+					# From: https://www.intel.com/content/www/us/en/download/849936/intel-rapid-storage-technology-driver-installation-software-with-intel-optane-memory-12th-to-15th-gen-platforms.html
 
-					if ($allAvailableDriverInfPathsForModel.Count -gt 0) {
-						$pnpEntityCompatibleAndHardwareIDs = (Get-CimInstance 'Win32_PnPEntity' -Property 'HardwareID', 'CompatibleID')
-						$compatibleDeviceIDsForDrivers = (($pnpEntityCompatibleAndHardwareIDs.HardwareID + $pnpEntityCompatibleAndHardwareIDs.CompatibleID) | Where-Object { ($null -ne $_) } | Sort-Object -Unique).ToUpper()
+				$driversSource = 'Required Storage'
+				$driversModelPath = "$Env:SystemRoot\System32\DriverStore\FileRepository"
+				$allAvailableDriverInfPathsForModel = (Get-ChildItem $driversModelPath -Recurse -File -Include 'iaStor*.inf').FullName
 
-						# Some drivers only list Software Compatible IDs "SWC\..." as compatible Device IDs. I believe these drivers will only list "SWC\..." Device IDs in their models sections,
-						# but I set this code up to continue checking for any compatible Device IDs and only collect the "SWC\..." IDs to be matched with another compatible driver if no other compatibility was detected.
-						# These "software" drivers are associated with other "hardware" drivers and can be matched and installed along with their "hardware" driver counterparts
-						# by collecting "ComponentIDs" from compatible "hardware" drivers and matching those to the Software Compatible IDs of unmatched "software" drivers.
+				# Any required Intel RST VMD storage drivers should be named "iaStorVD.inf", but check for any ".inf" starting with "iaStor" just to be extra thorough since the
+				# Intel RST VMD storage drivers that were pre-installed into the booted WinRE installer included a few extra drivers and anything incompatible will not get installed anyways.
 
-						# Also, the following compatibility checks will allow *cached* drivers listing "Monitor\..." IDs to be installed without actually confirming compatibility.
-						# This is because "Monitor\..." Hardware/Compatible IDs are not properly available from Win32_PnPEntity in WinPE (all other WMI classes related to monitor info are also unavailable in WinPE).
-						# But since we are dealing with cached drivers, I think it's safe to assume the driver is actually compatible and go ahead and install it to save Windows Update from having to install it in OS.
+				# NOTE: Do not bother using "Get-WindowsDriver -Online" (like "Complete Windows.ps1" does when caching drivers) since it takes longer and
+				# the only benefit is easier compatibility checking and the code below already does compatibilty checking by parsing the ".inf" files manually.
+			}
 
-						$softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers = @{}
-						$softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers = @()
+			$driverDetailsForCompatibleInfs = @{}
 
-						foreach ($thisDriverInfPath in $allAvailableDriverInfPathsForModel) {
-							$isInfVersionSection = $false
-							$thisDriverClass = 'UNKNOWN Class'
-							$thisDriverVersion = 'UNKNOWN Version'
+			if ($allAvailableDriverInfPathsForModel.Count -gt 0) {
+				if ($testMode) {
+					Write-Host "`n    CHECKING $($allAvailableDriverInfPathsForModel.Count) $($driversSource.ToUpper()) DRIVERS FOR COMPATIBILITY..." -ForegroundColor Yellow
+				}
 
-							$isInfManufacturerSection = $false
-							$compatibleModelSectionIDs = @()
+				# Parse each .inf to confirm compatibility with current hardware and only install compatible drivers.
+				# Tried using "Get-WindowsDriver -Path 'W:\' -Driver $thisDriverInfPath" to get compatibility details and driver name instead parsing the .inf myself, but it was TOO SLOW (2-3 seconds per driver VS 0.01-0.6 seconds per driver when parsing manually).
+				# ALSO, I would still had to parse some of the .inf manually anyway to get the Compatible Software ID matching that is done below since that is not included in the output of "Get-WindowsDriver -Path 'W:\' -Driver $thisDriverInfPath".
 
-							$isInfModelsSection = $false
-							$softwareComponentIDsFromModelsSectionsOfThisDriver = @{}
-							$softwareComponentIDsFromComponentsSectionsOfThisDriver = @()
+				$pnpEntityCompatibleAndHardwareIDs = (Get-CimInstance 'Win32_PnPEntity' -Property 'HardwareID', 'CompatibleID' -ErrorAction Stop)
+				$compatibleDeviceIDsForDrivers = (($pnpEntityCompatibleAndHardwareIDs.HardwareID + $pnpEntityCompatibleAndHardwareIDs.CompatibleID) | Where-Object { ($null -ne $_) } | Sort-Object -Unique).ToUpper()
 
-							$isInfStringsSection = $false
-							$stringVariablesForDriver = @{}
+				# Some drivers only list Software Compatible IDs "SWC\..." as compatible Device IDs. I believe these drivers will only list "SWC\..." Device IDs in their models sections,
+				# but I set this code up to continue checking for any compatible Device IDs and only collect the "SWC\..." IDs to be matched with another compatible driver if no other compatibility was detected.
+				# These "software" drivers are associated with other "hardware" drivers and can be matched and installed along with their "hardware" driver counterparts
+				# by collecting "ComponentIDs" from compatible "hardware" drivers and matching those to the Software Compatible IDs of unmatched "software" drivers.
 
-							$thisDriverInfContents = Get-Content $thisDriverInfPath
+				# Also, the following compatibility checks will allow *cached* drivers listing "Monitor\..." IDs to be installed without actually confirming compatibility.
+				# This is because "Monitor\..." Hardware/Compatible IDs are not properly available from Win32_PnPEntity in WinPE (all other WMI classes related to monitor info are also unavailable in WinPE).
+				# But since we are dealing with cached drivers, I think it's safe to assume the driver is actually compatible and go ahead and install it to save Windows Update from having to install it in OS.
 
-							foreach ($thisDriverInfLine in $thisDriverInfContents) {
-								if (($lineCommentIndex = $thisDriverInfLine.IndexOf(';')) -gt -1) { # Remove .inf comments from each line before any parsing to avoid matching any text within comments.
-									$thisDriverInfLine = $thisDriverInfLine.Substring(0, $lineCommentIndex)
-								}
+				$softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers = @{}
+				$softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers = @()
 
-								$thisDriverInfLine = $thisDriverInfLine.Trim()
+				foreach ($thisDriverInfPath in $allAvailableDriverInfPathsForModel) {
+					$isInfVersionSection = $false
+					$thisDriverClass = 'UNKNOWN Class'
+					$thisDriverVersion = 'UNKNOWN Version'
 
-								if ($thisDriverInfLine -ne '') {
-									$thisDriverInfLineUPPER = $thisDriverInfLine.ToUpper()
+					$isInfManufacturerSection = $false
+					$compatibleModelSectionIDs = @()
 
-									if ($thisDriverInfLine.StartsWith('[')) {
-										# https://docs.microsoft.com/en-us/windows-hardware/drivers/install/inf-version-section
-										$isInfVersionSection = ($thisDriverInfLineUPPER -eq '[VERSION]')
+					$isInfModelsSection = $false
+					$softwareComponentIDsFromModelsSectionsOfThisDriver = @{}
+					$softwareComponentIDsFromComponentsSectionsOfThisDriver = @()
 
-										# https://docs.microsoft.com/en-us/windows-hardware/drivers/install/inf-manufacturer-section
-										$wasInfManufacturerSection = $isInfManufacturerSection
-										$isInfManufacturerSection = ($thisDriverInfLineUPPER -eq '[MANUFACTURER]')
+					$isInfStringsSection = $false
+					$stringVariablesForDriver = @{}
 
-										if ($wasInfManufacturerSection -and (-not $isInfManufacturerSection) -and ($compatibleModelSectionIDs.Count -eq 0)) {
-											# If passed Manufacturer sections and didn't get any compatible Model Section IDs, this is not a 64-bit driver and we can stop reading lines.
-											if ($testMode) {
-												Write-Host "`n      NOT 64-BIT DRIVER:`n        $($thisDriverInfPath.Replace("$driversModelPath\", ''))" -ForegroundColor Yellow
-											}
+					$thisDriverInfContents = Get-Content $thisDriverInfPath
 
-											break
-										}
+					foreach ($thisDriverInfLine in $thisDriverInfContents) {
+						if (($lineCommentIndex = $thisDriverInfLine.IndexOf(';')) -gt -1) { # Remove .inf comments from each line before any parsing to avoid matching any text within comments.
+							$thisDriverInfLine = $thisDriverInfLine.Substring(0, $lineCommentIndex)
+						}
 
-										# https://docs.microsoft.com/en-us/windows-hardware/drivers/install/inf-models-section
-										$isInfModelsSection = $compatibleModelSectionIDs.Contains($thisDriverInfLineUPPER)
+						$thisDriverInfLine = $thisDriverInfLine.Trim()
 
-										# https://docs.microsoft.com/en-us/windows-hardware/drivers/install/inf-strings-section
-										$isInfStringsSection = ($thisDriverInfLineUPPER -eq '[STRINGS]') # Match exactly to only use Engligh Strings sections.
-									} elseif (($lineEqualsIndex = $thisDriverInfLine.IndexOf('=')) -gt -1) {
-										if ($isInfVersionSection) {
-											if (($thisDriverClass -eq 'UNKNOWN Class') -and $thisDriverInfLineUPPER.Contains('CLASS') -and (-not $thisDriverInfLineUPPER.Contains('CLASSGUID'))) {
-												$thisDriverClass = $thisDriverInfLine.Substring($lineEqualsIndex + 1).Trim() # It appears that the Class Names will never be in quotes or be variables that need to be translated.
+						if ($thisDriverInfLine -ne '') {
+							$thisDriverInfLineUPPER = $thisDriverInfLine.ToUpper()
 
-												if ($thisDriverClass -eq '') {
-													$thisDriverClass = 'UNKNOWN Class'
-												} elseif ($thisDriverClass -ceq $thisDriverClass.ToLower()) {
-													$thisDriverClass = "$($thisDriverClass.Substring(0, 1).ToUpper())$($thisDriverClass.Substring(1))" # If Class is all lowercase, capitalized the first letter.
-												}
-											} elseif (($thisDriverVersion -eq 'UNKNOWN Version') -and $thisDriverInfLineUPPER.Contains('DRIVERVER')) {
-												$thisDriverVersion = $thisDriverInfLine.Substring($lineEqualsIndex + 1).Split(',').Trim() | Where-Object { ($null -ne $_) -and ($_ -ne '') } | Select-Object -Last 1
+							if ($thisDriverInfLine.StartsWith('[')) {
+								# https://docs.microsoft.com/en-us/windows-hardware/drivers/install/inf-version-section
+								$isInfVersionSection = ($thisDriverInfLineUPPER -eq '[VERSION]')
 
-												if ($thisDriverVersion -eq '') {
-													$thisDriverVersion = 'UNKNOWN Version'
-												}
-											}
-										} elseif ($isInfManufacturerSection -and $thisDriverInfLine.Contains(',') -and $thisDriverInfLineUPPER.Contains('NTAMD64')) {
-											$thisManufacturerLineValues = $thisDriverInfLineUPPER.Substring($lineEqualsIndex + 1).Split(',').Trim()
+								# https://docs.microsoft.com/en-us/windows-hardware/drivers/install/inf-manufacturer-section
+								$wasInfManufacturerSection = $isInfManufacturerSection
+								$isInfManufacturerSection = ($thisDriverInfLineUPPER -eq '[MANUFACTURER]')
 
-											$thisDriverModelsSectionName = $thisManufacturerLineValues[0]
-											$theseDriverModelsSectionsTargetOSes = $thisManufacturerLineValues[1..($thisManufacturerLineValues.length - 1)]
-
-											foreach ($thisDriverModelsSectionsTargetOS in $theseDriverModelsSectionsTargetOSes) {
-												if ($thisDriverModelsSectionsTargetOS.Contains('NTAMD64')) {
-													$compatibleModelSectionIDs += "[$thisDriverModelsSectionName.$thisDriverModelsSectionsTargetOS]"
-												}
-											}
-										} elseif ($isInfModelsSection -and $thisDriverInfLine.Contains(',')) {
-											# A Hardware ID and mutliple Compatible IDs could exist on a single line seperated by commas, so check them all.
-											$theseDriverCompatibleDeviceID = $thisDriverInfLineUPPER.Substring($lineEqualsIndex + 1).Replace('"', '').Split(',') # Seen situations where some .inf Device IDs were quoted so remove all quotes and also seen "Vid_" and "Pid_" instead of "VID_" and "PID_" so always compare UPPER Device IDs.
-											$theseDriverCompatibleDeviceID = $theseDriverCompatibleDeviceID[1..($theseDriverCompatibleDeviceID.length - 1)].Trim() # BUT, the first element will be the "install-section-name" and not a Device ID, so get rid of that one.
-
-											foreach ($thisDriverCompatibleDeviceID in $theseDriverCompatibleDeviceID) {
-												if ($thisDriverCompatibleDeviceID.StartsWith('SWC\') -or ((-not $driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()]) -and ($compatibleDeviceIDsForDrivers.Contains($thisDriverCompatibleDeviceID) -or ((-not $isInstallingDriverPack) -and $thisDriverCompatibleDeviceID.StartsWith('MONITOR\'))))) {
-													$thisDriverName = $thisDriverInfLine.Substring(0, $lineEqualsIndex).Replace('"', '').Trim() # This value will be translated using the strings variables.
-													if ($thisDriverName.StartsWith('%') -and $thisDriverName.EndsWith('%')) {
-														$thisDriverName = $thisDriverName.Substring(1, ($thisDriverName.length - 2)).Trim()
-													}
-
-													if ($thisDriverName -eq '') {
-														$thisDriverName = 'UNKNOWN Name'
-													}
-
-													if ($thisDriverCompatibleDeviceID.StartsWith('SWC\')) {
-														if ($testMode) {
-															Write-Host "`n      ADDING DRIVER SOFTWARE COMPONENT ID TO CHECK AGAINST COMPATIBLE DRIVERS '$thisDriverCompatibleDeviceID':`n        $($thisDriverInfPath.Replace("$driversModelPath\", ''))" -ForegroundColor Yellow
-														}
-
-														$softwareComponentIDsFromModelsSectionsOfThisDriver[$thisDriverCompatibleDeviceID] = @{
-															InfPath = $thisDriverInfPath
-															DriverName = $thisDriverName
-														}
-													} else {
-														$driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()] = @{
-															InfPath = $thisDriverInfPath
-															DriverName = $thisDriverName
-														}
-
-														if ($testMode) {
-															if ((-not $isInstallingDriverPack) -and $thisDriverCompatibleDeviceID.StartsWith('MONITOR\')) {
-																Write-Host "`n      ADDED *CACHED* MONITOR DRIVER REGARDLESS OF COMPATIBILITY BECAUSE MONITOR IDs N/A IN WINPE:`n        FILE: $($thisDriverInfPath.Replace("$driversModelPath\", ''))`n        LINE: $thisDriverInfLine" -ForegroundColor Yellow
-															} else {
-																$deviceIDtype = 'HARDWARE'
-
-																if (($pnpEntityCompatibleAndHardwareIDs.CompatibleID | Where-Object { ($null -ne $_) }).ToUpper().Contains($thisDriverCompatibleDeviceID)) {
-																	$deviceIDtype = 'COMPATIBLE'
-																	$compatibleIDmatchCount ++
-																} else {
-																	$hardwareIDmatchCount ++
-																}
-
-																Write-Host "`n      DRIVER IS COMPATIBLE WITH $deviceIDtype ID '$thisDriverCompatibleDeviceID':`n        FILE: $($thisDriverInfPath.Replace("$driversModelPath\", ''))`n        LINE: $thisDriverInfLine" -ForegroundColor Yellow
-															}
-														}
-													}
-												}
-											}
-										} elseif ((-not $isInfVersionSection) -and (-not $isInfManufacturerSection) -and (-not $isInfModelsSection) -and (-not $isInfStringsSection) -and $thisDriverInfLineUPPER.Contains('COMPONENTIDS')) {
-											# Could parse .infs more to only get confirmed compatible Component IDs from the correct sections, but since these will only match against 64-bit Drivers listing these Component IDs in their Models sections, I think we don't need to worry about that.
-
-											$theseSoftwareComponentIDs = $thisDriverInfLineUPPER.Substring($lineEqualsIndex + 1).Split(',').Trim() # Can contain multiple IDs on one line.
-
-											foreach ($thisSoftwareComponentID in $theseSoftwareComponentIDs) {
-												if ($thisSoftwareComponentID -ne '') {
-													if (-not $thisSoftwareComponentID.StartsWith('SWC\')) {
-														$thisSoftwareComponentID = "SWC\$thisSoftwareComponentID"
-													}
-
-													if ($testMode) {
-														Write-Host "        DRIVER CONTAINS SOFTWARE COMPONENT ID: $thisSoftwareComponentID" -ForegroundColor Yellow
-													}
-
-													$softwareComponentIDsFromComponentsSectionsOfThisDriver += $thisSoftwareComponentID # Any string variables within an ID need be translated before being adding to $compatibleSoftwareComponentIDs
-												}
-											}
-										} elseif ($isInfStringsSection) {
-											$stringVariablesForDriver[$thisDriverInfLineUPPER.Substring(0, $lineEqualsIndex).Trim()] = $thisDriverInfLine.Substring($lineEqualsIndex + 1).Replace('"', '').Trim()
-										}
-									}
-								}
-							}
-
-							if ($driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()]) {
-								$driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()].DriverClass = $thisDriverClass
-								$driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()].DriverVersion = $thisDriverVersion
-
-								$untranslatedDriverName = $driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()].DriverName
-								if (($null -ne $untranslatedDriverName) -and ($null -ne $stringVariablesForDriver[$untranslatedDriverName.ToUpper()])) {
-									$driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()].DriverName = $stringVariablesForDriver[$untranslatedDriverName.ToUpper()]
-								}
-
-								# If driver was compatible, translate all string variables within $softwareComponentIDsFromComponentsSectionsOfThisDriver and then add the translated IDs to $softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers
-								foreach ($thisSoftwareComponentID in $softwareComponentIDsFromComponentsSectionsOfThisDriver) {
-									if ($thisSoftwareComponentID.Contains('%')) {
-										foreach ($thisStringVariableForDriver in $stringVariablesForDriver.GetEnumerator()) {
-											$thisSoftwareComponentID = $thisSoftwareComponentID.Replace("%$($thisStringVariableForDriver.Key)%", $thisStringVariableForDriver.Value)
-										}
-
-										if ($testMode) {
-											Write-Host "        TRANSLATED SOFTWARE COMPONENT ID: $thisSoftwareComponentID" -ForegroundColor Yellow
-										}
-									}
-
-									$softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers += $thisSoftwareComponentID
-								}
-							} else {
-								# If driver was not compatible, add $softwareComponentIDsFromModelsSectionsOfThisDriver to $softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers to be matched against $softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers.
-								# Also translate Device IDs and Driver Names.
-
-								foreach ($thisSoftwareComponentIDdetails in $softwareComponentIDsFromModelsSectionsOfThisDriver.GetEnumerator()) {
-									$thisSoftwareComponentID = $thisSoftwareComponentIDdetails.Key
-									if ($thisSoftwareComponentID.Contains('%')) {
-										foreach ($thisStringVariableForDriver in $stringVariablesForDriver.GetEnumerator()) {
-											$thisSoftwareComponentID = $thisSoftwareComponentID.Replace("%$($thisStringVariableForDriver.Key)%", $thisStringVariableForDriver.Value)
-										}
-									}
-
-									$translatedDriverName = $thisSoftwareComponentIDdetails.Value.DriverName
-									if (($null -ne $translatedDriverName) -and ($null -ne $stringVariablesForDriver[$translatedDriverName.ToUpper()])) {
-										$translatedDriverName = $stringVariablesForDriver[$translatedDriverName.ToUpper()]
-									}
-
-									if ($thisDriverClass.ToUpper() -ne 'SOFTWARECOMPONENT') {
-										$thisDriverClass += ' SWC' # Some Software Component drivers do not have the class of "SoftwareComponent", so add " SWC" to any that don't to identify them.
-									}
-
-									if (-not $softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers[$thisSoftwareComponentID]) {
-										$softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers[$thisSoftwareComponentID] = @()
-									}
-
-									$softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers[$thisSoftwareComponentID] += @{
-										InfPath = $thisSoftwareComponentIDdetails.Value.InfPath
-										DriverName = $translatedDriverName
-										DriverClass = $thisDriverClass
-										DriverVersion = $thisDriverVersion
-									}
-
+								if ($wasInfManufacturerSection -and (-not $isInfManufacturerSection) -and ($compatibleModelSectionIDs.Count -eq 0)) {
+									# If passed Manufacturer sections and didn't get any compatible Model Section IDs, this is not a 64-bit driver and we can stop reading lines.
 									if ($testMode) {
-										Write-Host "`n      TRANSLATED DRIVER SOFTWARE COMPONENT ID TO CHECK AGAINST COMPATIBLE DRIVERS '$thisSoftwareComponentID':`n        $($thisSoftwareComponentIDdetails.Value.InfPath.Replace("$driversModelPath\", ''))" -ForegroundColor Yellow
+										Write-Host "`n      NOT 64-BIT DRIVER:`n        $($thisDriverInfPath.Replace("$driversModelPath\", ''))" -ForegroundColor Yellow
 									}
+
+									break
 								}
-							}
 
-							if ($testMode -and (-not $isInstallingDriverPack) -and (-not $driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()])) { # Only want to log un-matched .infs for investigation when checking cached drivers, which are all supposed to match.
-								Write-Host "`n      DRIVER *IS NOT* COMPATIBLE WITH ANY DEVICE ID:`n        $($thisDriverInfPath.Replace("$driversModelPath\", ''))" -ForegroundColor Yellow
-							}
-						}
+								# https://docs.microsoft.com/en-us/windows-hardware/drivers/install/inf-models-section
+								$isInfModelsSection = $compatibleModelSectionIDs.Contains($thisDriverInfLineUPPER)
 
-						if ($softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers.Count -gt 0) {
-							# Match $softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers with $softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers and include them to be installed.
-							$softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers = $softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers | Sort-Object -Unique
-							foreach ($thisCompatibleSoftwareComponentID in $softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers) {
-								$theseDriverDetailsForSoftwareComponentID = $softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers[$thisCompatibleSoftwareComponentID]
+								# https://docs.microsoft.com/en-us/windows-hardware/drivers/install/inf-strings-section
+								$isInfStringsSection = ($thisDriverInfLineUPPER -eq '[STRINGS]') # Match exactly to only use Engligh Strings sections.
+							} elseif (($lineEqualsIndex = $thisDriverInfLine.IndexOf('=')) -gt -1) {
+								if ($isInfVersionSection) {
+									if (($thisDriverClass -eq 'UNKNOWN Class') -and $thisDriverInfLineUPPER.Contains('CLASS') -and (-not $thisDriverInfLineUPPER.Contains('CLASSGUID'))) {
+										$thisDriverClass = $thisDriverInfLine.Substring($lineEqualsIndex + 1).Trim() # It appears that the Class Names will never be in quotes or be variables that need to be translated.
 
-								if ($null -ne $theseDriverDetailsForSoftwareComponentID) {
-									foreach ($thisDriverDetailsForSoftwareComponentID in $theseDriverDetailsForSoftwareComponentID) {
-										if (-not $driverDetailsForCompatibleInfs[$thisDriverDetailsForSoftwareComponentID.InfPath.ToLower()]) {
-											if ($testMode) {
-												Write-Host "`n      ADDED DRIVER FOR COMPATIBLE SOFTWARE COMPONENT ID '$thisCompatibleSoftwareComponentID':`n        $($thisDriverDetailsForSoftwareComponentID.InfPath.Replace("$driversModelPath\", ''))" -ForegroundColor Yellow
-											}
+										if ($thisDriverClass -eq '') {
+											$thisDriverClass = 'UNKNOWN Class'
+										} elseif ($thisDriverClass -ceq $thisDriverClass.ToLower()) {
+											$thisDriverClass = "$($thisDriverClass.Substring(0, 1).ToUpper())$($thisDriverClass.Substring(1))" # If Class is all lowercase, capitalized the first letter.
+										}
+									} elseif (($thisDriverVersion -eq 'UNKNOWN Version') -and $thisDriverInfLineUPPER.Contains('DRIVERVER')) {
+										$thisDriverVersion = $thisDriverInfLine.Substring($lineEqualsIndex + 1).Split(',').Trim() | Where-Object { ($null -ne $_) -and ($_ -ne '') } | Select-Object -Last 1
 
-											$driverDetailsForCompatibleInfs[$thisDriverDetailsForSoftwareComponentID.InfPath.ToLower()] = $thisDriverDetailsForSoftwareComponentID
+										if ($thisDriverVersion -eq '') {
+											$thisDriverVersion = 'UNKNOWN Version'
 										}
 									}
-								} elseif ($testMode) {
-									Write-Host "`n      NO COMPATIBLE DRIVER FOUND FOR SOFTWARE COMPONENT ID '$thisCompatibleSoftwareComponentID'" -ForegroundColor Yellow
+								} elseif ($isInfManufacturerSection -and $thisDriverInfLine.Contains(',') -and $thisDriverInfLineUPPER.Contains('NTAMD64')) {
+									$thisManufacturerLineValues = $thisDriverInfLineUPPER.Substring($lineEqualsIndex + 1).Split(',').Trim()
+
+									$thisDriverModelsSectionName = $thisManufacturerLineValues[0]
+									$theseDriverModelsSectionsTargetOSes = $thisManufacturerLineValues[1..($thisManufacturerLineValues.length - 1)]
+
+									foreach ($thisDriverModelsSectionsTargetOS in $theseDriverModelsSectionsTargetOSes) {
+										if ($thisDriverModelsSectionsTargetOS.Contains('NTAMD64')) {
+											$compatibleModelSectionIDs += "[$thisDriverModelsSectionName.$thisDriverModelsSectionsTargetOS]"
+										}
+									}
+								} elseif ($isInfModelsSection -and $thisDriverInfLine.Contains(',')) {
+									# A Hardware ID and mutliple Compatible IDs could exist on a single line seperated by commas, so check them all.
+									$theseDriverCompatibleDeviceID = $thisDriverInfLineUPPER.Substring($lineEqualsIndex + 1).Replace('"', '').Split(',') # Seen situations where some .inf Device IDs were quoted so remove all quotes and also seen "Vid_" and "Pid_" instead of "VID_" and "PID_" so always compare UPPER Device IDs.
+									$theseDriverCompatibleDeviceID = $theseDriverCompatibleDeviceID[1..($theseDriverCompatibleDeviceID.length - 1)].Trim() # BUT, the first element will be the "install-section-name" and not a Device ID, so get rid of that one.
+
+									foreach ($thisDriverCompatibleDeviceID in $theseDriverCompatibleDeviceID) {
+										if ($thisDriverCompatibleDeviceID.StartsWith('SWC\') -or ((-not $driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()]) -and ($compatibleDeviceIDsForDrivers.Contains($thisDriverCompatibleDeviceID) -or ((-not $isInstallingDriverPack) -and $thisDriverCompatibleDeviceID.StartsWith('MONITOR\'))))) {
+											$thisDriverName = $thisDriverInfLine.Substring(0, $lineEqualsIndex).Replace('"', '').Trim() # This value will be translated using the strings variables.
+											if ($thisDriverName.StartsWith('%') -and $thisDriverName.EndsWith('%')) {
+												$thisDriverName = $thisDriverName.Substring(1, ($thisDriverName.length - 2)).Trim()
+											}
+
+											if ($thisDriverName -eq '') {
+												$thisDriverName = 'UNKNOWN Name'
+											}
+
+											if ($thisDriverCompatibleDeviceID.StartsWith('SWC\')) {
+												if ($testMode) {
+													Write-Host "`n      ADDING DRIVER SOFTWARE COMPONENT ID TO CHECK AGAINST COMPATIBLE DRIVERS '$thisDriverCompatibleDeviceID':`n        $($thisDriverInfPath.Replace("$driversModelPath\", ''))" -ForegroundColor Yellow
+												}
+
+												$softwareComponentIDsFromModelsSectionsOfThisDriver[$thisDriverCompatibleDeviceID] = @{
+													InfPath = $thisDriverInfPath
+													DriverName = $thisDriverName
+												}
+											} else {
+												$driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()] = @{
+													InfPath = $thisDriverInfPath
+													DriverName = $thisDriverName
+												}
+
+												if ($testMode) {
+													if ((-not $isInstallingDriverPack) -and $thisDriverCompatibleDeviceID.StartsWith('MONITOR\')) {
+														Write-Host "`n      ADDED *CACHED* MONITOR DRIVER REGARDLESS OF COMPATIBILITY BECAUSE MONITOR IDs N/A IN WINPE:`n        FILE: $($thisDriverInfPath.Replace("$driversModelPath\", ''))`n        LINE: $thisDriverInfLine" -ForegroundColor Yellow
+													} else {
+														$deviceIDtype = 'HARDWARE'
+
+														if (($pnpEntityCompatibleAndHardwareIDs.CompatibleID | Where-Object { ($null -ne $_) }).ToUpper().Contains($thisDriverCompatibleDeviceID)) {
+															$deviceIDtype = 'COMPATIBLE'
+															$compatibleIDmatchCount ++
+														} else {
+															$hardwareIDmatchCount ++
+														}
+
+														Write-Host "`n      DRIVER IS COMPATIBLE WITH $deviceIDtype ID '$thisDriverCompatibleDeviceID':`n        FILE: $($thisDriverInfPath.Replace("$driversModelPath\", ''))`n        LINE: $thisDriverInfLine" -ForegroundColor Yellow
+													}
+												}
+											}
+										}
+									}
+								} elseif ((-not $isInfVersionSection) -and (-not $isInfManufacturerSection) -and (-not $isInfModelsSection) -and (-not $isInfStringsSection) -and $thisDriverInfLineUPPER.Contains('COMPONENTIDS')) {
+									# Could parse .infs more to only get confirmed compatible Component IDs from the correct sections, but since these will only match against 64-bit Drivers listing these Component IDs in their Models sections, I think we don't need to worry about that.
+
+									$theseSoftwareComponentIDs = $thisDriverInfLineUPPER.Substring($lineEqualsIndex + 1).Split(',').Trim() # Can contain multiple IDs on one line.
+
+									foreach ($thisSoftwareComponentID in $theseSoftwareComponentIDs) {
+										if ($thisSoftwareComponentID -ne '') {
+											if (-not $thisSoftwareComponentID.StartsWith('SWC\')) {
+												$thisSoftwareComponentID = "SWC\$thisSoftwareComponentID"
+											}
+
+											if ($testMode) {
+												Write-Host "        DRIVER CONTAINS SOFTWARE COMPONENT ID: $thisSoftwareComponentID" -ForegroundColor Yellow
+											}
+
+											$softwareComponentIDsFromComponentsSectionsOfThisDriver += $thisSoftwareComponentID # Any string variables within an ID need be translated before being adding to $compatibleSoftwareComponentIDs
+										}
+									}
+								} elseif ($isInfStringsSection) {
+									$stringVariablesForDriver[$thisDriverInfLineUPPER.Substring(0, $lineEqualsIndex).Trim()] = $thisDriverInfLine.Substring($lineEqualsIndex + 1).Replace('"', '').Trim()
 								}
 							}
-						}
-
-						if ($testMode) {
-							#$driverDetailsForCompatibleInfs.Values | Format-Table -AutoSize -HideTableHeaders
-							Write-Host "`n    $($driverDetailsForCompatibleInfs.Count) COMPATIBLE $($driversSource.ToUpper()) DRIVERS (OF $($allAvailableDriverInfPathsForModel.Count) AVAILABLE DRIVERS)" -ForegroundColor Yellow
 						}
 					}
 
-					if ($driverDetailsForCompatibleInfs.Count -gt 0) {
-						Write-Host "`n  Successfully Located $($driverDetailsForCompatibleInfs.Count) $driversSource Drivers for This Computer Model" -ForegroundColor Green
-						Add-Content '\Install\Windows Install Log.txt' "Confirmed Compatibility for $($driverDetailsForCompatibleInfs.Count) $driversSource Drivers - $(Get-Date)" -ErrorAction SilentlyContinue
+					if ($driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()]) {
+						$driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()].DriverClass = $thisDriverClass
+						$driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()].DriverVersion = $thisDriverVersion
 
-						Write-Output "`n`n  Installing $($driverDetailsForCompatibleInfs.Count) $driversSource Drivers for This Computer Model`n  Onto $installDriveName`n  PLEASE WAIT, THIS MAY TAKE A FEW MINUTES..."
-
-						$skipInstallDrivers = $false
-
-						if ($testMode) {
-							Write-Host "`n  Choose Whether or Not to Install $driversSource Drivers in Test Mode" -ForegroundColor Cyan
-							FocusScriptWindow
-							$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
-							$confirmInstallDrivers = Read-Host "  Type `"Y`" and Press ENTER to Install $driversSource Drivers or Type ANYTHING ELSE to Skip"
-
-							if ($confirmInstallDrivers.ToUpper() -ne 'Y') {
-								$skipInstallDrivers = $true
-							}
+						$untranslatedDriverName = $driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()].DriverName
+						if (($null -ne $untranslatedDriverName) -and ($null -ne $stringVariablesForDriver[$untranslatedDriverName.ToUpper()])) {
+							$driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()].DriverName = $stringVariablesForDriver[$untranslatedDriverName.ToUpper()]
 						}
 
-						if ($testMode -and $skipInstallDrivers) {
-							Write-Host "`n  Chose to Skip Installing $driversSource Drivers in Test Mode" -ForegroundColor Yellow
-							Add-Content '\Install\Windows Install Log.txt' "Chose to Skip Installing $driversSource Drivers in Test Mode - $(Get-Date)" -ErrorAction SilentlyContinue
-						} else {
-							$thisDriverIndex = 0
-							$installedDriversCount = 0
+						# If driver was compatible, translate all string variables within $softwareComponentIDsFromComponentsSectionsOfThisDriver and then add the translated IDs to $softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers
+						foreach ($thisSoftwareComponentID in $softwareComponentIDsFromComponentsSectionsOfThisDriver) {
+							if ($thisSoftwareComponentID.Contains('%')) {
+								foreach ($thisStringVariableForDriver in $stringVariablesForDriver.GetEnumerator()) {
+									$thisSoftwareComponentID = $thisSoftwareComponentID.Replace("%$($thisStringVariableForDriver.Key)%", $thisStringVariableForDriver.Value)
+								}
 
-							foreach ($thisDriverDetails in ($driverDetailsForCompatibleInfs.Values | Sort-Object -Property { $_.DriverClass }, { $_.DriverName }, { $_.DriverVersion }, { $_.InfPath })) { # I'm not sure why, but this array is not getting sorted properly when just listing fields as strings, but does sort properly when I put each field in a script block.
-								$thisDriverIndex ++
-
-								$thisDriverInfPath = $thisDriverDetails.InfPath
-
-								if (($null -ne $thisDriverInfPath) -and (Test-Path $thisDriverInfPath)) {
-									$thisDriverInfBaseName = (Split-Path $thisDriverInfPath -Leaf).Split('.')[0]
-
-									Write-Host "`n    Installing $driversSource Driver $thisDriverIndex of $($driverDetailsForCompatibleInfs.Count): `"$thisDriverInfBaseName`" Version $($thisDriverDetails.DriverVersion)`n      $($thisDriverDetails.DriverClass) - $($thisDriverDetails.DriverName)"
-
-									try {
-										Add-WindowsDriver -Path 'W:\' -Driver $thisDriverInfPath -ErrorAction Stop | Out-Null
-
-										Write-Host '      INSTALLED' -ForegroundColor Green
-
-										$installedDriversCount ++
-									} catch {
-										Write-Host "      FAILED: $_" -ForegroundColor Red
-									}
-								} else {
-									Write-Host "`n    INF NOT FOUND for $driversSource Driver $thisDriverIndex of $($driverDetailsForCompatibleInfs.Count):`n      $($thisDriverInfPath.Replace("$driversCacheBasePath\", '').Replace('.txt', '').Replace("$driverPacksBasePath\", ''))`n      CONTINUING ANYWAY..." -ForegroundColor Yellow
+								if ($testMode) {
+									Write-Host "        TRANSLATED SOFTWARE COMPONENT ID: $thisSoftwareComponentID" -ForegroundColor Yellow
 								}
 							}
 
-							if ($installedDriversCount -eq 0) {
-								$dismLogContents = Get-Content -Raw "$Env:WINDIR\Logs\DISM\dism.log" -ErrorAction SilentlyContinue
-								if (($null -eq $dismLogContents) -or ($dismLogContents -eq '')) {
-									$dismLogContents = ' N/A'
-								} else {
-									$dismLogContents = "`n$dismLogContents"
-								}
-
-								Write-Host "`n  DISM LOG:$dismLogContents" -ForegroundColor Red
-								Write-Host "`n  ERROR: Failed to install $driversSource Drivers from `"$($driversModelPath.Replace("$driversCacheBasePath\", '').Replace('.txt', '').Replace("$driverPacksBasePath\", ''))`"." -ForegroundColor Red
-								Add-Content '\Install\Windows Install Log.txt' "Failed to Install $driversSource Drivers - $(Get-Date)" -ErrorAction SilentlyContinue
-
-								$lastTaskSucceeded = $false
-							} else {
-								Write-Host "`n  Successfully Installed $installedDriversCount $driversSource Drivers Onto $installDriveName" -ForegroundColor Green
-								Add-Content '\Install\Windows Install Log.txt' "Installed $installedDriversCount $driversSource Drivers - $(Get-Date)" -ErrorAction SilentlyContinue
-
-								$didInstallDrivers = $true
-							}
+							$softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers += $thisSoftwareComponentID
 						}
 					} else {
-						Write-Host "`n  No Compatible $driversSource Drivers to Install - WINDOWS UPDATE WILL INSTALL DRIVERS IN OS" -ForegroundColor Yellow
-						Add-Content '\Install\Windows Install Log.txt' "No Compatible $driversSource Drivers to Install - $(Get-Date)" -ErrorAction SilentlyContinue
+						# If driver was not compatible, add $softwareComponentIDsFromModelsSectionsOfThisDriver to $softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers to be matched against $softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers.
+						# Also translate Device IDs and Driver Names.
+
+						foreach ($thisSoftwareComponentIDdetails in $softwareComponentIDsFromModelsSectionsOfThisDriver.GetEnumerator()) {
+							$thisSoftwareComponentID = $thisSoftwareComponentIDdetails.Key
+							if ($thisSoftwareComponentID.Contains('%')) {
+								foreach ($thisStringVariableForDriver in $stringVariablesForDriver.GetEnumerator()) {
+									$thisSoftwareComponentID = $thisSoftwareComponentID.Replace("%$($thisStringVariableForDriver.Key)%", $thisStringVariableForDriver.Value)
+								}
+							}
+
+							$translatedDriverName = $thisSoftwareComponentIDdetails.Value.DriverName
+							if (($null -ne $translatedDriverName) -and ($null -ne $stringVariablesForDriver[$translatedDriverName.ToUpper()])) {
+								$translatedDriverName = $stringVariablesForDriver[$translatedDriverName.ToUpper()]
+							}
+
+							if ($thisDriverClass.ToUpper() -ne 'SOFTWARECOMPONENT') {
+								$thisDriverClass += ' SWC' # Some Software Component drivers do not have the class of "SoftwareComponent", so add " SWC" to any that don't to identify them.
+							}
+
+							if (-not $softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers[$thisSoftwareComponentID]) {
+								$softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers[$thisSoftwareComponentID] = @()
+							}
+
+							$softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers[$thisSoftwareComponentID] += @{
+								InfPath = $thisSoftwareComponentIDdetails.Value.InfPath
+								DriverName = $translatedDriverName
+								DriverClass = $thisDriverClass
+								DriverVersion = $thisDriverVersion
+							}
+
+							if ($testMode) {
+								Write-Host "`n      TRANSLATED DRIVER SOFTWARE COMPONENT ID TO CHECK AGAINST COMPATIBLE DRIVERS '$thisSoftwareComponentID':`n        $($thisSoftwareComponentIDdetails.Value.InfPath.Replace("$driversModelPath\", ''))" -ForegroundColor Yellow
+							}
+						}
 					}
-				} else {
-					Write-Host "`n  No $driversSource Drivers to Install - WINDOWS UPDATE WILL INSTALL DRIVERS IN OS" -ForegroundColor Yellow
-					Add-Content '\Install\Windows Install Log.txt' "No $driversSource Drivers to Install - $(Get-Date)" -ErrorAction SilentlyContinue
+
+					if ($testMode -and (-not $isInstallingDriverPack) -and (-not $driverDetailsForCompatibleInfs[$thisDriverInfPath.ToLower()])) { # Only want to log un-matched .infs for investigation when checking cached drivers, which are all supposed to match.
+						Write-Host "`n      DRIVER *IS NOT* COMPATIBLE WITH ANY DEVICE ID:`n        $($thisDriverInfPath.Replace("$driversModelPath\", ''))" -ForegroundColor Yellow
+					}
 				}
+
+				if ($softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers.Count -gt 0) {
+					# Match $softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers with $softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers and include them to be installed.
+					$softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers = $softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers | Sort-Object -Unique
+					foreach ($thisCompatibleSoftwareComponentID in $softwareComponentIDsFromComponentsSectionsOfCompatibleDrivers) {
+						$theseDriverDetailsForSoftwareComponentID = $softwareComponentIDsFromModelsSectionsOfUnmatchedDrivers[$thisCompatibleSoftwareComponentID]
+
+						if ($null -ne $theseDriverDetailsForSoftwareComponentID) {
+							foreach ($thisDriverDetailsForSoftwareComponentID in $theseDriverDetailsForSoftwareComponentID) {
+								if (-not $driverDetailsForCompatibleInfs[$thisDriverDetailsForSoftwareComponentID.InfPath.ToLower()]) {
+									if ($testMode) {
+										Write-Host "`n      ADDED DRIVER FOR COMPATIBLE SOFTWARE COMPONENT ID '$thisCompatibleSoftwareComponentID':`n        $($thisDriverDetailsForSoftwareComponentID.InfPath.Replace("$driversModelPath\", ''))" -ForegroundColor Yellow
+									}
+
+									$driverDetailsForCompatibleInfs[$thisDriverDetailsForSoftwareComponentID.InfPath.ToLower()] = $thisDriverDetailsForSoftwareComponentID
+								}
+							}
+						} elseif ($testMode) {
+							Write-Host "`n      NO COMPATIBLE DRIVER FOUND FOR SOFTWARE COMPONENT ID '$thisCompatibleSoftwareComponentID'" -ForegroundColor Yellow
+						}
+					}
+				}
+
+				if ($testMode) {
+					#$driverDetailsForCompatibleInfs.Values | Format-Table -AutoSize -HideTableHeaders
+					Write-Host "`n    $($driverDetailsForCompatibleInfs.Count) COMPATIBLE $($driversSource.ToUpper()) DRIVERS (OF $($allAvailableDriverInfPathsForModel.Count) AVAILABLE DRIVERS)" -ForegroundColor Yellow
+				}
+			}
+
+			if ($driverDetailsForCompatibleInfs.Count -gt 0) {
+				Write-Host "`n  Successfully Located $($driverDetailsForCompatibleInfs.Count) $driversSource Drivers for This Computer Model" -ForegroundColor Green
+				Add-Content "$Env:SystemDrive\Install\Windows Install Log.txt" "Confirmed Compatibility for $($driverDetailsForCompatibleInfs.Count) $driversSource Drivers - $(Get-Date)" -ErrorAction SilentlyContinue
+
+				Write-Output "`n`n  Installing $($driverDetailsForCompatibleInfs.Count) $driversSource Drivers for This Computer Model`n  Onto $installDriveName`n  PLEASE WAIT, THIS MAY TAKE A FEW MINUTES..."
+
+				$skipInstallDrivers = $false
+
+				if ($testMode) {
+					Write-Host "`n  Choose Whether or Not to Install $driversSource Drivers in Test Mode" -ForegroundColor Cyan
+					FocusScriptWindow
+					$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+					$confirmInstallDrivers = Read-Host "  Type `"Y`" and Press ENTER to Install $driversSource Drivers or Type ANYTHING ELSE to Skip"
+
+					if ($confirmInstallDrivers.ToUpper() -ne 'Y') {
+						$skipInstallDrivers = $true
+					}
+				}
+
+				if ($testMode -and $skipInstallDrivers) {
+					Write-Host "`n  Chose to Skip Installing $driversSource Drivers in Test Mode" -ForegroundColor Yellow
+					Add-Content "$Env:SystemDrive\Install\Windows Install Log.txt" "Chose to Skip Installing $driversSource Drivers in Test Mode - $(Get-Date)" -ErrorAction SilentlyContinue
+				} else {
+					$thisDriverIndex = 0
+					$installedDriversCount = 0
+
+					foreach ($thisDriverDetails in ($driverDetailsForCompatibleInfs.Values | Sort-Object -Property { $_.DriverClass }, { $_.DriverName }, { $_.DriverVersion }, { $_.InfPath })) { # I'm not sure why, but this array is not getting sorted properly when just listing fields as strings, but does sort properly when I put each field in a script block.
+						$thisDriverIndex ++
+
+						$thisDriverInfPath = $thisDriverDetails.InfPath
+
+						if (($null -ne $thisDriverInfPath) -and (Test-Path $thisDriverInfPath)) {
+							$thisDriverInfBaseName = (Split-Path $thisDriverInfPath -Leaf).Split('.')[0]
+							$thisDriverFolder = (Split-Path $thisDriverInfPath -Parent)
+
+							Write-Host "`n    Installing $driversSource Driver $thisDriverIndex of $($driverDetailsForCompatibleInfs.Count): `"$thisDriverInfBaseName`" Version $($thisDriverDetails.DriverVersion) ($([math]::Round(((Get-ChildItem -Path $thisDriverFolder -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB), 2)) MB)`n      $($thisDriverDetails.DriverClass) - $($thisDriverDetails.DriverName)"
+
+							if (-not (Test-Path "W:\Windows\System32\DriverStore\FileRepository\$(Split-Path $thisDriverFolder -Leaf)")) { # This check is only useful for WinPE or Cached drivers where the driver folder name will match what would be used in the checked location, but doesn't hurt to check regardless to save any time possible.
+								try {
+									Add-WindowsDriver -Path 'W:\' -Driver $thisDriverInfPath -ErrorAction Stop | Out-Null
+
+									Write-Host '      INSTALLED' -ForegroundColor Green
+
+									$installedDriversCount ++
+								} catch {
+									Write-Host "      FAILED: $_" -ForegroundColor Red
+								}
+							} else {
+								Write-Host '      ALREADY INSTALLED' -ForegroundColor Yellow
+							}
+						} else {
+							Write-Host "`n    INF NOT FOUND for $driversSource Driver $thisDriverIndex of $($driverDetailsForCompatibleInfs.Count):`n      $($thisDriverInfPath.Replace("$driversCacheBasePath\", '').Replace('.txt', '').Replace("$driverPacksBasePath\", ''))`n      CONTINUING ANYWAY..." -ForegroundColor Yellow
+						}
+					}
+
+					if ($installedDriversCount -eq 0) {
+						$dismLogContents = Get-Content -Raw "$Env:WINDIR\Logs\DISM\dism.log" -ErrorAction SilentlyContinue
+						if (($null -eq $dismLogContents) -or ($dismLogContents -eq '')) {
+							$dismLogContents = ' N/A'
+						} else {
+							$dismLogContents = "`n$dismLogContents"
+						}
+
+						Write-Host "`n  DISM LOG:$dismLogContents" -ForegroundColor Red
+						Write-Host "`n  ERROR: Failed to install $driversSource Drivers from `"$($driversModelPath.Replace("$driversCacheBasePath\", '').Replace('.txt', '').Replace("$driverPacksBasePath\", ''))`"." -ForegroundColor Red
+						Add-Content "$Env:SystemDrive\Install\Windows Install Log.txt" "Failed to Install $driversSource Drivers - $(Get-Date)" -ErrorAction SilentlyContinue
+
+						$lastTaskSucceeded = $false
+					} else {
+						Write-Host "`n  Successfully Installed $installedDriversCount $driversSource Drivers Onto $installDriveName" -ForegroundColor Green
+						Add-Content "$Env:SystemDrive\Install\Windows Install Log.txt" "Installed $installedDriversCount $driversSource Drivers - $(Get-Date)" -ErrorAction SilentlyContinue
+
+						$didInstallDrivers = $true
+					}
+				}
+			} elseif ($allAvailableDriverInfPathsForModel.Count -gt 0) {
+				Write-Host "`n  No Compatible $driversSource Drivers to Install - WINDOWS UPDATE WILL INSTALL DRIVERS IN OS" -ForegroundColor Yellow
+				Add-Content "$Env:SystemDrive\Install\Windows Install Log.txt" "No Compatible $driversSource Drivers to Install - $(Get-Date)" -ErrorAction SilentlyContinue
 			}
 		}
 
@@ -2285,7 +2421,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 				}
 
 				# Copy entire \Install folder to Installed OS for QA Helper, etc.
-				Copy-Item 'X:\Install' 'W:\' -Recurse -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install" 'W:\' -Recurse -Force -ErrorAction Stop
 
 				# Copy all files and folders within "setup-resources" of SMB share into "\Install" except for "UnattendAudit.xml".
 				Get-ChildItem $setupResourcesPath -Exclude 'UnattendAudit.xml' -ErrorAction Stop | ForEach-Object {
@@ -2311,10 +2447,10 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 					Write-Host '    SET TEST MODE FOR INSTALLED OS SINCE INSTALLATION WAS IN TEST MODE' -ForegroundColor Yellow
 				}
 
-				if ($isSnapInstall -and (-not (Test-Path 'W:\Install\fgFLAG-SNAP'))) { # If technician chose "SNAP" install mode, create flag so that "Setup Windows" in installed OS will auto-install extra SNAP apps.
-					New-Item -ItemType 'File' -Path 'W:\Install\fgFLAG-SNAP' | Out-Null
+				if ($isExtraAppsInstall -and (-not (Test-Path 'W:\Install\fgFLAG-EXTRAAPPS'))) { # If technician chose "Extra Apps" install mode, create flag so that "Setup Windows" in installed OS will auto-install extra apps.
+					New-Item -ItemType 'File' -Path 'W:\Install\fgFLAG-EXTRAAPPS' | Out-Null
 
-					Write-Host '    SET SNAP MODE FOR INSTALLED OS TO AUTO-INSTALL EXTRA SNAP APPS' -ForegroundColor Yellow
+					Write-Host '    SET EXTRA APPS MODE FOR INSTALLED OS TO AUTO-INSTALL EXTRA APPS' -ForegroundColor Yellow
 				}
 
 				if ($isNoAppsInstall -and (-not (Test-Path 'W:\Install\fgFLAG-NOAPPS'))) { # If technician chose "NO Apps" install mode, create flag so that "Setup Windows" in installed OS will not install apps.

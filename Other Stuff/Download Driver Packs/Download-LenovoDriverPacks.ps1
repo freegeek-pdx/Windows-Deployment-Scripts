@@ -66,7 +66,7 @@ $driverPacksForSystemIDs = @{}
 
 foreach ($thisDriverPack in $lenovoDriverPackCatalogXMLv2.ModelList.Model) {
 	$systemIDs = $thisDriverPack.Types.Type
-	
+
 	if ($null -ne $systemIDs) {
 		$systemIDs = $systemIDs.Trim().ToLower()
 	} else {
@@ -85,9 +85,9 @@ foreach ($thisDriverPack in $lenovoDriverPackCatalogXMLv2.ModelList.Model) {
 
 	$modelName = $thisModelVersion.Trim()
 	$systemIDs += $modelName
-	
+
 	$systemIDs = ($systemIDs | Sort-Object -Unique)
-	
+
 	$sccmVersions = $thisDriverPack.SCCM
 	$exeDownloadURL = $null
 	$osVersionForExe = 0
@@ -111,7 +111,7 @@ foreach ($thisDriverPack in $lenovoDriverPackCatalogXMLv2.ModelList.Model) {
 	}
 
 	$exeFileName = Split-Path $exeDownloadURL -Leaf
-	
+
 	foreach ($thisSystemID in $systemIDs) {
 		$addDriver = $true
 
@@ -178,7 +178,7 @@ foreach ($thisDriverPack in $lenovoDriverPackCatalogXMLv1.Products.Product) {
 		$systemIDs = ($systemIDs | Sort-Object -Unique)
 
 		$lenovoSupportPage = ((((($thisDriverPack.DriverPack | Where-Object { ($_.id -eq 'sccm') -and $_.InnerText.Contains('/ds') }).InnerText -Replace 'http:', 'https:') -Replace '/us/', '/') -Replace '/old', '/') -Replace 'com/downloads', 'com/us/en/downloads')
-		
+
 		if (($null -ne $lenovoSupportPage) -and ($lenovoSupportPage -ne '')) {
 			$osVersionNumber = 0
 
@@ -198,7 +198,7 @@ foreach ($thisDriverPack in $lenovoDriverPackCatalogXMLv1.Products.Product) {
 				$osVersionNumber = $osVersionNumber -Replace 'H2', '09'
 				$osVersionNumber = [decimal]($osVersionNumber -Replace '[a-zA-Z]').Trim()
 			}
-			
+
 			foreach ($thisSystemID in $systemIDs) {
 				if ($driverPacksForSystemIDs[$thisSystemID]) {
 					if ($driverPacksForSystemIDs[$thisSystemID].OSVersionNumberForSupportPage) {
@@ -234,7 +234,7 @@ $supportPageDetailsForEXEs = @{}
 # "DriverPackCatalog-LenovoV1-EXEsFromSupportPages.xml" is created by running "Retrieve-LenovoEXEsFromSupportPages.ps1" on Windows.
 if (Test-Path "$PSScriptRoot/DriverPackCatalog-LenovoV1-EXEsFromSupportPages.xml") {
 	$exesFromSupportPagesForLenovoDriverPackCatalogXMLv1 = Import-Clixml -Path "$PSScriptRoot/DriverPackCatalog-LenovoV1-EXEsFromSupportPages.xml"
-	
+
 	foreach ($supportPageInfo in ($exesFromSupportPagesForLenovoDriverPackCatalogXMLv1.GetEnumerator() | Sort-Object -Property Key)) {
 		foreach ($thisSupportPageInfo in $supportPageInfo.Value) {
 			if ($null -ne $thisSupportPageInfo.DownloadURL) {
@@ -247,7 +247,7 @@ if (Test-Path "$PSScriptRoot/DriverPackCatalog-LenovoV1-EXEsFromSupportPages.xml
 	foreach ($thisDriverPack in ($driverPacksForSystemIDs.GetEnumerator() | Sort-Object -Property Key)) {
 		if ($thisDriverPack.Value.LenovoSupportPage) {
 			$exeAndModelInfoFromSupportPage = $exesFromSupportPagesForLenovoDriverPackCatalogXMLv1[$thisDriverPack.Value.LenovoSupportPage]
-			
+
 			$exeDownloadURL = $null
 
 			$osVersionForExe = 0
@@ -275,7 +275,7 @@ if (Test-Path "$PSScriptRoot/DriverPackCatalog-LenovoV1-EXEsFromSupportPages.xml
 					} elseif ($osVersionNumber -eq $osVersionForExe) {
 						$modelNameID = $thisDriverPack.Value.ModelName.Split(' ')[1]
 
-						if ($thisExeFromSupportPage.DownloadURL.ToLower().Contains("_$($modelNameID)_")) {
+						if ($thisExeFromSupportPage.DownloadURL.ToLower().Contains("_${modelNameID}_")) {
 							$exeDownloadURL = $thisExeFromSupportPage.DownloadURL
 						} elseif ($exeDownloadURL.Contains("_$modelNameID_")) {
 							# Write-Output "KEEPING '$exeDownloadURL' FOR $($thisDriverPack.Value.ModelName)"
@@ -292,13 +292,13 @@ if (Test-Path "$PSScriptRoot/DriverPackCatalog-LenovoV1-EXEsFromSupportPages.xml
 
 			if ($null -ne $exeDownloadURL) {
 				$addDriver = $true
-				
+
 				$exeFileName = Split-Path $exeDownloadURL -Leaf
 
 				if ($thisDriverPack.Key.Contains(' ')) {
 					# Do NOT allow driver packs to be used for any Model names if the driver pack contains "_mt" in the filename
 					# which means it is only intended for specific types and therefore we will only match it to that specific type.
-		
+
 					if ($exeFileName.ToLower().Contains('_mt')) {
 						# Write-Output "NOT ALLOWING TYPE SPECIFIC '$exeFileName' FOR '$($thisDriverPack.Key)'"
 						$addDriver = $false
@@ -319,7 +319,7 @@ if (Test-Path "$PSScriptRoot/DriverPackCatalog-LenovoV1-EXEsFromSupportPages.xml
 				if ($addDriver) {
 					if (($null -ne $thisDriverPack.Value.DownloadURL) -and ($null -ne $thisDriverPack.Value.OSVersionNumber)) {
 						# Special conditions for when we already have a DownloadURL and only want to replace it with a possible newer one.
-						
+
 						if ($osVersionForExe -le $thisDriverPack.Value.OSVersionNumber) {
 							# DO NOT replace existing DownloadURL if this EXE is for an OLDER or EQUAL version.
 							$addDriver = $false
@@ -381,11 +381,11 @@ $lenovoDriverPacksPath = 'F:\SMB\Drivers\Packs\Lenovo'
 
 foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sort-Object -Property Key)) {
 	$thisUniqueDriverPack = $theseRedundantDriverPacks.Value | Select-Object -First 1
-	
+
 	$exeCount ++
 	Write-Output '----------'
-	Write-Output "UNIQUE DRIVER PACK EXE $($exeCount) (USED BY $($theseRedundantDriverPacks.Value.Count) SYSTEM IDs):"
-	
+	Write-Output "UNIQUE DRIVER PACK EXE $exeCount (USED BY $($theseRedundantDriverPacks.Value.Count) SYSTEM IDs):"
+
 	if ($IsWindows -or ($null -eq $IsWindows)) {
 		$theseRedundantDriverPacks.Value.SystemID -Join ', '
 	} else {
@@ -394,13 +394,13 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 			$thisRedundantDriverPack | Format-Table -AutoSize -HideTableHeaders
 		}
 	}
-	
+
 	if ($IsWindows -or ($null -eq $IsWindows)) {
 		$thisUniqueDriverPack.DownloadURL
 	}
 
 	$hashSHA256 = $null
-		
+
 	if ($supportPageDetailsForEXEs[$thisUniqueDriverPack.DriverPackID.ToLower()] -and $supportPageDetailsForEXEs[$thisUniqueDriverPack.DriverPackID.ToLower()].HashType -eq 'SHA256') {
 		$hashSHA256 = $supportPageDetailsForEXEs[$thisUniqueDriverPack.DriverPackID.ToLower()].Hash
 	}
@@ -408,11 +408,11 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 	if (($IsWindows -or ($null -eq $IsWindows)) -and (Test-Path $lenovoDriverPacksPath)) {
 		$exeDownloadPath = "$lenovoDriverPacksPath\Unique Driver Pack EXEs"
 		$exeExpansionPath = "$lenovoDriverPacksPath\Unique Driver Packs"
-		
+
 		if (-not (Test-Path $exeDownloadPath)) {
 			New-Item -ItemType 'Directory' -Force -Path $exeDownloadPath | Out-Null
 		}
-		
+
 		if (-not (Test-Path $exeExpansionPath)) {
 			New-Item -ItemType 'Directory' -Force -Path $exeExpansionPath | Out-Null
 		}
@@ -443,11 +443,11 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 
 					if (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)") {
 						Write-Output 'EXPANDING...'
-						
+
 						if (Test-Path 'C:\DRIVERS') {
 							Remove-Item 'C:\DRIVERS' -Recurse -Force
 						}
-			
+
 						# COMMAND LINE ARGS: https://jrsoftware.org/ishelp/index.php?topic=setupcmdline
 						# Extract in default location (which should be within "C:\DRIVERS") instead of intended location using "/DIR=" because some
 						# driver packs prompt with a "You have changed the extraction locaion..." alert that stops the process until manually clicking OK.
@@ -461,19 +461,19 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 								while ($thisExpansionFoldersToMove.Count -eq 1) {
 									$thisExpansionFoldersToMove = $thisExpansionFoldersToMove | Get-ChildItem
 								}
-			
+
 								try {
 									Write-Output 'MOVING EXPANDED FOLDER...'
-			
+
 									New-Item -ItemType 'Directory' -Force -Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -ErrorAction Stop | Out-Null
 									Move-Item $thisExpansionFoldersToMove.FullName "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -ErrorAction Stop
-			
+
 									$expandedCount ++
 								} catch {
 									Write-Output ">>> ERROR MOVING EXPANDED FOLDER - DELETING FOLDERS ($_) <<<"
 									Remove-Item "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -Recurse -Force
 								}
-			
+
 								Remove-Item 'C:\DRIVERS' -Recurse -Force
 							} else {
 								Write-Output '>>> EXPANSION FOLDER NOT FOUND AT "\DRIVERS" <<<'
@@ -517,7 +517,7 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 if (($IsWindows -or ($null -eq $IsWindows)) -and (Test-Path $lenovoDriverPacksPath)) {
 	Write-Output '----------'
 	Write-Output 'CHECKING FOR STRAY DRIVER PACKS...'
-	
+
 	$allReferencedDriverPacks = @()
 
 	Get-ChildItem "$lenovoDriverPacksPath\*" -File -Include '*.txt' | ForEach-Object {

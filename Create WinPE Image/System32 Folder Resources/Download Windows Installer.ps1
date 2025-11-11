@@ -19,9 +19,11 @@
 # PowerShell must be installed in WinPE to run this script:
 # https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-adding-powershell-support-to-windows-pe
 
+#Requires -RunAsAdministrator
+
 $Host.UI.RawUI.WindowTitle = 'Download Windows Installer'
 
-if (((-not (Test-Path '\Windows\System32\startnet.cmd')) -and (-not (Test-Path '\Windows\System32\winpeshl.ini'))) -or (-not (Get-ItemProperty 'HKLM:\SYSTEM\Setup').FactoryPreInstallInProgress)) {
+if (((-not (Test-Path "$Env:SystemRoot\System32\startnet.cmd")) -and (-not (Test-Path "$Env:SystemRoot\System32\winpeshl.ini"))) -or (-not (Get-ItemProperty 'HKLM:\SYSTEM\Setup').FactoryPreInstallInProgress)) {
 	Write-Host "`n  ERROR: `"Download Windows Installer`" Can Only Run In Windows Preinstallation Environment`n`n  EXITING IN 5 SECONDS..." -ForegroundColor Red
 	Start-Sleep 5
 	exit 1

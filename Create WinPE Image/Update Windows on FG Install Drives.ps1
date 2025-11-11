@@ -20,6 +20,8 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
+#Requires -RunAsAdministrator
+
 $Host.UI.RawUI.WindowTitle = 'Update Windows on FG Install Drives'
 
 $promptCaption = "  Would you like to check for app installer updates?"
@@ -33,6 +35,58 @@ if ($promptResponse -eq 0) {
 }
 
 $Host.UI.RawUI.WindowTitle = 'Update Windows on FG Install Drives'
+
+if (-not (Test-Path "$Env:ProgramFiles\USB Device Tree Viewer\UsbTreeView.exe")) {
+	Write-Output "`n  Downloading USB Device Tree Viewer..."
+
+	if (Test-Path "$Env:TEMP\UsbTreeView_x64.zip") {
+		Remove-Item "$Env:TEMP\UsbTreeView_x64.zip" -Force -ErrorAction Stop
+	}
+
+	Invoke-WebRequest -Uri 'https://www.uwe-sieber.de/files/UsbTreeView_x64.zip' -OutFile "$Env:TEMP\UsbTreeView_x64.zip" -ErrorAction Stop
+
+	if (Test-Path "$Env:TEMP\UsbTreeView_x64.zip") {
+		Write-Output '  Installing USB Device Tree Viewer...'
+
+		if (Test-Path "$Env:ProgramFiles\USB Device Tree Viewer") {
+			Remove-Item "$Env:ProgramFiles\USB Device Tree Viewer" -Recurse -Force -ErrorAction Stop
+		}
+
+		New-Item -ItemType 'Directory' -Path "$Env:ProgramFiles\USB Device Tree Viewer" -ErrorAction Stop | Out-Null
+
+		Expand-Archive "$Env:TEMP\UsbTreeView_x64.zip" "$Env:ProgramFiles\USB Device Tree Viewer\" -Force -ErrorAction Stop
+
+		Remove-Item "$Env:TEMP\UsbTreeView_x64.zip" -Force -ErrorAction Stop
+
+		if (Test-Path "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\USB Device Tree Viewer.lnk") {
+			Remove-Item "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\USB Device Tree Viewer.lnk" -Force -ErrorAction Stop
+		}
+
+		$usbTreeViewShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut("$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\USB Device Tree Viewer.lnk")
+		$usbTreeViewShortcut.TargetPath = "$Env:ProgramFiles\USB Device Tree Viewer\UsbTreeView.exe"
+		$usbTreeViewShortcut.WorkingDirectory = "$Env:ProgramFiles\USB Device Tree Viewer"
+		$usbTreeViewShortcut.Save()
+	}
+}
+
+if (Test-Path "$Env:ProgramFiles\USB Device Tree Viewer\UsbTreeView.exe") {
+	Write-Output "`n  Launching USB Device Tree Viewer..."
+
+	Start-Process "$Env:ProgramFiles\USB Device Tree Viewer\UsbTreeView.exe" -NoNewWindow -ErrorAction Stop
+}
+
+
+$promptCaption = '  Would you like to do?'
+$promptChoices = 'Update &Windows Installation Images and Resources', 'Update &Resources Only', 'E&xit'
+
+$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+$promptResponse = $Host.UI.PromptForChoice($promptCaption, "`n", $promptChoices, 0)
+
+if ($promptResponse -eq 2) {
+	exit 0
+}
+
+$updateResourcesOnly = ($promptResponse -eq 1)
 
 Write-Output "`n`n  Locating FG Install Drives..."
 
@@ -56,9 +110,9 @@ foreach ($thisDisk in $allDisks) {
 	$thisFGBootDriveLetter = $thisFGBootVolume.DriveLetter
 
 	if (($null -ne $thisFGBootVolume) -and ($null -ne $thisFGBootDriveLetter)) {
-		Write-Output "`n  Unmounting `"FG BOOT`" Partition At `"$($thisFGBootDriveLetter):`"..."
+		Write-Output "`n  Unmounting `"FG BOOT`" Partition At `"${thisFGBootDriveLetter}:`"..."
 
-		Remove-PartitionAccessPath -DriveLetter $thisFGBootDriveLetter -AccessPath "$($thisFGBootDriveLetter):"
+		Remove-PartitionAccessPath -DriveLetter $thisFGBootDriveLetter -AccessPath "${thisFGBootDriveLetter}:"
 	}
 }
 
@@ -93,14 +147,15 @@ foreach ($thisDisk in $allDisks) {
 	}
 
 	if (($null -ne $thisFGInstallDriveLetter) -and ($null -ne $thisFGWindowsDriveLetter)) {
-		$thisFGInstallDriveLetter = "$($thisFGInstallDriveLetter):"
-		$thisFGWindowsDriveLetter = "$($thisFGWindowsDriveLetter):"
+		$thisFGInstallDriveLetter = "${thisFGInstallDriveLetter}:"
+		$thisFGWindowsDriveLetter = "${thisFGWindowsDriveLetter}:"
 
-		Write-Output "`n`n  FG Install Drive $($thisDiskIndex): FG Install `"$thisFGInstallDriveLetter`" | FG WINDOWS `"$thisFGWindowsDriveLetter`""
+		Write-Output "`n`n  FG Install Drive ${thisDiskIndex}: FG Install `"$thisFGInstallDriveLetter`" | FG WINDOWS `"$thisFGWindowsDriveLetter`""
 
 		Write-Output "`n  Starting Copying Files in New Minimized Window..."
 
-		Start-Process 'powershell' -WindowStyle Minimized -ArgumentList '-NoLogo', '-NoProfile', '-NoExit', '-WindowStyle Minimized', '-ExecutionPolicy Unrestricted', "-File `"$PSScriptRoot\Copy Windows to FG Install Drive.ps1`"", $thisFGInstallDriveLetter, $thisFGWindowsDriveLetter -ErrorAction Stop
+		Start-Process 'powershell' -WindowStyle Minimized -ArgumentList '-NoLogo', '-NoProfile', '-NoExit', '-WindowStyle Minimized', '-ExecutionPolicy Unrestricted', "-File `"$PSScriptRoot\Copy Windows to FG Install Drive.ps1`"", $thisFGInstallDriveLetter, $thisFGWindowsDriveLetter, $updateResourcesOnly -ErrorAction Stop
+		# NOTE: I set the PowerShell window (right-click title bar) > Defaults > Layout > Window Size to 100 x 30 (to be able to fit more windows on screen).
 
 		Start-Sleep 1 # Sleep a second before starting the next background process.
 

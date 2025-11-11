@@ -18,7 +18,8 @@
 # Created a simplified script instead of using Driver Automation Tool directly to be able to download the latest Driver Pack for each model regardless of OS version and without having to choose the specific OS version
 # as well as being able to more efficiently only download unique Driver Packs and then reference the correct unique Driver Pack for each model (since multiple models use the same Driver Pack).
 
-# https://ftp.hp.com/pub/caps-softpaq/cmit/HP_Driverpack_Matrix_x64.html
+# https://hpia.hpcloud.hp.com/downloads/driverpackcatalog/HP_Driverpack_Matrix_x64.html
+# OLD PAGE (no longer updated): https://ftp.hp.com/pub/caps-softpaq/cmit/HP_Driverpack_Matrix_x64.html
 
 $ProgressPreference = 'SilentlyContinue' # Not showing progress makes "Invoke-WebRequest" downloads MUCH faster: https://stackoverflow.com/a/43477248
 
@@ -30,15 +31,16 @@ if ($IsWindows -or ($null -eq $IsWindows)) {
 	[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12, [Net.SecurityProtocolType]::Ssl3
 }
 
-Invoke-WebRequest -Uri 'http://ftp.hp.com/pub/caps-softpaq/cmit/HPClientDriverPackCatalog.cab' -OutFile "$PSScriptRoot\DriverPackCatalog-HP.cab"
+Invoke-WebRequest -Uri 'https://hpia.hpcloud.hp.com/downloads/driverpackcatalog/HPClientDriverPackCatalog.cab' -OutFile "$PSScriptRoot\DriverPackCatalog-HP.cab"
+# OLD CAB (no longer updated): http://ftp.hp.com/pub/caps-softpaq/cmit/HPClientDriverPackCatalog.cab
 
 if (($IsWindows -or ($null -eq $IsWindows)) -and (Test-Path "$PSScriptRoot\DriverPackCatalog-HP.cab")) {
 	$expandExitCode = (Start-Process 'expand' -NoNewWindow -Wait -PassThru -RedirectStandardOutput 'NUL' -ArgumentList "`"$PSScriptRoot\DriverPackCatalog-HP.cab`"", "`"$PSScriptRoot\DriverPackCatalog-HP-NEW.xml`"").ExitCode
-		
+
 	if ($expandExitCode -ne 0) {
 		Write-Output ">>> EXPANSION FAILED (EXIT CODE $expandExitCode) <<<"
 	}
-	
+
 	if ((Test-Path "$PSScriptRoot\DriverPackCatalog-HP-NEW.xml") -and (Test-Path "$PSScriptRoot\DriverPackCatalog-HP.xml")) {
 		Remove-Item "$PSScriptRoot\DriverPackCatalog-HP.xml" -Force
 	}
@@ -53,7 +55,7 @@ Get-Date
 $hpSoftPaqURLsByIDs = @{}
 $allSoftPaqsSize = 0
 
-# Compiling all SoftPaqs as a Dictonary with IDs as Keys is MUCH faster than using "$hpDriverPackCatalogXML.NewDataSet.HPClientDriverPackCatalog.SoftPaqList.SoftPaq | Where-Object Id -eq $thisDriverPack.SoftPaqId" below.
+# Compiling all SoftPaqs as a Dictionary with IDs as Keys is MUCH faster than using "$hpDriverPackCatalogXML.NewDataSet.HPClientDriverPackCatalog.SoftPaqList.SoftPaq | Where-Object Id -eq $thisDriverPack.SoftPaqId" below.
 foreach ($thisSoftPaq in $hpDriverPackCatalogXML.NewDataSet.HPClientDriverPackCatalog.SoftPaqList.SoftPaq) {
 	$hpSoftPaqURLsByIDs[$thisSoftPaq.Id] = [ordered]@{
 		DownloadURL = $thisSoftPaq.Url
@@ -92,7 +94,7 @@ foreach ($thisDriverPack in $hpDriverPackCatalogXML.NewDataSet.HPClientDriverPac
 		}
 
 		$systemIDs = $thisDriverPack.SystemId.Split(',').Trim().ToLower()
-		
+
 		if ($systemIDs -is [string]) {
 			$systemIDs = @($systemIDs)
 		}
@@ -118,7 +120,7 @@ foreach ($thisDriverPack in $hpDriverPackCatalogXML.NewDataSet.HPClientDriverPac
 		#>
 
 		$modelNameConvertedForWMI = $modelName.Replace('convertible minitower', 'cmt').Replace('microtower', 'mt').Replace('desktop mini', 'dm').Replace('small form factor', 'sff').Replace('all-in-one', 'aio').Replace('ultra-slim', 'usdt').Replace('tower', 'twr').Replace(' base model', '').Replace(' (energy star)', '').Replace(' (with pci slot)', '')
-		
+
 		if ($modelNameConvertedForWMI.EndsWith(' pc')) {
 			$modelNameConvertedForWMI = $modelNameConvertedForWMI.Substring(0, ($modelNameConvertedForWMI.length - 3))
 		}
@@ -157,10 +159,10 @@ foreach ($thisDriverPack in $hpDriverPackCatalogXML.NewDataSet.HPClientDriverPac
 		if ($null -ne $thisSoftPaq) {
 			$exeDownloadURL = $thisSoftPaq.DownloadURL
 			$exeFileName = Split-Path $exeDownloadURL -Leaf
-			
+
 			foreach ($thisSystemID in $systemIDs) {
 				$addDriver = $true
-				
+
 				if (($null -ne $driverPacksForSystemIDs[$thisSystemID]) -and ($driverPacksForSystemIDs[$thisSystemID].OSVersionNumber -gt $osVersionNumber)) {
 					# Write-Output "Skipping OLDER DRIVERS - $thisSystemID - $($driverPacksForSystemIDs[$thisSystemID].OSVersionNumber) > $osVersionNumber"
 					$addDriver = $false
@@ -208,7 +210,7 @@ $redundantDriverPacksSize = 0
 
 foreach ($thisDriverPack in ($driverPacksForSystemIDs.GetEnumerator() | Sort-Object -Property Key)) {
 	$redundantDriverPacksSize += $thisDriverPack.Value.Size
-	
+
 	if (-not $uniqueDriverPacks[$thisDriverPack.Value.DriverPackID]) {
 		$allUnqiueDriverPacksSize += $thisDriverPack.Value.Size
 		$uniqueDriverPacks[$thisDriverPack.Value.DriverPackID] = @($thisDriverPack.Value)
@@ -235,11 +237,11 @@ $hpDriverPacksPath = 'F:\SMB\Drivers\Packs\HP'
 
 foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sort-Object -Property Key)) {
 	$thisUniqueDriverPack = $theseRedundantDriverPacks.Value | Select-Object -First 1
-	
+
 	$exeCount ++
 	Write-Output '----------'
-	Write-Output "UNIQUE DRIVER PACK EXE $($exeCount) (USED BY $($theseRedundantDriverPacks.Value.Count) SYSTEM IDs):"
-	
+	Write-Output "UNIQUE DRIVER PACK EXE $exeCount (USED BY $($theseRedundantDriverPacks.Value.Count) SYSTEM IDs):"
+
 	if ($IsWindows -or ($null -eq $IsWindows)) {
 		$theseRedundantDriverPacks.Value.SystemID -Join ', '
 	} else {
@@ -256,11 +258,11 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 	if (($IsWindows -or ($null -eq $IsWindows)) -and (Test-Path $hpDriverPacksPath)) {
 		$exeDownloadPath = "$hpDriverPacksPath\Unique Driver Pack EXEs"
 		$exeExpansionPath = "$hpDriverPacksPath\Unique Driver Packs"
-		
+
 		if (-not (Test-Path $exeDownloadPath)) {
 			New-Item -ItemType 'Directory' -Force -Path $exeDownloadPath | Out-Null
 		}
-		
+
 		if (-not (Test-Path $exeExpansionPath)) {
 			New-Item -ItemType 'Directory' -Force -Path $exeExpansionPath | Out-Null
 		}
@@ -299,7 +301,7 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 
 					if (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)") {
 						Write-Output 'EXPANDING...'
-						
+
 						# The EXE expansion will make all necessary directories.
 						$expandExitCode = (Start-Process "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -NoNewWindow -Wait -PassThru -ArgumentList '/s', '/e', "/f `"$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)`"").ExitCode
 
@@ -332,7 +334,7 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 					Set-Content "$hpDriverPacksPath\$($thisRedundantDriverPack.SystemID).txt" "Unique Driver Packs\$($thisRedundantDriverPack.DriverPackID)"
 				}
 			}
-			
+
 			Get-ChildItem "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)\*" -File -Include '*.cva' | ForEach-Object {
 				$systemIDsFromDriverPack = ($_ | Get-Content | Select-String 'SysID')
 				if ($systemIDsFromDriverPack.Count -gt 0) {
@@ -347,7 +349,7 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 if (($IsWindows -or ($null -eq $IsWindows)) -and (Test-Path $hpDriverPacksPath)) {
 	Write-Output '----------'
 	Write-Output 'CHECKING FOR STRAY DRIVER PACKS...'
-	
+
 	$allReferencedDriverPacks = @()
 
 	Get-ChildItem "$hpDriverPacksPath\*" -File -Include '*.txt' | ForEach-Object {

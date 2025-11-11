@@ -50,7 +50,7 @@ foreach ($thisDriverPack in $lenovoDriverPackCatalogXMLv1.Products.Product) {
 		$systemIDs = ($systemIDs | Sort-Object -Unique)
 
 		$lenovoSupportPage = ((((($thisDriverPack.DriverPack | Where-Object { ($_.id -eq 'sccm') -and $_.InnerText.Contains('/ds') }).InnerText -Replace 'http:', 'https:') -Replace '/us/', '/') -Replace '/old', '/') -Replace 'com/downloads', 'com/us/en/downloads')
-		
+
 		if (($null -ne $lenovoSupportPage) -and ($lenovoSupportPage -ne '')) {
 			$osVersionNumber = 0
 
@@ -70,7 +70,7 @@ foreach ($thisDriverPack in $lenovoDriverPackCatalogXMLv1.Products.Product) {
 				$osVersionNumber = $osVersionNumber -Replace 'H2', '09'
 				$osVersionNumber = [decimal]($osVersionNumber -Replace '[a-zA-Z]').Trim()
 			}
-			
+
 			foreach ($thisSystemID in $systemIDs) {
 				if ($supportPagesForSystemIDs[$thisSystemID]) {
 					if ($osVersionNumber -gt $supportPagesForSystemIDs[$thisSystemID].OSVersionNumber) {

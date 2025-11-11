@@ -18,7 +18,7 @@
 #
 
 # NOTE: This is a BASH script instead of a POWERSHELL script because a slight variation of it runs daily on a Linux server to keep the app installers up-to-date to download from an SMB share.
-# Instead of needing to create another POWERSHELL version that could be run on Windows, I just run this BASH version from macOS and the app installers sync over OneDrive to access from Windows.
+# Instead of needing to create another POWERSHELL version that could be run on Windows, I just run this BASH version from macOS and the app installers cloud sync to access from Windows.
 # In the future it may be possible to install POWERSHELL on the Linux server so this could be re-written to only have a single POWERSHELL version, but that hasn't been investigated yet.
 # AS OF 10/12/23 I HAVE WRITTEN A POWERSHELL VERSION OF THIS SCRIPT WHICH IS "Download Latest Windows App Installers.ps1" IN THIS SAME FOLDER.
 
@@ -70,15 +70,15 @@ download_app_installer() {
 }
 
 
-echo -e '\n\nDownloading Installers for All Systems...'
+echo -e '\n\nDownloading Standard App Installers...'
 
 cd "${BASH_SOURCE[0]%/*}" || exit 1
 
-if [[ ! -d 'All' ]]; then
-	mkdir 'All'
+if [[ ! -d 'Standard' ]]; then
+	mkdir 'Standard'
 fi
 
-cd 'All' || exit
+cd 'Standard' || exit
 
 echo '----------'
 
@@ -104,15 +104,15 @@ latest_7zip_download_url="https://www.7-zip.org/$(curl -m 5 -sfL 'https://www.7-
 download_app_installer '7-Zip' 'msi' "${latest_7zip_version}" "${latest_7zip_download_url}"
 
 
-echo -e '\n\nDownloading Installers for SNAP Systems...'
+echo -e '\n\nDownloading Extra App Installers...'
 
 cd '../'
 
-if [[ ! -d 'SNAP' ]]; then
-	mkdir 'SNAP'
+if [[ ! -d 'Extra' ]]; then
+	mkdir 'Extra'
 fi
 
-cd 'SNAP' || exit
+cd 'Extra' || exit
 
 echo '----------'
 

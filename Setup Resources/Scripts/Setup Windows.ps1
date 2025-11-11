@@ -29,7 +29,9 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2025.10.2-1
+# Version: 2025.11.10-1
+
+#Requires -RunAsAdministrator
 
 param(
 	[Parameter(Position = 0)]
@@ -45,10 +47,10 @@ if ((-not (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\Stat
 }
 
 
-$testMode = ((Test-Path '\Install\fgFLAG-TEST') -or (Test-Path '\Install\TESTING')) # Still check for old flag names (which are easier to create manually).
-$snapMode = ((Test-Path '\Install\fgFLAG-SNAP') -or (Test-Path '\Install\SNAP')) # If SNAP flag file/folder exists, auto-install extra apps for SNAP systems.
-$noAppsMode = ((Test-Path '\Install\fgFLAG-NOAPPS') -or (Test-Path '\Install\NOAPPS')) # If NOAPPS flag file/folder exists, do not install any apps.
-$ipdtMode = ((Test-Path '\Install\fgFLAG-IPDT') -or (Test-Path '\Install\IPDT')) # If IPDT flag file/folder exists, auto-launch "Intel Processor Diagnostic Tool" instead of auto-lauching "QA Helper" (which will still be installed). This is a special mode for Hardware Testing.
+$testMode = ((Test-Path "$Env:SystemDrive\Install\fgFLAG-TEST") -or (Test-Path "$Env:SystemDrive\Install\TESTING")) # Still check for old flag names (which are easier to create manually).
+$extraAppsMode = ((Test-Path "$Env:SystemDrive\Install\fgFLAG-EXTRAAPPS") -or (Test-Path "$Env:SystemDrive\Install\EXTRAAPPS")) # If EXTRAAPPS flag file/folder exists, auto-install extra apps.
+$noAppsMode = ((Test-Path "$Env:SystemDrive\Install\fgFLAG-NOAPPS") -or (Test-Path "$Env:SystemDrive\Install\NOAPPS")) # If NOAPPS flag file/folder exists, do not install any apps.
+$ipdtMode = ((Test-Path "$Env:SystemDrive\Install\fgFLAG-IPDT") -or (Test-Path "$Env:SystemDrive\Install\IPDT")) # If IPDT flag file/folder exists, auto-launch "Intel Processor Diagnostic Tool" instead of auto-lauching "QA Helper" (which will still be installed). This is a special mode for Hardware Testing.
 
 $desktopPath = [Environment]::GetFolderPath('Desktop')
 
@@ -182,7 +184,7 @@ if ($LastWindowsUpdatesCount -eq '') {
 
 				Write-Host "`n  Successfully Disabled Network Location Wizard`n" -ForegroundColor Green
 
-				Add-Content '\Install\Windows Setup Log.txt' "Disabled Network Location Wizard - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Disabled Network Location Wizard - $(Get-Date)" -ErrorAction SilentlyContinue
 			}
 		} catch {
 			Write-Host "`n  ERROR DISABLING NETWORK LOCATION WIZARD: $_`n" -ForegroundColor Red
@@ -213,7 +215,7 @@ if ($LastWindowsUpdatesCount -eq '') {
 
 				Write-Host "`n  Successfully Set Host Console to Not Always Launch Terminal`n" -ForegroundColor Green
 
-				Add-Content '\Install\Windows Setup Log.txt' "Set Host Console to Not Always Launch Terminal - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Set Host Console to Not Always Launch Terminal - $(Get-Date)" -ErrorAction SilentlyContinue
 			}
 		} catch {
 			Write-Host "`n  ERROR SETTING HOST CONSOLE TO NOT ALWAYS LAUNCH TERMINAL: $_`n" -ForegroundColor Red
@@ -237,7 +239,7 @@ if ($LastWindowsUpdatesCount -eq '') {
 
 			Write-Host "`n  Successfully Disabled Edge First Run Screen`n" -ForegroundColor Green
 
-			Add-Content '\Install\Windows Setup Log.txt' "Disabled Edge First Run Screen - $(Get-Date)" -ErrorAction SilentlyContinue
+			Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Disabled Edge First Run Screen - $(Get-Date)" -ErrorAction SilentlyContinue
 		}
 	} catch {
 		Write-Host "`n  ERROR DISABLING EDGE FIRST RUN SCREEN: $_`n" -ForegroundColor Red
@@ -262,7 +264,7 @@ if ($LastWindowsUpdatesCount -eq '') {
 
 			Write-Host "`n  Successfully Disabled OneDrive Notifications`n" -ForegroundColor Green
 
-			Add-Content '\Install\Windows Setup Log.txt' "Disabled OneDrive Notifications - $(Get-Date)" -ErrorAction SilentlyContinue
+			Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Disabled OneDrive Notifications - $(Get-Date)" -ErrorAction SilentlyContinue
 		}
 	} catch {
 		Write-Host "`n  ERROR DISABLING ONEDRIVE NOTIFICATIONS: $_`n" -ForegroundColor Red
@@ -287,7 +289,7 @@ if ($LastWindowsUpdatesCount -eq '') {
 
 			Write-Host "`n  Successfully Allowed Camera Access for All Apps`n" -ForegroundColor Green
 
-			Add-Content '\Install\Windows Setup Log.txt' "Allowed Camera Access for All Apps - $(Get-Date)" -ErrorAction SilentlyContinue
+			Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Allowed Camera Access for All Apps - $(Get-Date)" -ErrorAction SilentlyContinue
 		}
 
 		if ((Get-ItemProperty $appPrivacyRegistryPath).LetAppsAccessMicrophone -ne 1) {
@@ -297,7 +299,7 @@ if ($LastWindowsUpdatesCount -eq '') {
 
 			Write-Host "`n  Successfully Allowed Microphone Access for All Apps`n" -ForegroundColor Green
 
-			Add-Content '\Install\Windows Setup Log.txt' "Allowed Microphone Access for All Apps - $(Get-Date)" -ErrorAction SilentlyContinue
+			Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Allowed Microphone Access for All Apps - $(Get-Date)" -ErrorAction SilentlyContinue
 		}
 	} catch {
 		Write-Host "`n  ERROR ALLOWING CAMERA OR MICROPHONE ACCESS FOR ALL APPS: $_`n" -ForegroundColor Red
@@ -350,7 +352,7 @@ if ($LastWindowsUpdatesCount -eq '') {
 						if (($powercfgHibernateOffExitCode -eq 0) -and ($null -eq $powercfgHibernateOffError)) {
 							Write-Host "`n  Successfully Set High Performance Power Plan and Disabled Screen Sleep and Hibernation" -ForegroundColor Green
 
-							Add-Content '\Install\Windows Setup Log.txt' "Set High Performance Power Plan and Disabled Screen Sleep and Hibernation - $(Get-Date)" -ErrorAction SilentlyContinue
+							Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Set High Performance Power Plan and Disabled Screen Sleep and Hibernation - $(Get-Date)" -ErrorAction SilentlyContinue
 
 							$didSetPowerPlan = $true
 						} else {
@@ -400,14 +402,14 @@ if ($LastWindowsUpdatesCount -eq '') {
 	}
 
 
-	if (Test-Path '\Install\Scripts\Wi-Fi Profiles\') {
+	if (Test-Path "$Env:SystemDrive\Install\Scripts\Wi-Fi Profiles\") {
 		# Wi-Fi Profiles must be exported with: netsh wlan export profile name="Name" key=clear folder="C:\Path\"
 		# The "key=clear" argument is very important because it seems that while the profile with an encrypted password (key) can be successfully imported on another computer,
 		# the encrypted password will not actually work and the computer will not connect to the Wi-Fi network.
 		# Since Wi-Fi Profiles only need to be added once, and we don't want to leave plain text passwords around,
 		# the "Wi-Fi Profiles" directory will be deleted after any profile has successfully been added or Windows Update has run at least once (so Wi-Fi drivers has a chance to get installed).
 
-		$wiFiProfileFiles = Get-ChildItem '\Install\Scripts\Wi-Fi Profiles\*' -Include '*.xml' -ErrorAction SilentlyContinue
+		$wiFiProfileFiles = Get-ChildItem "$Env:SystemDrive\Install\Scripts\Wi-Fi Profiles\*" -Include '*.xml' -ErrorAction SilentlyContinue
 
 		$didAddAnyProfile = $false
 
@@ -439,7 +441,7 @@ if ($LastWindowsUpdatesCount -eq '') {
 
 						$didAddAnyProfile = $true
 
-						Add-Content '\Install\Windows Setup Log.txt' "Added Wi-Fi Network Profile: $thisWiFiProfileName - $(Get-Date)" -ErrorAction SilentlyContinue
+						Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Added Wi-Fi Network Profile: $thisWiFiProfileName - $(Get-Date)" -ErrorAction SilentlyContinue
 					} else {
 						Write-Host ' FAILED' -NoNewline -ForegroundColor Red
 						Write-Host ' (CONTINUING ANYWAY)' -ForegroundColor Yellow
@@ -454,14 +456,14 @@ if ($LastWindowsUpdatesCount -eq '') {
 
 						Write-Host "      ERROR ADDING PROFILE (Code $netshWlanAddProfileExitCode): $netshWlanAddProfileError" -ForegroundColor Red
 
-						Add-Content '\Install\Windows Setup Log.txt' "Error Code $netshWlanAddProfileExitCode Adding Wi-Fi Network Profile: $thisWiFiProfileName - $(Get-Date)" -ErrorAction SilentlyContinue
+						Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Error Code $netshWlanAddProfileExitCode Adding Wi-Fi Network Profile: $thisWiFiProfileName - $(Get-Date)" -ErrorAction SilentlyContinue
 					}
 				} catch {
 					Write-Host ' FAILED' -NoNewline -ForegroundColor Red
 					Write-Host ' (CONTINUING ANYWAY)' -ForegroundColor Yellow
 					Write-Host "      ERROR STARTING NETSH: $_" -ForegroundColor Red
 
-					Add-Content '\Install\Windows Setup Log.txt' "netsh Error for Wi-Fi Network Profile: $thisWiFiProfileName - $(Get-Date)" -ErrorAction SilentlyContinue
+					Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "netsh Error for Wi-Fi Network Profile: $thisWiFiProfileName - $(Get-Date)" -ErrorAction SilentlyContinue
 				}
 			}
 
@@ -470,8 +472,8 @@ if ($LastWindowsUpdatesCount -eq '') {
 			Remove-Item "$Env:TEMP\fgSetup-*.txt" -Force -ErrorAction SilentlyContinue
 		}
 
-		if ($didAddAnyProfile -or (Test-Path '\Install\Windows Update Log.txt')) {
-			Remove-Item '\Install\Scripts\Wi-Fi Profiles' -Recurse -Force -ErrorAction SilentlyContinue
+		if ($didAddAnyProfile -or (Test-Path "$Env:SystemDrive\Install\Windows Update Log.txt")) {
+			Remove-Item "$Env:SystemDrive\Install\Scripts\Wi-Fi Profiles" -Recurse -Force -ErrorAction SilentlyContinue
 		}
 	}
 
@@ -524,7 +526,7 @@ if ($LastWindowsUpdatesCount -eq '') {
 
 				Write-Host "`n  Successfully Set Network Profiles" -ForegroundColor Green
 
-				Add-Content '\Install\Windows Setup Log.txt' "Set Network Profiles - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Set Network Profiles - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR SETTING NETWORK PROFILES: $_" -ForegroundColor Red
 			}
@@ -589,7 +591,7 @@ if (-not (Get-LocalUser 'Administrator' -ErrorAction SilentlyContinue).Enabled) 
 
 			Write-Host "`n  Successfully Enabled Administrator Account" -ForegroundColor Green
 
-			Add-Content '\Install\Windows Setup Log.txt' "Enabled Administrator Account - $(Get-Date)" -ErrorAction SilentlyContinue
+			Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Enabled Administrator Account - $(Get-Date)" -ErrorAction SilentlyContinue
 		} catch {
 			Write-Host "`n  ERROR ENABLING ADMINISTRATOR ACCOUNT: $_" -ForegroundColor Red
 			Write-Host "`n  ERROR: Failed to enable Administrator account." -ForegroundColor Red
@@ -642,7 +644,7 @@ function Install-QAHelper {
 					$actuallyInstallScriptBlock = [ScriptBlock]::Create($actuallyInstallScriptContent)
 					Invoke-Command $actuallyInstallScriptBlock -ArgumentList $qaHelperInstallMode -ErrorAction Stop
 
-					Add-Content '\Install\Windows Setup Log.txt' "Loaded QA Helper Installer - $(Get-Date)" -ErrorAction SilentlyContinue
+					Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Loaded QA Helper Installer - $(Get-Date)" -ErrorAction SilentlyContinue
 
 					break
 				} else {
@@ -661,7 +663,7 @@ function Install-QAHelper {
 			}
 		}
 
-		if ((-not (Test-Path '\Install\QA Helper\java-jre\bin\javaw.exe')) -or (-not (Test-Path '\Install\QA Helper\QA_Helper.jar')) -or (-not (Test-Path "$desktopPath\QA Helper.lnk"))) {
+		if ((-not (Test-Path "$Env:SystemDrive\Install\QA Helper\java-jre\bin\javaw.exe")) -or (-not (Test-Path "$Env:SystemDrive\Install\QA Helper\QA_Helper.jar")) -or (-not (Test-Path "$desktopPath\QA Helper.lnk"))) {
 			Write-Host "`n`n  >>> QA HELPER MUST BE INSTALLED TO CONTINUE SETTING UP THIS COMPUTER <<<" -ForegroundColor Yellow
 			Write-Host "`n  !!! THIS COMPUTER CANNOT BE SOLD UNTIL SETUP IS COMPLETED SUCCESSFULLY !!!" -ForegroundColor Red
 			Write-Host "`n`n  If this issue continues, please inform Free Geek I.T.`n" -ForegroundColor Red
@@ -781,7 +783,7 @@ function AdjustScreenScaling {
 
 			Write-Host "`n  Successfully Adjusted Screen Scaling" -ForegroundColor Green
 
-			Add-Content '\Install\Windows Setup Log.txt' "Adjusted Screen Scaling - $(Get-Date)" -ErrorAction SilentlyContinue
+			Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Adjusted Screen Scaling - $(Get-Date)" -ErrorAction SilentlyContinue
 
 			return $true
 		}
@@ -797,7 +799,7 @@ function Install-WindowsUpdates {
 	$maximumWindowsUpdateCycleCount = 5
 	# Windows Update cycles are tracked (including between reboots) to be able to stop after the specified maximumWindowsUpdateCycleCount (in case some failed driver keep tring to re-install over and over, which happens sometimes).
 
-	if ((Get-Content '\Install\Windows Update Log.txt' -ErrorAction SilentlyContinue | Measure-Object -Line).Lines -ge $maximumWindowsUpdateCycleCount) {
+	if ((Get-Content "$Env:SystemDrive\Install\Windows Update Log.txt" -ErrorAction SilentlyContinue | Measure-Object -Line).Lines -ge $maximumWindowsUpdateCycleCount) {
 		# If maximumWindowsUpdateCycleCount has been reached, stop update cycle and uninstall PSWindowsUpdate no matter what.
 		# Pass "MaxUpdateCycles" as parameter so a relevant result message can be displayed.
 		Start-Process 'powershell' -WindowStyle Maximized -ArgumentList '-NoLogo', '-NoProfile', '-WindowStyle Maximized', '-ExecutionPolicy Unrestricted', "-File `"$PSCommandPath`" MaxUpdateCycles" -ErrorAction SilentlyContinue
@@ -807,8 +809,8 @@ function Install-WindowsUpdates {
 		Write-Output "`n`n  Checking Windows Update for OS Updates and Drivers..."
 
 		try {
-			if (Test-Path '\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1') {
-				Import-Module '\Install\Scripts\PSWindowsUpdate' -Force -ErrorAction Stop
+			if (Test-Path "$Env:SystemDrive\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1") {
+				Import-Module "$Env:SystemDrive\Install\Scripts\PSWindowsUpdate" -Force -ErrorAction Stop
 			}
 
 			$rebootRequiredAfterWindowsUpdates = $false
@@ -842,7 +844,7 @@ function Install-WindowsUpdates {
 					# For whatever reason, using the "Install-WindowsUpdate" alias does not work when imported from "\Install\Scripts\PSWindowsUpdate" rather than being installed.
 					Get-WindowsUpdate -NotTitle 'Cumulative Update' -Install -AcceptAll -IgnoreReboot -ErrorAction Stop | Format-Table -HideTableHeaders -Wrap @{ Label = '    Status'; Expression = {"    $($_.Result):"}},@{ Label = 'Update Type'; Expression = {"$($_.KB)$($_.DriverClass)"} },Size,Title
 
-					Add-Content '\Install\Windows Update Log.txt' "$($windowsUpdates.Count) Installed - $(Get-Date)" -ErrorAction Stop # Log Windows Update finished time to track update cycles to be able to stop after maximumWindowsUpdateCycleCount.
+					Add-Content "$Env:SystemDrive\Install\Windows Update Log.txt" "$($windowsUpdates.Count) Installed - $(Get-Date)" -ErrorAction Stop # Log Windows Update finished time to track update cycles to be able to stop after maximumWindowsUpdateCycleCount.
 				}
 
 				# DO NOT run another pass of Windows Update HERE because if there was a Cumulative Update that just got installed it will show up again until it's been fully installing during a reboot (this couldn't actually happen anymore because Cumulative Updates are now being excluded to save time, but reboot anyways before running another cycle).
@@ -871,7 +873,7 @@ function Install-WindowsUpdates {
 
 				# PSWindowsUpdate will be uninstalled after no more updates are available in a new PowerShell instance since if we try to uninstall here it will error stating it is currently in use.
 
-				Add-Content '\Install\QA Helper Log.txt' "Task: Updates Verified - $(Get-Date)" -ErrorAction SilentlyContinue # Automatically mark Windows Update as Verified in QA Helper after all updates have been installed.
+				Add-Content "$Env:SystemDrive\Install\QA Helper Log.txt" "Task: Updates Verified - $(Get-Date)" -ErrorAction SilentlyContinue # Automatically mark Windows Update as Verified in QA Helper after all updates have been installed.
 			}
 
 			if ($testMode) {
@@ -945,7 +947,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 	[xml]$smbCredentialsXML = $null
 
 	try {
-		[xml]$smbCredentialsXML = Get-Content '\Install\Scripts\smb-credentials.xml' -ErrorAction Stop
+		[xml]$smbCredentialsXML = Get-Content "$Env:SystemDrive\Install\Scripts\smb-credentials.xml" -ErrorAction Stop
 
 		if ($null -eq $smbCredentialsXML.smbCredentials.resourcesReadOnlyShare.ip) {
 			throw 'NO RESOURCES SHARE IP'
@@ -973,7 +975,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 
 	$didInstallApps = $false # Keep track of if apps were successfully installed in a previous loop to not unnecessarily reinstall them.
 
-	Remove-Item '\Install\Windows Update Log.txt' -Force -ErrorAction SilentlyContinue # Delete Windows Update Log to start update cycle over if Setup is being manually re-run.
+	Remove-Item "$Env:SystemDrive\Install\Windows Update Log.txt" -Force -ErrorAction SilentlyContinue # Delete Windows Update Log to start update cycle over if Setup is being manually re-run.
 
 	for ( ; ; ) {
 		if ($testMode) {
@@ -1070,20 +1072,20 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			} else {
 				Write-Output "`n`n  Locating App Installer Files..."
 
-				$appInstallersPathForAll = "$appInstallersPath\All"
-				if (-not (Test-Path $appInstallersPathForAll)) {
-					$appInstallersPathForAll = $appInstallersPath
+				$standardAppInstallersPath = "$appInstallersPath\Standard"
+				if (-not (Test-Path $standardAppInstallersPath)) {
+					$standardAppInstallersPath = $appInstallersPath
 				}
 
-				$appInstallerFiles = Get-ChildItem "$appInstallersPathForAll\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
+				$appInstallerFiles = Get-ChildItem "$standardAppInstallersPath\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
 
-				if ($snapMode -and (Test-Path "$appInstallersPath\SNAP")) {
-					$appInstallerFiles += Get-ChildItem "$appInstallersPath\SNAP\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
+				if ($extraAppsMode -and (Test-Path "$appInstallersPath\Extra")) {
+					$appInstallerFiles += Get-ChildItem "$appInstallersPath\Extra\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
 				}
 
-				$driversCacheModelNameFilePath = '\Install\Drivers Cache Model Name.txt' # This file is created by QA Helper in WinPE using its detailed model info. Use it here to check manufacturers since it will always be cleaned up and consistent.
+				$driversCacheModelNameFilePath = "$Env:SystemDrive\Install\Drivers Cache Model Name.txt" # This file is created by QA Helper in WinPE using its detailed model info. Use it here to check manufacturers since it will always be cleaned up and consistent.
 				if (-not (Test-Path $driversCacheModelNameFilePath)) {
-					$driversCacheModelNameFilePath = '\Install\Drivers Cache Model Path.txt' # This is the old filename from when paths were specified instead of a filename.
+					$driversCacheModelNameFilePath = "$Env:SystemDrive\Install\Drivers Cache Model Path.txt" # This is the old filename from when paths were specified instead of a filename.
 				}
 
 				$manufacturerName = ''
@@ -1123,12 +1125,8 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 					$appInstallerFiles += Get-ChildItem "$appInstallersPath\Intel\*" -Include '*.msi', '*.exe' -ErrorAction SilentlyContinue | Sort-Object -Property 'Length' -Descending
 				}
 
-				if ($null -ne $appInstallerFiles) {
-					if ($appInstallerFiles.Count -gt 0) {
-						Write-Host "`n  Successfully Located $($appInstallerFiles.Count) App Installer Files" -ForegroundColor Green
-					} else {
-						$lastTaskSucceeded = $false
-					}
+				if (($null -ne $appInstallerFiles) -and ($appInstallerFiles.Count -gt 0)) {
+					Write-Host "`n  Successfully Located $($appInstallerFiles.Count) App Installer Files" -ForegroundColor Green
 				} else {
 					$lastTaskSucceeded = $false
 				}
@@ -1170,11 +1168,11 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 									# This "error" seems to happen when re-install an MSI *if and only if* the filename is different from the MSI that was originally installed.
 									Write-Host "`n  Already Installed $thisAppName$thisAppVersion" -ForegroundColor Yellow
 
-									Add-Content '\Install\Windows Setup Log.txt' "Already Installed $thisAppName$thisAppVersion - $(Get-Date)" -ErrorAction SilentlyContinue
+									Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Already Installed $thisAppName$thisAppVersion - $(Get-Date)" -ErrorAction SilentlyContinue
 								} else {
 									Write-Host "`n  Successfully Installed $thisAppName$thisAppVersion" -ForegroundColor Green
 
-									Add-Content '\Install\Windows Setup Log.txt' "Installed $thisAppName$thisAppVersion - $(Get-Date)" -ErrorAction SilentlyContinue
+									Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Installed $thisAppName$thisAppVersion - $(Get-Date)" -ErrorAction SilentlyContinue
 								}
 							} else {
 								if ($null -eq $appInstallError) {
@@ -1247,10 +1245,10 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 						Stop-Process -Name 'explorer' -ErrorAction Stop # This will actually restart explorer.exe rather than just stopping it.
 						$didRestartExplorer = $true
 
-						Add-Content '\Install\Windows Setup Log.txt' "Restarted Explorer While Preparing Windows - $(Get-Date)" -ErrorAction SilentlyContinue
+						Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Restarted Explorer While Preparing Windows - $(Get-Date)" -ErrorAction SilentlyContinue
 					} catch {
 						# Stop-Process will error if explorer.exe is not running yet, so $didRestartExplorer will not be set as $true and we can try again.
-						Add-Content '\Install\Windows Setup Log.txt' "Explorer Needs Restart While Preparing Windows but Not Running Yet - $(Get-Date)" -ErrorAction SilentlyContinue
+						Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Explorer Needs Restart While Preparing Windows but Not Running Yet - $(Get-Date)" -ErrorAction SilentlyContinue
 					}
 				}
 
@@ -1262,7 +1260,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 		}
 
 		if ($didRestartExplorer) {
-			Add-Content '\Install\Windows Setup Log.txt' "Finished Preparing Windows After Restarting Explorer - $(Get-Date)" -ErrorAction SilentlyContinue
+			Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Finished Preparing Windows After Restarting Explorer - $(Get-Date)" -ErrorAction SilentlyContinue
 
 			FocusScriptWindow # Make sure script window is focused since we weren't logged on any of the previous focus calls, but now we are.
 
@@ -1287,7 +1285,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 
 				New-Item -ItemType 'Directory' -Path "$desktopPath\Diagnostic Tools" -ErrorAction Stop | Out-Null
 
-				Add-Content '\Install\Windows Setup Log.txt' "Created Diagnostic Tools Folder on Desktop - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Created Diagnostic Tools Folder on Desktop - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR CREATING DIAGNOSTIC TOOLS FOLDER ON DESKTOP: $_" -ForegroundColor Red
 
@@ -1295,14 +1293,14 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Program Files\Intel Corporation\Intel Processor Diagnostic Tool 64bit\Win-IPDT64.exe')) {
+		if ($lastTaskSucceeded -and (Test-Path "$Env:ProgramFiles\Intel Corporation\Intel Processor Diagnostic Tool 64bit\Win-IPDT64.exe")) {
 			try {
-				$ipdtGuiConfigPath = '\Program Files\Intel Corporation\Intel Processor Diagnostic Tool 64bit\ipdt_gui_config.xml'
+				$ipdtGuiConfigPath = "$Env:ProgramFiles\Intel Corporation\Intel Processor Diagnostic Tool 64bit\ipdt_gui_config.xml"
 				[xml]$ipdtGuiConfigXML = Get-Content $ipdtGuiConfigPath -ErrorAction Stop
 				$ipdtGuiConfigXML.ipdt_gui.IPDTAutoUpdate = 'NO'
 				$ipdtGuiConfigXML.Save($ipdtGuiConfigPath)
 
-				Add-Content '\Install\Windows Setup Log.txt' "Set Intel Processor Diagnostic Tool to Not Check for Updates - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Set Intel Processor Diagnostic Tool to Not Check for Updates - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR SETTING INTEL PROCESSOR DIAGNOSTIC TOOL TO NOT CHECK FOR UPDATES: $_" -ForegroundColor Red
 
@@ -1315,15 +1313,15 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 						Remove-Item "$Env:PUBLIC\Desktop\Intel Processor Diagnostic Tool 64bit.lnk" -Force -ErrorAction Stop
 					}
 
-					if (Test-Path '\Install\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk') {
-						Remove-Item '\Install\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk' -Force -ErrorAction Stop
+					if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk") {
+						Remove-Item "$Env:SystemDrive\Install\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk" -Force -ErrorAction Stop
 					}
 
 					if (Test-Path "$desktopPath\Intel Processor Diagnostic Tool.lnk") {
 						Remove-Item "$desktopPath\Intel Processor Diagnostic Tool.lnk" -Force -ErrorAction Stop
 					}
 
-					Copy-Item "$Env:PROGRAMDATA\Microsoft\Windows\Start Menu\Programs\Intel Processor Diagnostic Tool 64bit.lnk" '\Install\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk' -Force -ErrorAction Stop
+					Copy-Item "$Env:PROGRAMDATA\Microsoft\Windows\Start Menu\Programs\Intel Processor Diagnostic Tool 64bit.lnk" "$Env:SystemDrive\Install\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk" -Force -ErrorAction Stop
 					Copy-Item "$Env:PROGRAMDATA\Microsoft\Windows\Start Menu\Programs\Intel Processor Diagnostic Tool 64bit.lnk" "$desktopPath\Diagnostic Tools\Intel Processor Diagnostic Tool.lnk" -Force -ErrorAction Stop
 
 					if ($ipdtMode) {
@@ -1333,7 +1331,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 
 					}
 
-					Add-Content '\Install\Windows Setup Log.txt' "Created Intel Processor Diagnostic Tool Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+					Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Created Intel Processor Diagnostic Tool Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
 				} catch {
 					Write-Host "`n  ERROR MOVING INTEL PROCESSOR DIAGNOSTIC TOOL SHORTCUT INTO DIAGNOSTIC TOOLS FOLDER ON DESKTOP: $_" -ForegroundColor Red
 
@@ -1342,7 +1340,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\GPU-Z.exe')) {
+		if ($lastTaskSucceeded -and (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\GPU-Z.exe")) {
 			try {
 				# Set Registry key to make "GPU-Z" run in Standalone Mode without prompting for install on launch and also to not check for updates which shows a notification below the window.
 				# https://www.techpowerup.com/forums/threads/how-to-gpu-z-to-run-option-to-install.191730/#post-2988383
@@ -1356,13 +1354,13 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 				if ((Get-ItemProperty $gpuzRegistryPath).Install_Dir -ne 'no') {
 					Set-ItemProperty $gpuzRegistryPath -Name 'Install_Dir' -Value 'no' -Type 'String' -Force -ErrorAction Stop | Out-Null
 
-					Add-Content '\Install\Windows Setup Log.txt' "Set GPU-Z to Standalone Mode - $(Get-Date)" -ErrorAction SilentlyContinue
+					Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Set GPU-Z to Standalone Mode - $(Get-Date)" -ErrorAction SilentlyContinue
 				}
 
 				if ((Get-ItemProperty $gpuzRegistryPath).CheckForUpdates -ne 0) {
 					Set-ItemProperty $gpuzRegistryPath -Name 'CheckForUpdates' -Value 0 -Type 'DWord' -Force -ErrorAction Stop | Out-Null
 
-					Add-Content '\Install\Windows Setup Log.txt' "Set GPU-Z to Not Check for Updates - $(Get-Date)" -ErrorAction SilentlyContinue
+					Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Set GPU-Z to Not Check for Updates - $(Get-Date)" -ErrorAction SilentlyContinue
 				}
 			} catch {
 				Write-Host "`n  ERROR SETTING GPU-Z TO STANDALONE MODE OR TO NOT CHECK FOR UPDATES: $_" -ForegroundColor Red
@@ -1373,7 +1371,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			if ($lastTaskSucceeded) {
 				try {
 					$gpuzShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut("$desktopPath\Diagnostic Tools\GPU-Z.lnk")
-					$gpuzShortcut.TargetPath = '\Install\Diagnostic Tools\GPU-Z.exe'
+					$gpuzShortcut.TargetPath = "$Env:SystemDrive\Install\Diagnostic Tools\GPU-Z.exe"
 					$gpuzShortcut.Save()
 
 					if (-not (Test-Path "$desktopPath\Diagnostic Tools\GPU-Z.lnk")) {
@@ -1390,7 +1388,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 						throw "User Start Menu Programs Folder Does Not Exist ($Env:APPDATA\Microsoft\Windows\Start Menu\Programs)"
 					}
 
-					Add-Content '\Install\Windows Setup Log.txt' "Created GPU-Z Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+					Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Created GPU-Z Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
 				} catch {
 					Write-Host "`n  ERROR CREATING GPU-Z SHORTCUT: $_" -ForegroundColor Red
 
@@ -1399,10 +1397,10 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\btVersion_x64.exe')) {
+		if ($lastTaskSucceeded -and (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\btVersion_x64.exe")) {
 			try {
 				$btVersionShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut("$desktopPath\Diagnostic Tools\Bluetooth Version Finder.lnk")
-				$btVersionShortcut.TargetPath = '\Install\Diagnostic Tools\btVersion_x64.exe'
+				$btVersionShortcut.TargetPath = "$Env:SystemDrive\Install\Diagnostic Tools\btVersion_x64.exe"
 				$btVersionShortcut.Save()
 
 				if (-not (Test-Path "$desktopPath\Diagnostic Tools\Bluetooth Version Finder.lnk")) {
@@ -1415,7 +1413,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 
 				Copy-Item "$desktopPath\Diagnostic Tools\Bluetooth Version Finder.lnk" "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\Bluetooth Version Finder.lnk" -Force -ErrorAction Stop
 
-				Add-Content '\Install\Windows Setup Log.txt' "Created Bluetooth Version Finder Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Created Bluetooth Version Finder Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR CREATING BLUETOOTH VERSION FINDER SHORTCUT: $_" -ForegroundColor Red
 
@@ -1423,10 +1421,10 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\WhyNotWin11.exe')) {
+		if ($lastTaskSucceeded -and (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\WhyNotWin11.exe")) {
 			try {
 				$whyNotWin11Shortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut("$desktopPath\Diagnostic Tools\WhyNotWin11.lnk")
-				$whyNotWin11Shortcut.TargetPath = '\Install\Diagnostic Tools\WhyNotWin11.exe'
+				$whyNotWin11Shortcut.TargetPath = "$Env:SystemDrive\Install\Diagnostic Tools\WhyNotWin11.exe"
 				$whyNotWin11Shortcut.Save()
 
 				if (-not (Test-Path "$desktopPath\Diagnostic Tools\WhyNotWin11.lnk")) {
@@ -1439,14 +1437,14 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 
 				Copy-Item "$desktopPath\Diagnostic Tools\WhyNotWin11.lnk" "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\WhyNotWin11.lnk" -Force -ErrorAction Stop
 
-				Add-Content '\Install\Windows Setup Log.txt' "Created WhyNotWin11 Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Created WhyNotWin11 Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR CREATING WHYNOTWIN11 SHORTCUT: $_" -ForegroundColor Red
 
 				$lastTaskSucceeded = $false
 			}
 
-			if (Test-Path '\Install\Scripts\Windows 11 Supported Processors Lists\SupportedProcessorsIntel.txt') {
+			if (Test-Path "$Env:SystemDrive\Install\Scripts\Windows 11 Supported Processors Lists\SupportedProcessorsIntel.txt") {
 				$whyNotWin11LocalAppDataFolderPath = "$Env:LOCALAPPDATA\WhyNotWin11"
 				if (Test-Path $whyNotWin11LocalAppDataFolderPath) {
 					Remove-Item $whyNotWin11LocalAppDataFolderPath -Recurse -Force -ErrorAction Stop
@@ -1454,27 +1452,27 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 
 				New-Item -ItemType 'Directory' -Path $whyNotWin11LocalAppDataFolderPath -ErrorAction Stop | Out-Null
 
-				Copy-Item '\Install\Scripts\Windows 11 Supported Processors Lists\SupportedProcessors*.txt' $whyNotWin11LocalAppDataFolderPath -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Scripts\Windows 11 Supported Processors Lists\SupportedProcessors*.txt" $whyNotWin11LocalAppDataFolderPath -Force -ErrorAction Stop
 
 				New-Item -ItemType 'Directory' -Path "$whyNotWin11LocalAppDataFolderPath\Langs" -ErrorAction Stop | Out-Null # If the "Langs" folder doesn't exist, WhyNotWin11 will overwrite the supported processor lists with its older embedded lists.
 				Set-Content "$whyNotWin11LocalAppDataFolderPath\Langs\version" '0' # The language version file must exist for WhyNotWin11 to copy in the language files. Setting the value to "0" so it will be a version that will always be outdated so WhyNotWin11 will update the language files.
 
-				Add-Content '\Install\Windows Setup Log.txt' "Updated Windows 11 Supported Processors Lists for WhyNotWin11 - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Updated Windows 11 Supported Processors Lists for WhyNotWin11 - $(Get-Date)" -ErrorAction SilentlyContinue
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\CrystalDiskInfo\DiskInfo64.exe')) {
+		if ($lastTaskSucceeded -and (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskInfo\DiskInfo64.exe")) {
 			try {
-				if (Test-Path '\Install\Diagnostic Tools\CrystalDiskInfo.lnk') {
-					Remove-Item '\Install\Diagnostic Tools\CrystalDiskInfo.lnk' -Force -ErrorAction Stop
+				if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskInfo.lnk") {
+					Remove-Item "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskInfo.lnk" -Force -ErrorAction Stop
 				}
 
-				$crystalDiskInfoShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut('\Install\Diagnostic Tools\CrystalDiskInfo.lnk')
-				$crystalDiskInfoShortcut.TargetPath = '\Install\Diagnostic Tools\CrystalDiskInfo\DiskInfo64.exe'
-				$crystalDiskInfoShortcut.WorkingDirectory = '\Install\Diagnostic Tools\CrystalDiskInfo'
+				$crystalDiskInfoShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut("$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskInfo.lnk")
+				$crystalDiskInfoShortcut.TargetPath = "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskInfo\DiskInfo64.exe"
+				$crystalDiskInfoShortcut.WorkingDirectory = "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskInfo"
 				$crystalDiskInfoShortcut.Save()
 
-				if (-not (Test-Path '\Install\Diagnostic Tools\CrystalDiskInfo.lnk')) {
+				if (-not (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskInfo.lnk")) {
 					throw 'Shortcut Not Created: \Install\Diagnostic Tools\CrystalDiskInfo.lnk'
 				}
 
@@ -1482,10 +1480,10 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 					Remove-Item "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\CrystalDiskInfo.lnk" -Force -ErrorAction Stop
 				}
 
-				Copy-Item '\Install\Diagnostic Tools\CrystalDiskInfo.lnk' "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\CrystalDiskInfo.lnk" -Force -ErrorAction Stop
-				Copy-Item '\Install\Diagnostic Tools\CrystalDiskInfo.lnk' "$desktopPath\Diagnostic Tools\CrystalDiskInfo.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskInfo.lnk" "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\CrystalDiskInfo.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskInfo.lnk" "$desktopPath\Diagnostic Tools\CrystalDiskInfo.lnk" -Force -ErrorAction Stop
 
-				Add-Content '\Install\Windows Setup Log.txt' "Created CrystalDiskInfo Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Created CrystalDiskInfo Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR CREATING CRYSTALDISKINFO SHORTCUT: $_" -ForegroundColor Red
 
@@ -1493,18 +1491,18 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\CrystalDiskMark\DiskMark64.exe')) {
+		if ($lastTaskSucceeded -and (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskMark\DiskMark64.exe")) {
 			try {
-				if (Test-Path '\Install\Diagnostic Tools\CrystalDiskMark.lnk') {
-					Remove-Item '\Install\Diagnostic Tools\CrystalDiskMark.lnk' -Force -ErrorAction Stop
+				if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskMark.lnk") {
+					Remove-Item "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskMark.lnk" -Force -ErrorAction Stop
 				}
 
-				$crystalDiskMarkShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut('\Install\Diagnostic Tools\CrystalDiskMark.lnk')
-				$crystalDiskMarkShortcut.TargetPath = '\Install\Diagnostic Tools\CrystalDiskMark\DiskMark64.exe'
-				$crystalDiskMarkShortcut.WorkingDirectory = '\Install\Diagnostic Tools\CrystalDiskMark'
+				$crystalDiskMarkShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut("$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskMark.lnk")
+				$crystalDiskMarkShortcut.TargetPath = "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskMark\DiskMark64.exe"
+				$crystalDiskMarkShortcut.WorkingDirectory = "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskMark"
 				$crystalDiskMarkShortcut.Save()
 
-				if (-not (Test-Path '\Install\Diagnostic Tools\CrystalDiskMark.lnk')) {
+				if (-not (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskMark.lnk")) {
 					throw 'Shortcut Not Created: \Install\Diagnostic Tools\CrystalDiskMark.lnk'
 				}
 
@@ -1512,10 +1510,10 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 					Remove-Item "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\CrystalDiskMark.lnk" -Force -ErrorAction Stop
 				}
 
-				Copy-Item '\Install\Diagnostic Tools\CrystalDiskMark.lnk' "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\CrystalDiskMark.lnk" -Force -ErrorAction Stop
-				Copy-Item '\Install\Diagnostic Tools\CrystalDiskMark.lnk' "$desktopPath\Diagnostic Tools\CrystalDiskMark.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskMark.lnk" "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\CrystalDiskMark.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\CrystalDiskMark.lnk" "$desktopPath\Diagnostic Tools\CrystalDiskMark.lnk" -Force -ErrorAction Stop
 
-				Add-Content '\Install\Windows Setup Log.txt' "Created CrystalDiskMark Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Created CrystalDiskMark Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR CREATING CRYSTALDISKMARK SHORTCUT: $_" -ForegroundColor Red
 
@@ -1523,17 +1521,17 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\BatteryInfoView\BatteryInfoView.exe')) {
+		if ($lastTaskSucceeded -and (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\BatteryInfoView\BatteryInfoView.exe")) {
 			try {
-				if (Test-Path '\Install\Diagnostic Tools\BatteryInfoView.lnk') {
-					Remove-Item '\Install\Diagnostic Tools\BatteryInfoView.lnk' -Force -ErrorAction Stop
+				if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\BatteryInfoView.lnk") {
+					Remove-Item "$Env:SystemDrive\Install\Diagnostic Tools\BatteryInfoView.lnk" -Force -ErrorAction Stop
 				}
 
-				$batteryInfoViewkShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut('\Install\Diagnostic Tools\BatteryInfoView.lnk')
-				$batteryInfoViewkShortcut.TargetPath = '\Install\Diagnostic Tools\BatteryInfoView\BatteryInfoView.exe'
+				$batteryInfoViewkShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut("$Env:SystemDrive\Install\Diagnostic Tools\BatteryInfoView.lnk")
+				$batteryInfoViewkShortcut.TargetPath = "$Env:SystemDrive\Install\Diagnostic Tools\BatteryInfoView\BatteryInfoView.exe"
 				$batteryInfoViewkShortcut.Save()
 
-				if (-not (Test-Path '\Install\Diagnostic Tools\BatteryInfoView.lnk')) {
+				if (-not (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\BatteryInfoView.lnk")) {
 					throw 'Shortcut Not Created: \Install\Diagnostic Tools\BatteryInfoView.lnk'
 				}
 
@@ -1541,10 +1539,10 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 					Remove-Item "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\BatteryInfoView.lnk" -Force -ErrorAction Stop
 				}
 
-				Copy-Item '\Install\Diagnostic Tools\BatteryInfoView.lnk' "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\BatteryInfoView.lnk" -Force -ErrorAction Stop
-				Copy-Item '\Install\Diagnostic Tools\BatteryInfoView.lnk' "$desktopPath\Diagnostic Tools\BatteryInfoView.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\BatteryInfoView.lnk" "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\BatteryInfoView.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\BatteryInfoView.lnk" "$desktopPath\Diagnostic Tools\BatteryInfoView.lnk" -Force -ErrorAction Stop
 
-				Add-Content '\Install\Windows Setup Log.txt' "Created BatteryInfoView Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Created BatteryInfoView Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR CREATING BATTERYINFOVIEW SHORTCUT: $_" -ForegroundColor Red
 
@@ -1552,18 +1550,18 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\OpenHardwareMonitor\OpenHardwareMonitor.exe')) {
+		if ($lastTaskSucceeded -and (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\OpenHardwareMonitor\OpenHardwareMonitor.exe")) {
 			try {
-				if (Test-Path '\Install\Diagnostic Tools\Open Hardware Monitor.lnk') {
-					Remove-Item '\Install\Diagnostic Tools\Open Hardware Monitor.lnk' -Force -ErrorAction Stop
+				if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\Open Hardware Monitor.lnk") {
+					Remove-Item "$Env:SystemDrive\Install\Diagnostic Tools\Open Hardware Monitor.lnk" -Force -ErrorAction Stop
 				}
 
-				$openHardwareMonitorShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut('\Install\Diagnostic Tools\Open Hardware Monitor.lnk')
-				$openHardwareMonitorShortcut.TargetPath = '\Install\Diagnostic Tools\OpenHardwareMonitor\OpenHardwareMonitor.exe'
-				$openHardwareMonitorShortcut.WorkingDirectory = '\Install\Diagnostic Tools\OpenHardwareMonitor'
+				$openHardwareMonitorShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut("$Env:SystemDrive\Install\Diagnostic Tools\Open Hardware Monitor.lnk")
+				$openHardwareMonitorShortcut.TargetPath = "$Env:SystemDrive\Install\Diagnostic Tools\OpenHardwareMonitor\OpenHardwareMonitor.exe"
+				$openHardwareMonitorShortcut.WorkingDirectory = "$Env:SystemDrive\Install\Diagnostic Tools\OpenHardwareMonitor"
 				$openHardwareMonitorShortcut.Save()
 
-				if (-not (Test-Path '\Install\Diagnostic Tools\Open Hardware Monitor.lnk')) {
+				if (-not (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\Open Hardware Monitor.lnk")) {
 					throw 'Shortcut Not Created: \Install\Diagnostic Tools\Open Hardware Monitor.lnk'
 				}
 
@@ -1571,13 +1569,13 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 					Remove-Item "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\Open Hardware Monitor.lnk" -Force -ErrorAction Stop
 				}
 
-				Copy-Item '\Install\Diagnostic Tools\Open Hardware Monitor.lnk' "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\Open Hardware Monitor.lnk" -Force -ErrorAction Stop
-				Copy-Item '\Install\Diagnostic Tools\Open Hardware Monitor.lnk' "$desktopPath\Diagnostic Tools\Open Hardware Monitor.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\Open Hardware Monitor.lnk" "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\Open Hardware Monitor.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\Open Hardware Monitor.lnk" "$desktopPath\Diagnostic Tools\Open Hardware Monitor.lnk" -Force -ErrorAction Stop
 
-				Add-Content '\Install\Windows Setup Log.txt' "Created OpenHardwareMonitor Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Created OpenHardwareMonitor Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
 
 				# Also set "OpenHardwareMonitor.config" to always open in top left corner with a reasonable window size and the plot in the bottom of the window if revealed and also do not minimize to tray so that the window can be re-opened if minimized when explorer isn't running.
-				Set-Content '\Install\Diagnostic Tools\OpenHardwareMonitor\OpenHardwareMonitor.config' @'
+				Set-Content "$Env:SystemDrive\Install\Diagnostic Tools\OpenHardwareMonitor\OpenHardwareMonitor.config" @'
 <?xml version="1.0" encoding="utf-8"?>
 <configuration>
   <appSettings>
@@ -1597,18 +1595,18 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\Geekbench 6\Geekbench 6.exe')) {
+		if ($lastTaskSucceeded -and (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\Geekbench 6\Geekbench 6.exe")) {
 			try {
-				if (Test-Path '\Install\Diagnostic Tools\Geekbench.lnk') {
-					Remove-Item '\Install\Diagnostic Tools\Geekbench.lnk' -Force -ErrorAction Stop
+				if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\Geekbench.lnk") {
+					Remove-Item "$Env:SystemDrive\Install\Diagnostic Tools\Geekbench.lnk" -Force -ErrorAction Stop
 				}
 
-				$geekbenchShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut('\Install\Diagnostic Tools\Geekbench.lnk')
-				$geekbenchShortcut.TargetPath = '\Install\Diagnostic Tools\Geekbench 6\Geekbench 6.exe'
-				$geekbenchShortcut.WorkingDirectory = '\Install\Diagnostic Tools\Geekbench 6'
+				$geekbenchShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut("$Env:SystemDrive\Install\Diagnostic Tools\Geekbench.lnk")
+				$geekbenchShortcut.TargetPath = "$Env:SystemDrive\Install\Diagnostic Tools\Geekbench 6\Geekbench 6.exe"
+				$geekbenchShortcut.WorkingDirectory = "$Env:SystemDrive\Install\Diagnostic Tools\Geekbench 6"
 				$geekbenchShortcut.Save()
 
-				if (-not (Test-Path '\Install\Diagnostic Tools\Geekbench.lnk')) {
+				if (-not (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\Geekbench.lnk")) {
 					throw 'Shortcut Not Created: \Install\Diagnostic Tools\Geekbench.lnk'
 				}
 
@@ -1616,10 +1614,10 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 					Remove-Item "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\Geekbench.lnk" -Force -ErrorAction Stop
 				}
 
-				Copy-Item '\Install\Diagnostic Tools\Geekbench.lnk' "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\Geekbench.lnk" -Force -ErrorAction Stop
-				Copy-Item '\Install\Diagnostic Tools\Geekbench.lnk' "$desktopPath\Diagnostic Tools\Geekbench.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\Geekbench.lnk" "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\Geekbench.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\Geekbench.lnk" "$desktopPath\Diagnostic Tools\Geekbench.lnk" -Force -ErrorAction Stop
 
-				Add-Content '\Install\Windows Setup Log.txt' "Created Geekbench Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Created Geekbench Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR CREATING GEEKBENCH SHORTCUT: $_" -ForegroundColor Red
 
@@ -1627,18 +1625,18 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\FurMark\FurMark_GUI.exe')) {
+		if ($lastTaskSucceeded -and (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\FurMark\FurMark_GUI.exe")) {
 			try {
-				if (Test-Path '\Install\Diagnostic Tools\FurMark.lnk') {
-					Remove-Item '\Install\Diagnostic Tools\FurMark.lnk' -Force -ErrorAction Stop
+				if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\FurMark.lnk") {
+					Remove-Item "$Env:SystemDrive\Install\Diagnostic Tools\FurMark.lnk" -Force -ErrorAction Stop
 				}
 
-				$furMarkShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut('\Install\Diagnostic Tools\FurMark.lnk')
-				$furMarkShortcut.TargetPath = '\Install\Diagnostic Tools\FurMark\FurMark_GUI.exe'
-				$furMarkShortcut.WorkingDirectory = '\Install\Diagnostic Tools\FurMark'
+				$furMarkShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut("$Env:SystemDrive\Install\Diagnostic Tools\FurMark.lnk")
+				$furMarkShortcut.TargetPath = "$Env:SystemDrive\Install\Diagnostic Tools\FurMark\FurMark_GUI.exe"
+				$furMarkShortcut.WorkingDirectory = "$Env:SystemDrive\Install\Diagnostic Tools\FurMark"
 				$furMarkShortcut.Save()
 
-				if (-not (Test-Path '\Install\Diagnostic Tools\FurMark.lnk')) {
+				if (-not (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\FurMark.lnk")) {
 					throw 'Shortcut Not Created: \Install\Diagnostic Tools\FurMark.lnk'
 				}
 
@@ -1646,10 +1644,10 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 					Remove-Item "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\FurMark.lnk" -Force -ErrorAction Stop
 				}
 
-				Copy-Item '\Install\Diagnostic Tools\FurMark.lnk' "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\FurMark.lnk" -Force -ErrorAction Stop
-				Copy-Item '\Install\Diagnostic Tools\FurMark.lnk' "$desktopPath\Diagnostic Tools\FurMark.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\FurMark.lnk" "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\FurMark.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\FurMark.lnk" "$desktopPath\Diagnostic Tools\FurMark.lnk" -Force -ErrorAction Stop
 
-				Add-Content '\Install\Windows Setup Log.txt' "Created FurMark Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Created FurMark Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR CREATING FURMARK SHORTCUT: $_" -ForegroundColor Red
 
@@ -1657,19 +1655,19 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\PerformanceTest\PerformanceTest64.exe')) {
+		if ($lastTaskSucceeded -and (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\PerformanceTest\PerformanceTest64.exe")) {
 			try {
-				if (Test-Path '\Install\Diagnostic Tools\PerformanceTest.lnk') {
-					Remove-Item '\Install\Diagnostic Tools\PerformanceTest.lnk' -Force -ErrorAction Stop
+				if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\PerformanceTest.lnk") {
+					Remove-Item "$Env:SystemDrive\Install\Diagnostic Tools\PerformanceTest.lnk" -Force -ErrorAction Stop
 				}
 
-				$performanceTestShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut('\Install\Diagnostic Tools\PerformanceTest.lnk')
-				$performanceTestShortcut.TargetPath = '\Install\Diagnostic Tools\PerformanceTest\PerformanceTest64.exe'
-				$performanceTestShortcut.WorkingDirectory = '\Install\Diagnostic Tools\PerformanceTest'
+				$performanceTestShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut("$Env:SystemDrive\Install\Diagnostic Tools\PerformanceTest.lnk")
+				$performanceTestShortcut.TargetPath = "$Env:SystemDrive\Install\Diagnostic Tools\PerformanceTest\PerformanceTest64.exe"
+				$performanceTestShortcut.WorkingDirectory = "$Env:SystemDrive\Install\Diagnostic Tools\PerformanceTest"
 				$performanceTestShortcut.WindowStyle = 3 # Maximized Windows Style
 				$performanceTestShortcut.Save()
 
-				if (-not (Test-Path '\Install\Diagnostic Tools\PerformanceTest.lnk')) {
+				if (-not (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\PerformanceTest.lnk")) {
 					throw 'Shortcut Not Created: \Install\Diagnostic Tools\PerformanceTest.lnk'
 				}
 
@@ -1677,10 +1675,10 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 					Remove-Item "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\PerformanceTest.lnk" -Force -ErrorAction Stop
 				}
 
-				Copy-Item '\Install\Diagnostic Tools\PerformanceTest.lnk' "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\PerformanceTest.lnk" -Force -ErrorAction Stop
-				Copy-Item '\Install\Diagnostic Tools\PerformanceTest.lnk' "$desktopPath\Diagnostic Tools\PerformanceTest.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\PerformanceTest.lnk" "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\PerformanceTest.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\PerformanceTest.lnk" "$desktopPath\Diagnostic Tools\PerformanceTest.lnk" -Force -ErrorAction Stop
 
-				Add-Content '\Install\Windows Setup Log.txt' "Created PerformanceTest Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Created PerformanceTest Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR CREATING PERFORMANCETEST SHORTCUT: $_" -ForegroundColor Red
 
@@ -1688,18 +1686,18 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			}
 		}
 
-		if ($lastTaskSucceeded -and (Test-Path '\Install\Diagnostic Tools\FanControl\FanControl.exe')) {
+		if ($lastTaskSucceeded -and (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\FanControl\FanControl.exe")) {
 			try {
-				if (Test-Path '\Install\Diagnostic Tools\FanControl.lnk') {
-					Remove-Item '\Install\Diagnostic Tools\FanControl.lnk' -Force -ErrorAction Stop
+				if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\FanControl.lnk") {
+					Remove-Item "$Env:SystemDrive\Install\Diagnostic Tools\FanControl.lnk" -Force -ErrorAction Stop
 				}
 
-				$fanControlShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut('\Install\Diagnostic Tools\FanControl.lnk')
-				$fanControlShortcut.TargetPath = '\Install\Diagnostic Tools\FanControl\FanControl.exe'
-				$fanControlShortcut.WorkingDirectory = '\Install\Diagnostic Tools\FanControl'
+				$fanControlShortcut = (New-Object -ComObject Wscript.Shell).CreateShortcut("$Env:SystemDrive\Install\Diagnostic Tools\FanControl.lnk")
+				$fanControlShortcut.TargetPath = "$Env:SystemDrive\Install\Diagnostic Tools\FanControl\FanControl.exe"
+				$fanControlShortcut.WorkingDirectory = "$Env:SystemDrive\Install\Diagnostic Tools\FanControl"
 				$fanControlShortcut.Save()
 
-				if (-not (Test-Path '\Install\Diagnostic Tools\FanControl.lnk')) {
+				if (-not (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\FanControl.lnk")) {
 					throw 'Shortcut Not Created: \Install\Diagnostic Tools\FanControl.lnk'
 				}
 
@@ -1707,10 +1705,10 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 					Remove-Item "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\FanControl.lnk" -Force -ErrorAction Stop
 				}
 
-				Copy-Item '\Install\Diagnostic Tools\FanControl.lnk' "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\FanControl.lnk" -Force -ErrorAction Stop
-				Copy-Item '\Install\Diagnostic Tools\FanControl.lnk' "$desktopPath\Diagnostic Tools\FanControl.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\FanControl.lnk" "$Env:APPDATA\Microsoft\Windows\Start Menu\Programs\FanControl.lnk" -Force -ErrorAction Stop
+				Copy-Item "$Env:SystemDrive\Install\Diagnostic Tools\FanControl.lnk" "$desktopPath\Diagnostic Tools\FanControl.lnk" -Force -ErrorAction Stop
 
-				Add-Content '\Install\Windows Setup Log.txt' "Created FanControl Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Created FanControl Shortcuts - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR CREATING FANCONTROL SHORTCUT: $_" -ForegroundColor Red
 
@@ -1722,12 +1720,12 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 			Write-Host "`n  Successfully Set Up Diagnostic Tools and Shortcuts" -ForegroundColor Green
 		}
 
-		if ($lastTaskSucceeded -and (-not (Test-Path '\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1')) -and (-not (Get-Module -ListAvailable -Name PSWindowsUpdate))) {
+		if ($lastTaskSucceeded -and (-not (Test-Path "$Env:SystemDrive\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1")) -and (-not (Get-Module -ListAvailable -Name PSWindowsUpdate))) {
 			Write-Output "`n`n  Installing Automated Windows Update Tool..."
 
 			try {
 				# Will use the local PSWindowsUpdate copy if it exists, otherwise install it from NuGet.
-				$psWindowsUpdateNuPkgs = Get-ChildItem '\Install\Scripts' -Filter 'pswindowsupdate*.nupkg'
+				$psWindowsUpdateNuPkgs = Get-ChildItem "$Env:SystemDrive\Install\Scripts" -Filter 'pswindowsupdate*.nupkg'
 
 				if ($psWindowsUpdateNuPkgs.Count -gt 0) {
 					# SilentlyContinue for any failures here because we will just install from NuGet if anything fails.
@@ -1736,12 +1734,12 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 					# .nupkg is just a .zip but we must rename it to be able to use Expand-Archive.
 					Copy-Item ($psWindowsUpdateNuPkgs | Sort-Object -Property 'LastWriteTime' | Select-Object -Last 1).FullName "$Env:TEMP\fgSetup-PSWindowsUpdate.zip" -Force -ErrorAction SilentlyContinue
 
-					Remove-Item '\Install\Scripts\PSWindowsUpdate' -Recurse -Force -ErrorAction SilentlyContinue
-					Expand-Archive "$Env:TEMP\fgSetup-PSWindowsUpdate.zip" '\Install\Scripts\PSWindowsUpdate' -Force -ErrorAction SilentlyContinue
+					Remove-Item "$Env:SystemDrive\Install\Scripts\PSWindowsUpdate" -Recurse -Force -ErrorAction SilentlyContinue
+					Expand-Archive "$Env:TEMP\fgSetup-PSWindowsUpdate.zip" "$Env:SystemDrive\Install\Scripts\PSWindowsUpdate" -Force -ErrorAction SilentlyContinue
 					Remove-Item "$Env:TEMP\fgSetup-*.zip" -Force -ErrorAction SilentlyContinue
 				}
 
-				if (-not (Test-Path '\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1')) {
+				if (-not (Test-Path "$Env:SystemDrive\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1")) {
 					Install-PackageProvider -Name NuGet -Force -ErrorAction Stop | Out-Null
 					# There is no "Uninstall-PackageProvider" or other simple way to uninstall a package provider, so NuGet will be left installed.
 
@@ -1751,7 +1749,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 
 				Write-Host "`n  Successfully Installed Automated Windows Update Tool" -ForegroundColor Green
 
-				Add-Content '\Install\Windows Setup Log.txt' "Installed Automated Windows Update Tool - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Installed Automated Windows Update Tool - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR INSTALLING PSWINDOWSUPDATE: $_" -ForegroundColor Red
 				Write-Host "`n  ERROR: Failed to install automated Windows Update tool (PSWindowsUpdate)." -ForegroundColor Red
@@ -1765,7 +1763,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 		if ($lastTaskSucceeded) {
 			Install-QAHelper
 
-			if ((-not (Test-Path '\Install\QA Helper\java-jre\bin\javaw.exe')) -or (-not (Test-Path '\Install\QA Helper\QA_Helper.jar'))) {
+			if ((-not (Test-Path "$Env:SystemDrive\Install\QA Helper\java-jre\bin\javaw.exe")) -or (-not (Test-Path "$Env:SystemDrive\Install\QA Helper\QA_Helper.jar"))) {
 				$lastTaskSucceeded = $false
 			}
 		}
@@ -1792,7 +1790,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 		Read-Host '  Manually Reboot This Computer or Press ENTER to Try Again' | Out-Null
 	}
 } else {
-	if ((Test-Path '\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1') -or (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
+	if ((Test-Path "$Env:SystemDrive\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1") -or (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
 		if (($LastWindowsUpdatesCount -eq '0') -or ($LastWindowsUpdatesCount -eq 'MaxUpdateCycles')) {
 			# Screen scaling may have already been set after running updates, in which case this won't do anything.
 			# But if drivers were installed from cache and no updates installed, then we'll need to set screen scaling here as the last thing in the setup cycle.
@@ -1804,9 +1802,9 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 				# Only try to uninstall PSWindowsUpdate when this script was launched with LastWindowsUpdatesCount of 0 (or MaxUpdateCycles) so that we know updates are done
 				# and that this is a new PowerShell instance which PSWindowsUpdate hasn't been run in so it won't error stating it is currently in use.
 
-				if (Test-Path '\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1') {
+				if (Test-Path "$Env:SystemDrive\Install\Scripts\PSWindowsUpdate\PSWindowsUpdate.psd1") {
 					# Delete the local PSWindowsUpdate when we're done updating just to stop the auto updating cycle.
-					Remove-Item '\Install\Scripts\PSWindowsUpdate' -Recurse -Force -ErrorAction Stop
+					Remove-Item "$Env:SystemDrive\Install\Scripts\PSWindowsUpdate" -Recurse -Force -ErrorAction Stop
 				} else {
 					# Delete the installed PSWindowsUpdate when we're done updating to stop the auto updating cycle AND to not leave junk on computer.
 					Uninstall-Module PSWindowsUpdate -ErrorAction Stop
@@ -1814,7 +1812,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 
 				Write-Host "`n  Successfully Uninstalled Automated Windows Update Tool" -ForegroundColor Green
 
-				Add-Content '\Install\Windows Setup Log.txt' "Uninstalled Automated Windows Update Tool - $(Get-Date)" -ErrorAction SilentlyContinue
+				Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Uninstalled Automated Windows Update Tool - $(Get-Date)" -ErrorAction SilentlyContinue
 			} catch {
 				Write-Host "`n  ERROR UNINSTALLING PSWINDOWSUPDATE: $_" -ForegroundColor Red
 			}
@@ -1890,18 +1888,18 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 			$win11compatibleStorage = $true
 		}
 
-		$eleventhGenIntelCPUorNewer = $false
+		$eleventhToThirteenthGenIntelCPU = $false
 		if ($cpuInfo.Manufacturer -and $cpuInfo.Name -and $cpuInfo.Manufacturer.ToUpper().Contains('INTEL') -and $cpuInfo.Name.ToUpper().Contains(' GEN ')) {
 			# "Manufacturer" should be "GenuineIntel" for all Intel processors, but do a case-insenstive check anything that contains "INTEL" just to be safe.
-			# Only 11th Gen Intel CPUs contain " Gen " in their model name strings, and they will always be compatible with Windows 11.
+			# Only 11th-13th Gen Intel CPUs contain " Gen " in their model name strings, and they will always be compatible with Windows 11.
 			# This boolean will be used as a fallback to the "win11compatibleCPUmodel" check done by WhyNotWin11 below in case WhyNotWin11
 			# is not updated promptly and we run into a newer CPU that is not yet in the WhyNotWin11 list of compatible CPUs.
-			$eleventhGenIntelCPUorNewer = $true
+			$eleventhToThirteenthGenIntelCPU = $true
 		}
 
-		if (Test-Path '\Install\Diagnostic Tools\WhyNotWin11.exe') { # Use WhyNotWin11 to help detect if the exact CPU model is compatible and more: https://github.com/rcmaehl/WhyNotWin11
-			Remove-Item '\Install\WhyNotWin11 Log.csv' -Force -ErrorAction SilentlyContinue
-			Start-Process '\Install\Diagnostic Tools\WhyNotWin11.exe' -NoNewWindow -Wait -ArgumentList '/export', 'CSV', '"C:\Install\WhyNotWin11 Log.csv"', '/skip', 'CPUFreq,Storage', '/silent', '/force' -ErrorAction SilentlyContinue
+		if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\WhyNotWin11.exe") { # Use WhyNotWin11 to help detect if the exact CPU model is compatible and more: https://github.com/rcmaehl/WhyNotWin11
+			Remove-Item "$Env:SystemDrive\Install\WhyNotWin11 Log.csv" -Force -ErrorAction SilentlyContinue
+			Start-Process "$Env:SystemDrive\Install\Diagnostic Tools\WhyNotWin11.exe" -NoNewWindow -Wait -ArgumentList '/export', 'CSV', "`"$Env:SystemDrive\Install\WhyNotWin11 Log.csv`"", '/skip', 'CPUFreq,Storage', '/silent', '/force' -ErrorAction SilentlyContinue
 		}
 
 		$win11compatibleArchitecture = $false
@@ -1915,8 +1913,8 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 		$win11compatibleTPMfromWhyNotWin11 = $false
 		$checkedWithWhyNotWin11 = $false
 
-		if (Test-Path '\Install\WhyNotWin11 Log.csv') {
-			$whyNotWin11LogLastLine = Get-Content '\Install\WhyNotWin11 Log.csv' -Last 1
+		if (Test-Path "$Env:SystemDrive\Install\WhyNotWin11 Log.csv") {
+			$whyNotWin11LogLastLine = Get-Content "$Env:SystemDrive\Install\WhyNotWin11 Log.csv" -Last 1
 
 			if ($null -ne $whyNotWin11LogLastLine) {
 				$whyNotWin11LogValues = $whyNotWin11LogLastLine.Split(',')
@@ -1949,7 +1947,7 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 			# This incompatibility should never happen since we only refurbish 64-bit processors and only have 64-bit Windows installers.
 			Write-Host 'NO (64-bit REQUIRED)' -ForegroundColor Red
 		} elseif (-not $win11compatibleCPUmodel) {
-			if ($eleventhGenIntelCPUorNewer) {
+			if ($eleventhToThirteenthGenIntelCPU) {
 				Write-Host 'YES' -NoNewline -ForegroundColor Green
 				Write-Host ' (Fallback Check Passed)' -ForegroundColor Yellow
 			} else {
@@ -2031,10 +2029,10 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 
 				exit 0 # Not sure if exit is necessary after Stop-Computer but doesn't hurt.
 			}
-		} elseif ($win11compatibleTPM -and $win11compatibleArchitecture -and $win11compatibleBootMethod -and ($win11compatibleCPUmodel -or $eleventhGenIntelCPUorNewer) -and $win11compatibleCPUcores -and $win11compatibleSSE4dot2 -and $win11compatiblePartitionType -and $win11compatibleRAM -and $win11compatibleSecureBoot -and $win11compatibleStorage -and $win11compatibleTPMfromWhyNotWin11) {
+		} elseif ($win11compatibleTPM -and $win11compatibleArchitecture -and $win11compatibleBootMethod -and ($win11compatibleCPUmodel -or $eleventhToThirteenthGenIntelCPU) -and $win11compatibleCPUcores -and $win11compatibleSSE4dot2 -and $win11compatiblePartitionType -and $win11compatibleRAM -and $win11compatibleSecureBoot -and $win11compatibleStorage -and $win11compatibleTPMfromWhyNotWin11) {
 			Write-Host "`n  Successfully Verified Windows 11 Support" -ForegroundColor Green
 
-			Add-Content '\Install\Windows Setup Log.txt' "Verified Windows 11 Support - $(Get-Date)" -ErrorAction SilentlyContinue
+			Add-Content "$Env:SystemDrive\Install\Windows Setup Log.txt" "Verified Windows 11 Support - $(Get-Date)" -ErrorAction SilentlyContinue
 		} else {
 			# None of the previous elseif checks should fail (unless in Test Mode) because it was all verified in WinPE before allowing Windows 11 to be installed.
 			# So, if we got here, this computer needs to be sent to Free Geek I.T. to see what went wrong.
@@ -2050,17 +2048,19 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 				exit 0 # Not sure if exit is necessary after Stop-Computer but doesn't hurt.
 			}
 		}
+	} else {
+		Write-Host "`n`n  Windows 10 CANNOT Be Licensed or Sold - ONLY Use for Testing or Firmware Updates" -ForegroundColor Yellow
 	}
 
-	if ((-not (Test-Path '\Install\QA Helper\java-jre\bin\javaw.exe')) -or (-not (Test-Path '\Install\QA Helper\QA_Helper.jar'))) {
+	if ((-not (Test-Path "$Env:SystemDrive\Install\QA Helper\java-jre\bin\javaw.exe")) -or (-not (Test-Path "$Env:SystemDrive\Install\QA Helper\QA_Helper.jar"))) {
 		Install-QAHelper
 	}
 
-	if ($ipdtMode -and (Test-Path '\Program Files\Intel Corporation\Intel Processor Diagnostic Tool 64bit\Win-IPDT64.exe')) { # See comments in above about why IPDT is installed instead of run from "Diagnostic Tools".
+	if ($ipdtMode -and (Test-Path "$Env:ProgramFiles\Intel Corporation\Intel Processor Diagnostic Tool 64bit\Win-IPDT64.exe")) { # See comments in above about why IPDT is installed instead of run from "Diagnostic Tools".
 		Write-Output "`n`n  Launching OpenHardwareMonitor for PerformanceTest and Intel Processor Diagnostic Tool..."
 
-		if (Test-Path '\Install\Diagnostic Tools\OpenHardwareMonitor\OpenHardwareMonitor.exe') {
-			Start-Process '\Install\Diagnostic Tools\OpenHardwareMonitor\OpenHardwareMonitor.exe' -NoNewWindow -ErrorAction SilentlyContinue
+		if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\OpenHardwareMonitor\OpenHardwareMonitor.exe") {
+			Start-Process "$Env:SystemDrive\Install\Diagnostic Tools\OpenHardwareMonitor\OpenHardwareMonitor.exe" -NoNewWindow -ErrorAction SilentlyContinue
 
 			# Make OpenHardwareMonitor stay on top of all other windows during the next PerformanceTest phase so the CPU temp is always visible and never blocked by the CPU test window (must wait for window to open to do this, but only wait for up to 1 minute).
 			for ($waitForWindowAttempt = 0; $waitForWindowAttempt -lt 60; $waitForWindowAttempt ++) {
@@ -2081,8 +2081,8 @@ public static extern bool IsProcessorFeaturePresent(uint ProcessorFeature);
 
 		Write-Output "`n`n  Warming Up CPU With PerformanceTest Before Launching Intel Processor Diagnostic Tool..."
 
-		if (Test-Path '\Install\Diagnostic Tools\PerformanceTest\PerformanceTest64.exe') {
-			Set-Content '\Install\Diagnostic Tools\PerformanceTest\WarmUpCPU.ptscript' @'
+		if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\PerformanceTest\PerformanceTest64.exe") {
+			Set-Content "$Env:SystemDrive\Install\Diagnostic Tools\PerformanceTest\WarmUpCPU.ptscript" @'
 RUN CPU_ALL
 RUN CPU_ALL
 RUN CPU_ALL
@@ -2096,14 +2096,14 @@ RUN CPU_ALL
 EXIT
 '@ -ErrorAction SilentlyContinue
 
-			Start-Process '\Install\Diagnostic Tools\PerformanceTest\PerformanceTest64.exe' -WindowStyle Maximized -Wait -ArgumentList '/s' , '"\Install\Diagnostic Tools\PerformanceTest\WarmUpCPU.ptscript"' -ErrorAction SilentlyContinue
+			Start-Process "$Env:SystemDrive\Install\Diagnostic Tools\PerformanceTest\PerformanceTest64.exe" -WindowStyle Maximized -Wait -ArgumentList '/s' , "`"$Env:SystemDrive\Install\Diagnostic Tools\PerformanceTest\WarmUpCPU.ptscript`"" -ErrorAction SilentlyContinue
 
 			Write-Host "`n  Successfully Warmed Up CPU With PerformanceTest" -ForegroundColor Green
 		} else {
 			Write-Host "`n  PerformanceTest Not Found - CONTINUING ANYWAY" -ForegroundColor Yellow
 		}
 
-		if (Test-Path '\Install\Diagnostic Tools\OpenHardwareMonitor\OpenHardwareMonitor.exe') {
+		if (Test-Path "$Env:SystemDrive\Install\Diagnostic Tools\OpenHardwareMonitor\OpenHardwareMonitor.exe") {
 			# After PerformanceTest phase is done it is not important to monitor CPU temps during the IPDT phase, so set the OpenHardwareMonitor window back to regular non-topmost window so that it doesn't cover the PASS/FAIL portion of the IPDT window.
 			$openHardwareMonitorHandle = (Get-Process | Where-Object MainWindowTitle -eq 'Open Hardware Monitor').MainWindowHandle
 			if ($openHardwareMonitorHandle) {
@@ -2114,15 +2114,15 @@ EXIT
 
 		Write-Output "`n`n  Launching Intel Processor Diagnostic Tool..."
 
-		Start-Process '\Program Files\Intel Corporation\Intel Processor Diagnostic Tool 64bit\Win-IPDT64.exe' -NoNewWindow -WorkingDirectory '\Program Files\Intel Corporation\Intel Processor Diagnostic Tool 64bit' -ErrorAction SilentlyContinue # NOTE: Working directory MUST be set for the exe to be able to find the included DLLs to launch properly.
+		Start-Process "$Env:ProgramFiles\Intel Corporation\Intel Processor Diagnostic Tool 64bit\Win-IPDT64.exe" -NoNewWindow -WorkingDirectory "$Env:ProgramFiles\Intel Corporation\Intel Processor Diagnostic Tool 64bit" -ErrorAction SilentlyContinue # NOTE: Working directory MUST be set for the exe to be able to find the included DLLs to launch properly.
 
 		# Quit "explorer" to have a minimal interface only showing the IPDT window. (Must use "taskkill" to fully quit "explorer" since using "Stop-Process" will quit and relaunch it while "taskkill" will just quit it.)
 		# NO LONGER QUIT EXPLORER BUT KEEP THIS COMMENTED OUT IN CASE FOR FUTURE USE:
 		# Start-Process 'taskkill' -NoNewWindow -RedirectStandardOutput 'NUL' -ArgumentList '/f', '/im', 'explorer.exe' -ErrorAction SilentlyContinue
-	} elseif ((Test-Path '\Install\QA Helper\java-jre\bin\javaw.exe') -and (Test-Path '\Install\QA Helper\QA_Helper.jar')) {
+	} elseif ((Test-Path "$Env:SystemDrive\Install\QA Helper\java-jre\bin\javaw.exe") -and (Test-Path "$Env:SystemDrive\Install\QA Helper\QA_Helper.jar")) {
 		Write-Output "`n`n  Launching QA Helper..."
 
-		Start-Process '\Install\QA Helper\java-jre\bin\javaw.exe' -NoNewWindow -ArgumentList '-jar', '"\Install\QA Helper\QA_Helper.jar"' -ErrorAction SilentlyContinue
+		Start-Process "$Env:SystemDrive\Install\QA Helper\java-jre\bin\javaw.exe" -NoNewWindow -ArgumentList '-jar', "`"$Env:SystemDrive\Install\QA Helper\QA_Helper.jar`"" -ErrorAction SilentlyContinue
 	}
 
 	Start-Sleep 3 # Sleep for a few seconds to be able to see last results before window closes.

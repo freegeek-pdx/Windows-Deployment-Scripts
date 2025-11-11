@@ -16,9 +16,13 @@
 
 $Host.UI.RawUI.WindowTitle = 'Download Network Drivers for WinRE USB Install from Cache'
 
-$basePath = "$HOME\Documents\Free Geek"
-if (Test-Path "$HOME\Documents\Free Geek.lnk") {
-	$basePath = (New-Object -ComObject WScript.Shell).CreateShortcut("$HOME\Documents\Free Geek.lnk").TargetPath
+$basePath = "$Env:PUBLIC\Windows Deployment"
+if (Test-Path "$Env:PUBLIC\Windows Deployment.lnk") {
+	$basePath = (New-Object -ComObject WScript.Shell).CreateShortcut("$Env:PUBLIC\Windows Deployment.lnk").TargetPath
+}
+
+if (-not (Test-Path $basePath)) {
+	New-Item -ItemType 'Directory' -Path $basePath -ErrorAction Stop | Out-Null
 }
 
 $winREnetDriversOutputPath = "$basePath\WinRE Network Drivers for USB Install"

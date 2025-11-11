@@ -31,7 +31,7 @@ function DownloadAppInstaller {
 	Write-Output "Latest $AppName Version: $LatestVersion"
 
 	$downloadedVersion = 'N/A'
-	$downloadedInstallers = Get-ChildItem "$DownloadFolderPath\$($AppName)_*"
+	$downloadedInstallers = Get-ChildItem "$DownloadFolderPath\${AppName}_*"
 	if (($null -ne $downloadedInstallers) -and ($downloadedInstallers.Count -gt 0)) {
 		$downloadedInstallerNameParts = $downloadedInstallers[0].BaseName.Split('_')
 		if (($downloadedInstallerNameParts.Count -gt 1) -and ($downloadedInstallerNameParts[1] -Match '^\d[.\d]*$')) {
@@ -42,7 +42,7 @@ function DownloadAppInstaller {
 	Write-Output "Downloaded $AppName Installer: $downloadedVersion"
 
 	if ($LatestVersion -Match '^\d[.\d]*$') {
-		$installerFileName = "$($AppName)_$($LatestVersion)_Installer.$InstallerExtension"
+		$installerFileName = "${AppName}_${LatestVersion}_Installer.$InstallerExtension"
 		$installerPath = "$DownloadFolderPath\$installerFileName"
 
 		if (-not (Test-Path $installerPath)) {
@@ -50,21 +50,21 @@ function DownloadAppInstaller {
 
 			$systemTempDir = [System.Environment]::GetEnvironmentVariable('TEMP', 'Machine') # Get SYSTEM (not user) temporary directory, which should be "\Windows\Temp".
 			if (-not (Test-Path $systemTempDir)) {
-				$systemTempDir = '\Windows\Temp'
+				$systemTempDir = "$Env:SystemRoot\Temp"
 			}
 
-			if (Test-Path "$systemTempDir\$($installerFileName)-download") {
-				Remove-Item "$systemTempDir\$($installerFileName)-download" -Force -ErrorAction Stop
+			if (Test-Path "$systemTempDir\$installerFileName-download") {
+				Remove-Item "$systemTempDir\$installerFileName-download" -Force -ErrorAction Stop
 			}
 
-			Invoke-WebRequest -UserAgent 'curl' -Uri $DownloadURL -OutFile "$systemTempDir\$($installerFileName)-download" -ErrorAction Stop
+			Invoke-WebRequest -UserAgent 'curl' -Uri $DownloadURL -OutFile "$systemTempDir\$installerFileName-download" -ErrorAction Stop
 			# NOTE: If the default PowerShell user agent string is used, the VLC download URL goes to a website which starts the download as if it was accessed in the browser, but with the "curl" user agent string the Windows installers is properly downloaded.
 			# Also, without changing the user agent string the Dropbox URL would redirect to the Mac version when run via "pwsh" on macOS even though "os=win" is specified in the URL.
 			# Finally, changing the user agent string to "curl" doesn't break any of the other download URLs even though it isn't necessary for them.
 
-			Remove-Item "$DownloadFolderPath\$($AppName)_*" -Force -ErrorAction Stop
+			Remove-Item "$DownloadFolderPath\${AppName}_*" -Force -ErrorAction Stop
 
-			Move-Item "$systemTempDir\$($installerFileName)-download" $installerPath -Force -ErrorAction Stop
+			Move-Item "$systemTempDir\$installerFileName-download" $installerPath -Force -ErrorAction Stop
 
 			if (Test-Path $installerPath) {
 				Write-Output "Downloaded Latest $AppName Installer"
@@ -82,9 +82,9 @@ function DownloadAppInstaller {
 }
 
 
-Write-Output "`n`nDownloading Installers for All Systems..."
+Write-Output "`n`nDownloading Standard App Installers..."
 
-$installersDownloadFolderPath = "$PSScriptRoot\All"
+$installersDownloadFolderPath = "$PSScriptRoot\Standard"
 
 if (-not (Test-Path $installersDownloadFolderPath)) {
 	New-Item -ItemType 'Directory' -Path $installersDownloadFolderPath -ErrorAction Stop | Out-Null
@@ -101,7 +101,7 @@ $latestFirefoxVersion = [System.Net.HttpWebRequest]::Create($latestFirefoxDownlo
 DownloadAppInstaller -AppName 'Firefox' -InstallerExtension 'msi' -LatestVersion $latestFirefoxVersion -DownloadURL $latestFirefoxDownloadURL -DownloadFolderPath $installersDownloadFolderPath
 
 $latestLibreOfficeVersion = ((Invoke-WebRequest -TimeoutSec 10 -Uri 'https://download.documentfoundation.org/libreoffice/stable/').Links.href | Select-String '^(\d[.\d]*)/$').Matches[-1].Groups[1].Value # Seen this one sometimes timeout after 5 seconds, so give it 10 seconds.
-$latestLibreOfficeDownloadURL = "https://download.documentfoundation.org/libreoffice/stable/$latestLibreOfficeVersion/win/x86_64/LibreOffice_$($latestLibreOfficeVersion)_Win_x86-64.msi"
+$latestLibreOfficeDownloadURL = "https://download.documentfoundation.org/libreoffice/stable/$latestLibreOfficeVersion/win/x86_64/LibreOffice_${latestLibreOfficeVersion}_Win_x86-64.msi"
 DownloadAppInstaller -AppName 'LibreOffice' -InstallerExtension 'msi' -LatestVersion $latestLibreOfficeVersion -DownloadURL $latestLibreOfficeDownloadURL -DownloadFolderPath $installersDownloadFolderPath
 
 $latestVLCVersion = ((Invoke-WebRequest -TimeoutSec 5 -Uri 'https://get.videolan.org/vlc/last/win64/').Links.href | Select-String '^vlc-(\d[.\d]*)-win64\.msi$').Matches[0].Groups[1].Value
@@ -114,9 +114,9 @@ $latest7ZipDownloadURL = "https://www.7-zip.org/$(((Invoke-WebRequest -TimeoutSe
 DownloadAppInstaller -AppName '7-Zip' -InstallerExtension 'msi' -LatestVersion $latest7ZipVersion -DownloadURL $latest7ZipDownloadURL -DownloadFolderPath $installersDownloadFolderPath
 
 
-Write-Output "`n`nDownloading Installers for SNAP Systems..."
+Write-Output "`n`nDownloading Extra App Installers..."
 
-$installersDownloadFolderPath = "$PSScriptRoot\SNAP"
+$installersDownloadFolderPath = "$PSScriptRoot\Extra"
 
 if (-not (Test-Path $installersDownloadFolderPath)) {
 	New-Item -ItemType 'Directory' -Path $installersDownloadFolderPath -ErrorAction Stop | Out-Null
