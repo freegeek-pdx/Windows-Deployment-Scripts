@@ -29,7 +29,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2025.12.29-1
+# Version: 2026.5.8-1
 
 #Requires -RunAsAdministrator
 
@@ -51,12 +51,13 @@ $testMode = ((Test-Path "$Env:SystemDrive\Install\fgFLAG-TEST") -or (Test-Path "
 $extraAppsMode = ((Test-Path "$Env:SystemDrive\Install\fgFLAG-EXTRAAPPS") -or (Test-Path "$Env:SystemDrive\Install\EXTRAAPPS")) # If EXTRAAPPS flag file/folder exists, auto-install extra apps.
 $noAppsMode = ((Test-Path "$Env:SystemDrive\Install\fgFLAG-NOAPPS") -or (Test-Path "$Env:SystemDrive\Install\NOAPPS")) # If NOAPPS flag file/folder exists, do not install any apps.
 $ipdtMode = ((Test-Path "$Env:SystemDrive\Install\fgFLAG-IPDT") -or (Test-Path "$Env:SystemDrive\Install\IPDT")) # If IPDT flag file/folder exists, auto-launch "Intel Processor Diagnostic Tool" instead of auto-lauching "QA Helper" (which will still be installed). This is a special mode for Hardware Testing.
+$doNotLaunchQAHelperMode = ((Test-Path "$Env:SystemDrive\Install\fgFLAG-DoNotLaunchQAHelper") -or (Test-Path "$Env:SystemDrive\Install\DoNotLaunchQAHelper")) # If DoNotLaunchQAHelper flag file/folder exists, end this script WITHOUT auto-lauching "QA Helper" (which will still be installed). This is a special mode for Hardware Testing.
 
 $desktopPath = [Environment]::GetFolderPath('Desktop')
 
 $windowsVersionName = (Get-CimInstance 'Win32_OperatingSystem' -Property 'Caption' -ErrorAction SilentlyContinue).Caption
 $isWindows11 = ($windowsVersionName -and $windowsVersionName.ToUpper().Contains('WINDOWS 11'))
-$cpuInfo = (Get-CimInstance 'Win32_Processor' -Property 'AddressWidth', 'NumberOfLogicalProcessors', 'Architecture', 'Manufacturer', 'Name' -ErrorAction SilentlyContinue)
+$cpuInfo = (Get-CimInstance 'Win32_Processor' -Property 'AddressWidth', 'NumberOfLogicalProcessors', 'Architecture', 'Manufacturer', 'Name' -ErrorAction SilentlyContinue | Select-Object -First 1) # Select first in case there are multiple CPUs. Only need to check compatibility of one since they will be identical.
 
 if ($isWindows11) {
 	# When on Windows 11, use C# code to detect if the Start Menu is open on first boot. See "CloseStartMenuOnFirstBootOfWindows11" function below for more information.
@@ -966,7 +967,7 @@ if (-not (Test-Path "$desktopPath\QA Helper.lnk")) {
 		}
 	} catch {
 		Write-Host "`n`n  ERROR RETRIEVING SMB CREDENTIALS: $_" -ForegroundColor Red
-		Write-Host "`n  ERROR: REQUIRED `"smb-credentials.xml`" DOES NOT EXISTS OR HAS INVALID CONTENTS - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+		Write-Host "`n  ERROR: REQUIRED `"smb-credentials.xml`" DOES NOT EXISTS OR HAS INVALID CONTENTS - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T.`n" -ForegroundColor Red
 		FocusScriptWindow
 		$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 		Read-Host '  Press ENTER to Exit' | Out-Null
@@ -2035,7 +2036,11 @@ public class CpuFamily {
 		$win11compatibleGPU = $false
 		$win11incompatibleGPUmessage = ''
 		Remove-Item "$Env:SystemDrive\Install\DirectX Diagnostic Tool Output.xml" -Force -ErrorAction SilentlyContinue
-		Start-Process 'dxdiag' -NoNewWindow -Wait -ArgumentList '/whql:off', '/dontskip', '/x', "`"$Env:SystemDrive\Install\DirectX Diagnostic Tool Output.xml`"" -ErrorAction SilentlyContinue
+		Start-Process 'dxdiag' -NoNewWindow -Wait -ArgumentList '/whql:off', '/dontskip', '/x', "`"$Env:SystemDrive\Install\DirectX Diagnostic Tool Output.xml`"" -ErrorAction SilentlyContinue # First, include "/dontskip" to not skip any sections if there was a previous error.
+		if (-not (Test-Path "$Env:SystemDrive\Install\DirectX Diagnostic Tool Output.xml")) {
+			Start-Process 'dxdiag' -NoNewWindow -Wait -ArgumentList '/whql:off', '/x', "`"$Env:SystemDrive\Install\DirectX Diagnostic Tool Output.xml`"" -ErrorAction SilentlyContinue # But, if there was an error, we at least want something so run again without "/dontskip".
+		}
+
 		if (Test-Path "$Env:SystemDrive\Install\DirectX Diagnostic Tool Output.xml") {
 			[xml]$dxdiagOutput = Get-Content "$Env:SystemDrive\Install\DirectX Diagnostic Tool Output.xml"
 
@@ -2148,6 +2153,8 @@ public class CpuFamily {
 
 				$win11incompatibleGPUmessage = "Detected DirectX $gpuDirectXversion (DDI $gpuDDIversion, Feature Level $gpuHighestFeatureLevel) + WDDM $gpuWDDMversion"
 			}
+		} else {
+			$win11incompatibleGPUmessage = "DirectX Diagnostic Tool Failed to Run - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T."
 		}
 
 		$win11compatibleBootMethod = ($Env:firmware_type -eq 'UEFI')
@@ -2266,7 +2273,7 @@ public class CpuFamily {
 			# The GPU could not be verified in WinPE/WinRE since GPU drivers were not available, but it's generally assumed that GPUs will be compatible if everything else was compatible.
 			# So, if this check failed, we need to make sure the technician makes I.T. aware that this issue could actually happen since it was a time wasting Windows 11 installation when Windows 10 must be installed instead.
 
-			Write-Host "`n  ERROR: GPU is NOT compatible with Windows 11. - THIS IS UNEXPECTED - MAKE SURE DRIVERS ARE INSTALLED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+			Write-Host "`n  ERROR: GPU is NOT compatible with Windows 11. - THIS IS UNEXPECTED - MAKE SURE DRIVERS ARE INSTALLED - Please Inform Free Geek I.T.`n" -ForegroundColor Red
 			FocusScriptWindow
 			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 			$notWin11compatibleResponse = Read-Host '  Press ENTER to Shut Down This Computer'
@@ -2284,7 +2291,7 @@ public class CpuFamily {
 			# None of the previous elseif checks should fail (unless in Test Mode) because it was all verified in WinPE before allowing Windows 11 to be installed.
 			# So, if we got here, this computer needs to be sent to Free Geek I.T. to see what went wrong.
 
-			Write-Host "`n  ERROR: Failed to verify Windows 11 support. - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+			Write-Host "`n  ERROR: Failed to verify Windows 11 support. - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T.`n" -ForegroundColor Red
 			FocusScriptWindow
 			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 			$notWin11compatibleResponse = Read-Host '  Press ENTER to Shut Down This Computer'
@@ -2366,7 +2373,7 @@ EXIT
 		# Quit "explorer" to have a minimal interface only showing the IPDT window. (Must use "taskkill" to fully quit "explorer" since using "Stop-Process" will quit and relaunch it while "taskkill" will just quit it.)
 		# NO LONGER QUIT EXPLORER BUT KEEP THIS COMMENTED OUT IN CASE FOR FUTURE USE:
 		# Start-Process 'taskkill' -NoNewWindow -RedirectStandardOutput 'NUL' -ArgumentList '/f', '/im', 'explorer.exe' -ErrorAction SilentlyContinue
-	} elseif ((Test-Path "$Env:SystemDrive\Install\QA Helper\java-jre\bin\javaw.exe") -and (Test-Path "$Env:SystemDrive\Install\QA Helper\QA_Helper.jar")) {
+	} elseif ((-not $doNotLaunchQAHelperMode) -and (Test-Path "$Env:SystemDrive\Install\QA Helper\java-jre\bin\javaw.exe") -and (Test-Path "$Env:SystemDrive\Install\QA Helper\QA_Helper.jar")) {
 		Write-Output "`n`n  Launching QA Helper..."
 
 		Start-Process "$Env:SystemDrive\Install\QA Helper\java-jre\bin\javaw.exe" -NoNewWindow -ArgumentList '-jar', "`"$Env:SystemDrive\Install\QA Helper\QA_Helper.jar`"" -ErrorAction SilentlyContinue

@@ -28,7 +28,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2025.12.29-1
+# Version: 2026.7.15-1
 
 #Requires -RunAsAdministrator
 
@@ -54,7 +54,7 @@ if (-not (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Setup\State
 }
 
 if (-not (Test-Path "$Env:SystemRoot\System32\Sysprep\Unattend.xml")) {
-	Write-Host "`n  ERROR: `"Unattend.xml`" DOES NOT EXISTS - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n`n  EXITING IN 5 SECONDS..." -ForegroundColor Red
+	Write-Host "`n  ERROR: `"Unattend.xml`" DOES NOT EXISTS - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T.`n`n  EXITING IN 5 SECONDS..." -ForegroundColor Red
 	Start-Sleep 5
 	exit 2
 }
@@ -120,7 +120,7 @@ if (-not $onlyCacheDriversMode) { # Only do this verification and setup if not o
 			# Do not show separate title (or success message) for the following Windows 11 compatibility checks as they falls under the "Verifying That This Computer Is Ready to Be Completed" phase.
 			# https://www.microsoft.com/en-us/windows/windows-11-specifications
 
-			$cpuInfo = (Get-CimInstance 'Win32_Processor' -Property 'AddressWidth', 'NumberOfLogicalProcessors', 'Architecture', 'Manufacturer', 'Name' -ErrorAction SilentlyContinue)
+			$cpuInfo = (Get-CimInstance 'Win32_Processor' -Property 'AddressWidth', 'NumberOfLogicalProcessors', 'Architecture', 'Manufacturer', 'Name' -ErrorAction SilentlyContinue | Select-Object -First 1) # Select first in case there are multiple CPUs. Only need to check compatibility of one since they will be identical.
 
 			$win11compatibleArchitecture = ($cpuInfo.AddressWidth -eq 64)
 			$win11compatibleCPUcores = ($cpuInfo.NumberOfLogicalProcessors -ge 2)
@@ -305,7 +305,11 @@ public class CpuFamily {
 			$win11compatibleGPU = $false
 			$win11incompatibleGPUmessage = ''
 			Remove-Item "$Env:SystemDrive\Install\DirectX Diagnostic Tool Output.xml" -Force -ErrorAction SilentlyContinue
-			Start-Process 'dxdiag' -NoNewWindow -Wait -ArgumentList '/whql:off', '/dontskip', '/x', "`"$Env:SystemDrive\Install\DirectX Diagnostic Tool Output.xml`"" -ErrorAction SilentlyContinue
+			Start-Process 'dxdiag' -NoNewWindow -Wait -ArgumentList '/whql:off', '/dontskip', '/x', "`"$Env:SystemDrive\Install\DirectX Diagnostic Tool Output.xml`"" -ErrorAction SilentlyContinue # First, include "/dontskip" to not skip any sections if there was a previous error.
+			if (-not (Test-Path "$Env:SystemDrive\Install\DirectX Diagnostic Tool Output.xml")) {
+				Start-Process 'dxdiag' -NoNewWindow -Wait -ArgumentList '/whql:off', '/x', "`"$Env:SystemDrive\Install\DirectX Diagnostic Tool Output.xml`"" -ErrorAction SilentlyContinue # But, if there was an error, we at least want something so run again without "/dontskip".
+			}
+
 			if (Test-Path "$Env:SystemDrive\Install\DirectX Diagnostic Tool Output.xml") {
 				[xml]$dxdiagOutput = Get-Content "$Env:SystemDrive\Install\DirectX Diagnostic Tool Output.xml"
 
@@ -418,6 +422,8 @@ public class CpuFamily {
 
 					$win11incompatibleGPUmessage = "Detected DirectX $gpuDirectXversion (DDI $gpuDDIversion, Feature Level $gpuHighestFeatureLevel) + WDDM $gpuWDDMversion"
 				}
+			} else {
+				$win11incompatibleGPUmessage = "DirectX Diagnostic Tool Failed to Run - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T."
 			}
 
 			$win11compatibleBootMethod = ($Env:firmware_type -eq 'UEFI')
@@ -536,7 +542,7 @@ public class CpuFamily {
 				# The GPU could not be verified in WinPE/WinRE since GPU drivers were not available, but it's generally assumed that GPUs will be compatible if everything else was compatible.
 				# So, if this check failed, we need to make sure the technician makes I.T. aware that this issue could actually happen since it was a time wasting Windows 11 installation when Windows 10 must be installed instead.
 
-				Write-Host "`n  ERROR: GPU is NOT compatible with Windows 11. - THIS IS UNEXPECTED - MAKE SURE DRIVERS ARE INSTALLED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+				Write-Host "`n  ERROR: GPU is NOT compatible with Windows 11. - THIS IS UNEXPECTED - MAKE SURE DRIVERS ARE INSTALLED - Please Inform Free Geek I.T.`n" -ForegroundColor Red
 				FocusScriptWindow
 				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 				$notWin11compatibleResponse = Read-Host '  Press ENTER to Shut Down This Computer'
@@ -550,7 +556,7 @@ public class CpuFamily {
 				# None of the previous elseif checks should fail (unless in Test Mode) because it was all verified in WinPE before allowing Windows 11 to be installed.
 				# So, if we got here, this computer needs to be sent to Free Geek I.T. to see what went wrong.
 
-				Write-Host "`n  ERROR: Failed to verify Windows 11 support. - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+				Write-Host "`n  ERROR: Failed to verify Windows 11 support. - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T.`n" -ForegroundColor Red
 				FocusScriptWindow
 				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 				$notWin11compatibleResponse = Read-Host '  Press ENTER to Shut Down This Computer'
@@ -674,7 +680,42 @@ public class CpuFamily {
 			Write-Host "`n  ERROR: QA Helper Log file DOES NOT exist." -ForegroundColor Red
 		}
 
-		if ((-not $hasRefurbProductKey) -or (-not $didUploadCBR) -or (-not $isQAcompleted)) {
+		$windowsUpdateRebootRequired = (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') # https://github.com/ztrhgf/useful_powershell_functions/blob/c8b39d0b1f9c5718f16db23409e74d04f3627903/Get-PendingReboot.ps1#L37
+		$windowsUpdatePendingCount = 0
+		if ($windowsUpdateRebootRequired) {
+			Write-Host "`n  ERROR: Reboot required for Windows Update." -ForegroundColor Red
+		} else { # https://robztech.com/post/manage-windows-update-status-using-powershell-step-by-step & https://gist.github.com/gbraad/463512b065ef1f919e63552138d776bf#available-updates
+			try {
+				$windowsUpdatePendingCount = ((New-Object -ComObject Microsoft.Update.Session).CreateUpdateSearcher().Search('IsInstalled=0').Updates | Where-Object IsDownloaded -eq $true).Count
+				if ($null -eq $windowsUpdatePendingCount) {
+					$windowsUpdatePendingCount = 0
+				} elseif ($windowsUpdatePendingCount -gt 0) {
+					Write-Host "`n  ERROR: $windowsUpdatePendingCount pending installations for Windows Update." -ForegroundColor Red
+				}
+			} catch {
+				Write-Host "`n  Failed to Check for Windows Update Pending Installations - CONTINUING ANYWAY" -ForegroundColor Yellow
+			}
+		}
+
+		if ($windowsUpdateRebootRequired -or ($windowsUpdatePendingCount -gt 0)) {
+			Write-Host "`n`n  This Computer IS NOT Ready to Be Completed - WINDOWS UPDATE IN PROGRESS" -ForegroundColor Yellow
+
+			Write-Host "`n`n  !!! THIS COMPUTER CANNOT BE SOLD UNTIL WINDOWS IS COMPLETED SUCCESSFULLY !!!" -ForegroundColor Red
+
+			Write-Host "`n`n  If Windows Update IS NOT in progress, please inform Free Geek I.T.`n" -ForegroundColor Red
+			FocusScriptWindow
+			$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+			$notReadyResponse = Read-Host '  Press ENTER to Open Windows Update'
+
+			if ((-not $testMode) -or ($notReadyResponse -ne 'TESTING')) { # Can bypass in test mode even if the computer isn't ready to be completed for testing purposes.
+				Write-Output "`n`n  Opening Windows Update..."
+				Start-Process '\Windows\System32\control.exe' -NoNewWindow -ArgumentList 'update' -ErrorAction SilentlyContinue
+
+				Start-Sleep 3
+
+				exit 3
+			}
+		} elseif ((-not $hasRefurbProductKey) -or (-not $didUploadCBR) -or (-not $isQAcompleted)) {
 			Write-Host "`n`n  This Computer IS NOT Ready to Be Completed - SEE PREVIOUS ERRORS FOR DETAILS" -ForegroundColor Yellow
 
 			Write-Host "`n`n  !!! THIS COMPUTER CANNOT BE SOLD UNTIL WINDOWS IS COMPLETED SUCCESSFULLY !!!" -ForegroundColor Red
@@ -691,15 +732,15 @@ public class CpuFamily {
 
 					Start-Sleep 3
 
-					exit 3
+					exit 4
 				}
 			} else {
-				Write-Host "`n`n  ERROR: `"QA Helper`" DOES NOT EXISTS - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+				Write-Host "`n`n  ERROR: `"QA Helper`" DOES NOT EXISTS - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T.`n" -ForegroundColor Red
 				FocusScriptWindow
 				$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 				Read-Host '  Press ENTER to Exit' | Out-Null
 
-				exit 4
+				exit 5
 			}
 		}
 
@@ -722,14 +763,14 @@ public class CpuFamily {
 
 					Start-Sleep 3
 
-					exit 5
+					exit 6
 				} else {
-					Write-Host "`n`n  ERROR: `"QA Helper`" DOES NOT EXISTS - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+					Write-Host "`n`n  ERROR: `"QA Helper`" DOES NOT EXISTS - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T.`n" -ForegroundColor Red
 					FocusScriptWindow
 					$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 					Read-Host '  Press ENTER to Exit' | Out-Null
 
-					exit 6
+					exit 7
 				}
 			}
 
@@ -800,12 +841,12 @@ try {
 	}
 } catch {
 	Write-Host "`n`n  ERROR RETRIEVING SMB CREDENTIALS: $_" -ForegroundColor Red
-	Write-Host "`n  ERROR: REQUIRED `"smb-credentials.xml`" DOES NOT EXISTS OR HAS INVALID CONTENTS - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+	Write-Host "`n  ERROR: REQUIRED `"smb-credentials.xml`" DOES NOT EXISTS OR HAS INVALID CONTENTS - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T.`n" -ForegroundColor Red
 	FocusScriptWindow
 	$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 	Read-Host '  Press ENTER to Exit' | Out-Null
 
-	exit 7
+	exit 8
 }
 
 $smbServerAddress = $smbCredentialsXML.smbCredentials.driversReadWriteShare.address

@@ -239,6 +239,7 @@ if (-not (Test-Path $systemTempDir)) {
 }
 
 $exeDownloadPath = "$systemTempDir\HP Driver Pack EXEs"
+$exeTempExpansionPath = "$systemTempDir\HP Driver Packs"
 
 $hpDriverPacksPath = '\\FG-WindowsNAS\FG-Windows-Drivers\Packs\HP' # SMB share credentials SHOULD BE SAVED in "Credential Manager" app so that it will auto-connect when the path is specified.
 
@@ -308,20 +309,63 @@ foreach ($theseRedundantDriverPacks in ($uniqueDriverPacks.GetEnumerator() | Sor
 					if (Test-Path "$exeDownloadPath\$($thisUniqueDriverPack.FileName)") {
 						Write-Output 'EXPANDING...'
 
-						# The EXE expansion will make all necessary directories.
-						$expandExitCode = (Start-Process "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -NoNewWindow -Wait -PassThru -ArgumentList '/s', '/e', "/f `"$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)`"").ExitCode
+						if ($thisUniqueDriverPack.FileName.EndsWith(".exe")) {
+							# NOTE: For some newer driver EXEs, trying to expand directly to the NAS will extract some files but then error with "-1073741819".
+							# But if we expand to a temp location on the system drive and then copy the expanded folder over it works, so always do that.
 
-						Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
-
-						if (($expandExitCode -eq 0) -or ($expandExitCode -eq 1168)) {
-							# It appears that 1168 is the success exit code for newer driver packs, but older ones return 0 as success
-							$expandedCount ++
-						} else {
-							Write-Output ">>> EXPANSION FAILED (EXIT CODE $expandExitCode) - DELETING FOLDER <<<"
-
-							if (Test-Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)") {
-								Remove-Item "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -Recurse -Force
+							if (Test-Path $exeTempExpansionPath) {
+								Remove-Item $exeTempExpansionPath -Recurse -Force
 							}
+
+							# The EXE expansion will make all necessary directories.
+							$expandExitCode = (Start-Process "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -NoNewWindow -Wait -PassThru -ArgumentList '/s', '/e', "/f `"$exeTempExpansionPath\$($thisUniqueDriverPack.DriverPackID)`"").ExitCode
+
+							Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
+
+							if (($expandExitCode -eq 0) -or ($expandExitCode -eq 1168)) {
+								# It appears that 1168 is the success exit code for newer driver packs, but older ones return 0 as success
+
+								try {
+									Write-Output 'MOVING EXPANDED FOLDER...'
+
+									Move-Item "$exeTempExpansionPath\$($thisUniqueDriverPack.DriverPackID)" "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -ErrorAction Stop
+
+									$expandedCount ++
+								} catch {
+									Write-Output ">>> ERROR MOVING EXPANDED FOLDER - DELETING FOLDER ($_) <<<"
+
+									if (Test-Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)") {
+										Remove-Item "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -Recurse -Force
+									}
+								}
+							} else {
+								Write-Output ">>> EXPANSION FAILED (EXIT CODE $expandExitCode) - DELETING FOLDER <<<"
+
+								if (Test-Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)") {
+									Remove-Item "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -Recurse -Force
+								}
+							}
+
+							if (Test-Path $exeTempExpansionPath) {
+								Remove-Item $exeTempExpansionPath -Recurse -Force
+							}
+						} elseif ($thisUniqueDriverPack.FileName.EndsWith(".zip")) {
+							try {
+								Expand-Archive "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -Force -ErrorAction Stop
+
+								$expandedCount ++
+							} catch {
+								Write-Output ">>> ERROR EXPANDING ARCHIVE - DELETING FOLDER ($_) <<<"
+
+								if (Test-Path "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)") {
+									Remove-Item "$exeExpansionPath\$($thisUniqueDriverPack.DriverPackID)" -Recurse -Force
+								}
+							}
+							
+							Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
+						} else {
+							Write-Output '>>> INVALID FILE TYPE - DELETING <<<'
+							Remove-Item "$exeDownloadPath\$($thisUniqueDriverPack.FileName)" -Force
 						}
 					}
 				}

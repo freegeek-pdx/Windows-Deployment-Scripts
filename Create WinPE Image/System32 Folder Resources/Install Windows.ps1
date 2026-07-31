@@ -21,7 +21,7 @@
 # WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 
-# Version: 2025.12.29-1
+# Version: 2026.5.8-1
 
 # PowerShell must be installed in WinPE to run this script (which will be taken care of automatically if WinPE is built with "Create WinPE Image.ps1"):
 # https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpe-adding-powershell-support-to-windows-pe
@@ -643,7 +643,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 		}
 	} catch {
 		Write-Host "`n`n  ERROR RETRIEVING SMB CREDENTIALS: $_" -ForegroundColor Red
-		Write-Host "`n  ERROR: REQUIRED `"smb-credentials.xml`" DOES NOT EXISTS OR HAS INVALID CONTENTS - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T.`n" -ForegroundColor Red
+		Write-Host "`n  ERROR: REQUIRED `"smb-credentials.xml`" DOES NOT EXISTS OR HAS INVALID CONTENTS - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T.`n" -ForegroundColor Red
 		FocusScriptWindow
 		$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
 		Read-Host '  Press ENTER to Exit' | Out-Null
@@ -873,7 +873,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 			}
 
 			if ($latestWindowsWims.Count -eq 0) {
-				Write-Host "`n`n  ERROR: FAILED TO LOCATE ANY WINDOWS INSTALLATION IMAGES ON USB OR LOCAL SERVER - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T." -ForegroundColor Red
+				Write-Host "`n`n  ERROR: FAILED TO LOCATE ANY WINDOWS INSTALLATION IMAGES ON USB OR LOCAL SERVER - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T." -ForegroundColor Red
 
 				$lastTaskSucceeded = $false
 			}
@@ -926,7 +926,7 @@ if (($null -eq $installDriveID) -or ($null -eq $installDriveName)) {
 			$installWimPath = $null
 			$installWimDisplayName = $null
 
-			$cpuInfo = (Get-CimInstance 'Win32_Processor' -Property 'AddressWidth', 'NumberOfLogicalProcessors', 'Architecture', 'Manufacturer', 'Name' -ErrorAction SilentlyContinue)
+			$cpuInfo = (Get-CimInstance 'Win32_Processor' -Property 'AddressWidth', 'NumberOfLogicalProcessors', 'Architecture', 'Manufacturer', 'Name' -ErrorAction SilentlyContinue | Select-Object -First 1) # Select first in case there are multiple CPUs. Only need to check compatibility of one since they will be identical.
 
 			if ($lastTaskSucceeded) {
 				Start-Sleep 3 # Sleep for a few seconds to be able to see last results before clearing screen.
@@ -1304,7 +1304,7 @@ public class CpuFamily {
 
 								Start-Sleep 3 # Sleep for a few seconds to be able to see Windows 11 compatibility notes before clearing screen.
 							} else {
-								Write-Host "`n  ERROR: WINDOWS 11 INSTALLATION IMAGE NOT FOUND - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T." -ForegroundColor Red
+								Write-Host "`n  ERROR: WINDOWS 11 INSTALLATION IMAGE NOT FOUND - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T." -ForegroundColor Red
 
 								$lastTaskSucceeded = $false
 							}
@@ -1335,7 +1335,7 @@ public class CpuFamily {
 
 									Start-Sleep 2
 								} else {
-									Write-Host "`n  ERROR: WINDOWS 11 INSTALLATION IMAGE NOT FOUND - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T." -ForegroundColor Red
+									Write-Host "`n  ERROR: WINDOWS 11 INSTALLATION IMAGE NOT FOUND - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T." -ForegroundColor Red
 
 									$lastTaskSucceeded = $false
 								}
@@ -1397,7 +1397,7 @@ public class CpuFamily {
 
 								Start-Sleep 2
 							} else {
-								Write-Host "`n  ERROR: WINDOWS 10 INSTALLATION IMAGE NOT FOUND - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T." -ForegroundColor Red
+								Write-Host "`n  ERROR: WINDOWS 10 INSTALLATION IMAGE NOT FOUND - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T." -ForegroundColor Red
 
 								$lastTaskSucceeded = $false
 							}
@@ -1441,7 +1441,7 @@ public class CpuFamily {
 
 							Start-Sleep 3 # Sleep for a few seconds to be able to see Windows 11 compatibility notes before clearing screen.
 						} else {
-							Write-Host "`n  ERROR: WINDOWS 10 INSTALLATION IMAGE NOT FOUND - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T." -ForegroundColor Red
+							Write-Host "`n  ERROR: WINDOWS 10 INSTALLATION IMAGE NOT FOUND - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T." -ForegroundColor Red
 
 							$lastTaskSucceeded = $false
 						}
@@ -1453,9 +1453,20 @@ public class CpuFamily {
 				if ($lastTaskSucceeded -and (-not $shouldQuit) -and (-not $shouldShutDown)) {
 					$lastChooseWindowsEditionError = ''
 
+					$availableDPKcounts = $null
+					$ProgressPreference = 'SilentlyContinue' # https://stackoverflow.com/a/43477248
+					try { $availableDPKcounts = (Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Uri 'https://api.freegeek.org/dpk-counts' -ErrorAction SilentlyContinue).Content.Trim() } catch {}
+					$ProgressPreference = 'Continue'
+
+					if (($null -eq $availableDPKcounts) -or (-not $availableDPKcounts.StartsWith('Windows'))) {
+						$availableDPKcounts = '    UNKNOWN - Please Inform Free Geek I.T.'
+					} else {
+						$availableDPKcounts = $availableDPKcounts.Replace('Windows', '    Windows')
+					}
+
 					for ( ; ; ) {
 						if ((-not $latestWindowsWims.ContainsKey("$installWindowsVersion")) -or ($latestWindowsWims["$installWindowsVersion"].Count -eq 0)) {
-							Write-Host "`n  ERROR: WINDOWS $installWindowsVersion INSTALLATION IMAGE NOT FOUND - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T." -ForegroundColor Red
+							Write-Host "`n  ERROR: WINDOWS $installWindowsVersion INSTALLATION IMAGE NOT FOUND - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T." -ForegroundColor Red
 
 							$lastTaskSucceeded = $false
 
@@ -1496,6 +1507,10 @@ public class CpuFamily {
 
 							Write-Host "`n    C: Cancel Windows Installation and Reboot This Computer" -ForegroundColor Cyan
 							Write-Host "`n    X: Cancel Windows Installation and Shut Down This Computer" -ForegroundColor Cyan
+
+							if ($installWindowsVersion -ne 10) {
+								Write-Host "`n`n  Available DPK Counts:`n$availableDPKcounts" -ForegroundColor Blue
+							}
 
 							FocusScriptWindow
 							$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
@@ -1583,7 +1598,7 @@ public class CpuFamily {
 				}
 
 				if ($lastTaskSucceeded -and (($null -eq $installWimDisplayName) -or ($null -eq $installWimPath) -or (-not (Test-Path $installWimPath)))) {
-					Write-Host "`n  ERROR: FAILED TO SET WINDOWS INSTALLATION IMAGE - THIS SHOULD NOT HAVE HAPPENED - Please inform Free Geek I.T." -ForegroundColor Red
+					Write-Host "`n  ERROR: FAILED TO SET WINDOWS INSTALLATION IMAGE - THIS SHOULD NOT HAVE HAPPENED - Please Inform Free Geek I.T." -ForegroundColor Red
 
 					$lastTaskSucceeded = $false
 				}

@@ -100,12 +100,11 @@ latest_libreoffice_download_url="https://download.documentfoundation.org/libreof
 download_app_installer 'LibreOffice' 'msi' "${latest_libreoffice_version}" "${latest_libreoffice_download_url}"
 
 latest_vlc_version="$(curl -m 5 -sfL 'https://get.videolan.org/vlc/last/win64/' | awk -F '=|-' '/\-win64\.msi"/ { print $3; exit }')"
-if [[ -z "${latest_vlc_version}" ]]; then latest_vlc_version='3.0.20'; fi # MSI for VLC 3.0.21 is being skipped: https://code.videolan.org/videolan/vlc/-/issues/28677#note_461571
 latest_vlc_download_url="https://get.videolan.org/vlc/${latest_vlc_version}/win64/vlc-${latest_vlc_version}-win64.msi"
 download_app_installer 'VLC' 'msi' "${latest_vlc_version}" "${latest_vlc_download_url}"
 
-latest_7zip_version="$(curl -m 5 -sfL 'https://www.7-zip.org/download.html' 2> /dev/null | awk '/<P><B>Download 7-Zip / { print $3; exit }')"
-latest_7zip_download_url="https://www.7-zip.org/$(curl -m 5 -sfL 'https://www.7-zip.org/download.html' 2> /dev/null | awk -F '"' '/\-x64\.msi"/ { print $6; exit }')"
+latest_7zip_download_url="$(curl -m 5 -sfL 'https://www.7-zip.org/download.html' 2> /dev/null | awk -F '"' '/\-x64\.msi"/ { print $6; exit }')"
+latest_7zip_version="$(echo "${latest_7zip_download_url}" | cut -d '/' -f 8)"
 download_app_installer '7-Zip' 'msi' "${latest_7zip_version}" "${latest_7zip_download_url}"
 
 

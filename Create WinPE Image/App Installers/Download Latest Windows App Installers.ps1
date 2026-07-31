@@ -206,12 +206,11 @@ foreach ($thisAppInstallersPath in $appInstallersPaths) {
 	DownloadAppInstaller -AppName 'LibreOffice' -InstallerExtension 'msi' -LatestVersion $latestLibreOfficeVersion -DownloadURL $latestLibreOfficeDownloadURL -DownloadFolderPath $installersDownloadFolderPath -AlternateDownloadFolderPath $alternateInstallersDownloadFolderPath
 
 	$latestVLCVersion = ((Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Uri 'https://get.videolan.org/vlc/last/win64/').Links.href | Select-String '^vlc-(\d[.\d]*)-win64\.msi$').Matches[0].Groups[1].Value
-	if ($null -eq $latestVLCVersion) { $latestVLCVersion = '3.0.20' } # MSI for VLC 3.0.21 is being skipped: https://code.videolan.org/videolan/vlc/-/issues/28677#note_461571
 	$latestVLCDownloadURL = "https://get.videolan.org/vlc/$latestVLCVersion/win64/vlc-$latestVLCVersion-win64.msi"
 	DownloadAppInstaller -AppName 'VLC' -InstallerExtension 'msi' -LatestVersion $latestVLCVersion -DownloadURL $latestVLCDownloadURL -DownloadFolderPath $installersDownloadFolderPath -AlternateDownloadFolderPath $alternateInstallersDownloadFolderPath
 
-	$latest7ZipVersion = ((Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Uri 'https://www.7-zip.org/download.html').Content | Select-String '<P><B>Download 7-Zip (\d[.\d]*) ').Matches[0].Groups[1].Value
-	$latest7ZipDownloadURL = "https://www.7-zip.org/$(((Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Uri 'https://www.7-zip.org/download.html').Links.href | Select-String '^.*-x64\.msi$').Matches[0].Value)"
+	$latest7ZipDownloadURL = ((Invoke-WebRequest -UseBasicParsing -TimeoutSec 5 -Uri 'https://www.7-zip.org/download.html').Links.href | Select-String '^.*-x64\.msi$').Matches[0].Value
+	$latest7ZipVersion = $latest7ZipDownloadURL.Split('/')[7]
 	DownloadAppInstaller -AppName '7-Zip' -InstallerExtension 'msi' -LatestVersion $latest7ZipVersion -DownloadURL $latest7ZipDownloadURL -DownloadFolderPath $installersDownloadFolderPath -AlternateDownloadFolderPath $alternateInstallersDownloadFolderPath
 
 

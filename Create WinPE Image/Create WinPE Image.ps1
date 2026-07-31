@@ -156,10 +156,19 @@ if (Test-Path "$winPEoutputPath\media\sources\boot.wim") {
 }
 
 
-# Launch "Download Latest Windows App Installers.ps1" and "Download Network Drivers for WinRE USB Install from Cache.ps1" in external PowerShell windows (minimized) to run simultaneously.
-# They both should finish before those updated files are used within this script.
-Start-Process 'powershell' -WindowStyle Minimized -ArgumentList '-NoLogo', '-NoProfile', '-WindowStyle Minimized', '-ExecutionPolicy Unrestricted', "-File `"$PSScriptRoot\App Installers\Download Latest Windows App Installers.ps1`"" -ErrorAction Stop
+# Launch "Download Network Drivers for WinRE USB Install from Cache.ps1" in external PowerShell window (minimized) to run simultaneously (and it should finish before the updated files are used within this script).
 Start-Process 'powershell' -WindowStyle Minimized -ArgumentList '-NoLogo', '-NoProfile', '-WindowStyle Minimized', '-ExecutionPolicy Unrestricted', "-File `"$PSScriptRoot\Download Network Drivers for WinRE USB Install from Cache.ps1`"" -ErrorAction Stop
+
+
+$promptCaption = "  Would you like to check for app installer updates?"
+$promptChoices = '&Yes', '&No'
+
+$Host.UI.RawUI.FlushInputBuffer() # So that key presses before this point are ignored.
+$promptResponse = $Host.UI.PromptForChoice($promptCaption, "`n", $promptChoices, 0)
+
+if ($promptResponse -eq 0) {
+	Start-Process 'powershell' -NoNewWindow -Wait -ArgumentList '-NoLogo', '-NoProfile', '-ExecutionPolicy Unrestricted', "-File `"$PSScriptRoot\App Installers\Download Latest Windows App Installers.ps1`"" -ErrorAction Stop
+}
 
 
 if ($updateResourcesOnly) {

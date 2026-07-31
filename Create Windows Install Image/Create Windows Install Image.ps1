@@ -62,7 +62,8 @@ $winREfeatureVersionsForWindowsFeatureVersions = @{
 }
 
 $sourceISOchecksums = @{
-	'Win11_25H2_English_x64.iso'	= 'D141F6030FED50F75E2B03E1EB2E53646C4B21E5386047CB860AF5223F102A32' # https://www.microsoft.com/en-us/software-download/windows11 & https://github.com/ventoy/Ventoy/issues/3393
+	'Win11_25H2_English_x64_v2.iso'	= '768984706B909479417B2368438909440F2967FF05C6A9195ED2667254E465E3' # https://www.microsoft.com/en-us/software-download/windows11 & https://linustechtips.com/topic/1634221-windows-11-will-not-install/?do=findComment&comment=16879130
+	'Win11_25H2_English_x64.iso'	= 'D141F6030FED50F75E2B03E1EB2E53646C4B21E5386047CB860AF5223F102A32' # https://github.com/ventoy/Ventoy/issues/3393
 	'Win11_24H2_English_x64.iso'	= 'B56B911BF18A2CEAEB3904D87E7C770BDF92D3099599D61AC2497B91BF190B11' # https://archive.org/details/win-11-24-h-2-english-x-64_202507 & https://www.techpowerup.com/forums/threads/windows-11-24h2-updated-download-iso.328153/post-5363100
 	'Win11_23H2_English_x64v2.iso'	= '36DE5ECB7A0DAA58DCE68C03B9465A543ED0F5498AA8AE60AB45FB7C8C4AE402' # https://archive.org/details/win11_23h2_english_x64v2_202409 & https://www.reddit.com/r/framework/comments/1cfsvfe/windows_11_sha256_for_win11_23h2_english_x64v2iso/
 	'Win11_22H2_English_x64v1.iso'	= '0DF2F173D84D00743DC08ED824FBD174D972929BD84B87FE384ED950F5BDAB22' # https://archive.org/details/windows11_20220930 & https://learn.microsoft.com/en-us/answers/questions/4182086/what-are-the-checksums-hashes-for-windows-11-versi
@@ -152,6 +153,12 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 				if (Test-Path "$basePath\Windows ISOs\$($sourceISOname.Replace('.iso', "v$possibleISOversionSuffix.iso"))") {
 					$sourceISOversionSuffix = "v$possibleISOversionSuffix"
 					$sourceISOname = $sourceISOname.Replace('.iso', "$sourceISOversionSuffix.iso")
+					$sourceISOpath = "$basePath\Windows ISOs\$sourceISOname"
+					$wimOutputPath += " $sourceISOversionSuffix"
+					break
+				} elseif (Test-Path "$basePath\Windows ISOs\$($sourceISOname.Replace('.iso', "_v$possibleISOversionSuffix.iso"))") { # Windows 11 25H2 v2 ISO uses "_v2" suffix instead of just "v2" like previous version.
+					$sourceISOversionSuffix = "v$possibleISOversionSuffix"
+					$sourceISOname = $sourceISOname.Replace('.iso', "_$sourceISOversionSuffix.iso")
 					$sourceISOpath = "$basePath\Windows ISOs\$sourceISOname"
 					$wimOutputPath += " $sourceISOversionSuffix"
 					break
@@ -1006,7 +1013,19 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 						Write-Output '      Skipping Checkpoint Cumulative Update (Will Be Applied During the Following Target Cumulative Update)'
 					} else {
 						try {
-							Add-WindowsPackage -Path "$systemTempDir\mountRE" -PackagePath $thisUpdateToInstallIntoWinRE.FullName -WarningAction Stop -ErrorAction Stop | Out-Null
+							try {
+								Add-WindowsPackage -Path "$systemTempDir\mountRE" -PackagePath $thisUpdateToInstallIntoWinRE.FullName -WarningAction Stop -ErrorAction Stop | Out-Null
+							} catch { # This shouldn't be necessary for WinRE like it is for full Windows (see comments in that section), but include the same fallback anyway just to be safe.
+								Write-Host "`n      NOTICE: FALLING BACK TO `"DISM /Add-Package`" BECAUSE `"Add-WindowsPackage`" FAILED WITH ERROR: $_" -ForegroundColor Yellow
+
+								$dismAddPackageExitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountRE`"", '/Add-Package', "/PackagePath:`"$($thisUpdateToInstallIntoWinRE.FullName)`"").ExitCode
+
+								if ($dismAddPackageExitCode -ne 0) {
+									throw "ERROR: `"DISM /Add-Package`" FAILED WITH EXIT CODE: $dismAddPackageExitCode"
+								} else {
+									Write-Output ''
+								}
+							}
 						} catch {
 							notepad.exe "$Env:WINDIR\Logs\DISM\dism.log"
 							throw $_
@@ -1105,6 +1124,11 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 						'\Windows\Boot\PXE\qps-ploc\' # These 2 PXE folders outside of the previously excluded paths will be removed within the updated WinRE 10 image (but not the WinRE 11 image), so don't error when they don't exist.
 						'\Windows\Boot\PXE\qps-plocm\'
 					)
+				} elseif (($thisWindowsMajorVersion -eq '11') -and ($thisWindowsFeatureVersion -eq '25H2')) {
+					$excludedCompareWinReWimContentPaths += @(
+						'\Windows\System32\CodeIntegrity\CiPolicies\Internal\'
+						'\Windows\Boot\EFI_EX\bootmgr_EX.efi'
+					)
 				}
 
 				$sourceWinReWimContentPaths = Get-WindowsImageContent -ImagePath "$systemTempDir\mountOS\Windows\System32\Recovery\Winre.wim" -Index 1 | Select-String $excludedCompareWinReWimContentPaths -SimpleMatch -NotMatch # Exclude paths from the source lists since it's more efficient than letting them be compared and ignoring them from the results.
@@ -1190,7 +1214,19 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 					} else {
 						# Dism /Image:C:\test\offline /Add-Package /PackagePath:C:\packages\package1.cab (https://docs.microsoft.com/en-us/windows-hardware/manufacture/desktop/add-or-remove-packages-offline-using-dism)
 						try {
-							Add-WindowsPackage -Path "$systemTempDir\mountOS" -PackagePath $thisUpdateToInstallIntoWIM.FullName -WarningAction Stop -ErrorAction Stop | Out-Null
+							try {
+								Add-WindowsPackage -Path "$systemTempDir\mountOS" -PackagePath $thisUpdateToInstallIntoWIM.FullName -WarningAction Stop -ErrorAction Stop | Out-Null
+							} catch { # Starting around April 2026, fallback to DISM command for error 0x800401e3: https://www.reddit.com/r/sysadmin/comments/1sppxt2/has_kb5083769_apr_2026_cumulative_affected_dism/
+								Write-Host "`n      NOTICE: FALLING BACK TO `"DISM /Add-Package`" BECAUSE `"Add-WindowsPackage`" FAILED WITH ERROR: $_" -ForegroundColor Yellow
+
+								$dismAddPackageExitCode = (Start-Process 'DISM' -NoNewWindow -Wait -PassThru -ArgumentList "/Image:`"$systemTempDir\mountOS`"", '/Add-Package', "/PackagePath:`"$($thisUpdateToInstallIntoWIM.FullName)`"").ExitCode
+
+								if ($dismAddPackageExitCode -ne 0) {
+									throw "ERROR: `"DISM /Add-Package`" FAILED WITH EXIT CODE: $dismAddPackageExitCode"
+								} else {
+									Write-Output ''
+								}
+							}
 
 							if ($thisUpdateIsCumulativeUpdate) {
 								# As shown in example code on https://learn.microsoft.com/en-us/windows/deployment/update/media-dynamic-update#update-windows-installation-media
@@ -1205,12 +1241,13 @@ foreach ($thisWindowsMajorVersion in $windowsMajorVersions) {
 								Write-Output "    Re-Installing $updateName of `"$thisUpdateParentFolderName`" ($([math]::Round(($thisUpdateToInstallIntoWIM.Length / 1MB), 2)) MB) Into Windows $thisWindowsMajorVersion $thisWindowsEdition $thisWindowsFeatureVersion Install Image at $updateStartDate..."
 								Write-Output "      (To Be Sure Full Cumulative Update Is Installed and NOT ONLY the Included Servicing Stack Update)"
 
-								Add-WindowsPackage -Path "$systemTempDir\mountOS" -PackagePath $thisUpdateToInstallIntoWIM.FullName -WarningAction Stop -ErrorAction Stop | Out-Null
+								Add-WindowsPackage -Path "$systemTempDir\mountOS" -PackagePath $thisUpdateToInstallIntoWIM.FullName -WarningAction Stop -ErrorAction Stop | Out-Null # The re-install SHOULD NOT fail like the initial install may, so no "DISM /Add-Package" fallback necessary.
 							}
 						} catch {
 							notepad.exe "$Env:WINDIR\Logs\DISM\dism.log"
 							throw $_
 						}
+
 						$updateEndDate = Get-Date
 						Write-Output "      Finished Installing at $updateEndDate ($([math]::Round(($updateEndDate - $updateStartDate).TotalMinutes, 2)) Minutes)"
 					}
